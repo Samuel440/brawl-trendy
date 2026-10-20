@@ -129,6 +129,7 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
   .search select{width:100%}
   .grid{grid-template-columns:1fr}
 }
+.drivegate{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:rgba(79,163,255,.1);border:1px solid rgba(79,163,255,.4);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .chip{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:var(--ok)}
 .pagehead{display:flex;align-items:center;gap:12px;width:100%}
 .pagehead h2{margin:0;font-size:20px;color:var(--text)}
@@ -430,9 +431,11 @@ async function driveConnect(create) {
     REMOTE = DRIVE_BACKEND; DRIVE_BACKEND.ready = false; ss('bt_gdrive', true);
     S.starWho = null; reloadMemory(); // kolekce ⭐ a 💡 podle toho, kdo je přihlášený
     await pullShared(true);
-    status(`☁️ Disk připojen (${DRIVE.email}).`);
+    status(`☁️ Disk připojen (${DRIVE.email}).`); ss('bt_nodrive', false);
   } catch (e) { DRIVE.state = 'off'; status(e.message === 'auth' ? 'Přihlášení vypršelo – připoj Disk znovu.' : e.message, true); }
   rerender();
+  // teprve teď (s daty z Disku) stáhnout z YouTube, co je opravdu zastaralé
+  if (REMOTE === DRIVE_BACKEND && !S.view && TIME_PERIODS.includes(S.period)) showCountry(false);
 }
 // přihlášení Googlem platí hodinu – pak sdílení počká na nové kliknutí
 function driveLost() {
@@ -1354,6 +1357,9 @@ function renderHeader() {
 }
 
 // ---------- Pohled: seznam pro stát ----------
+const driveGate = () => !!gClientId() && REMOTE !== DRIVE_BACKEND && !ls('bt_nodrive', false);
+const driveGateHtml = () => `<div class="drivegate">☁️ <b>Nejdřív připoj Google Disk.</b> Co už načetla jiná zařízení, se stáhne zdarma a z YouTube se bude stahovat jen to, co chybí.
+  <button class="primary" id="btnDrive">Připojit Disk</button><button id="btnNoDrive">Používat bez Disku</button></div>`;
 async function showCountry(force) {
   const token = ++S.loadToken, c = C(S.country), p = S.period;
   if (p === 'arch' || p === 'star') { renderMain(); return; }
@@ -1361,6 +1367,8 @@ async function showCountry(force) {
   // Při zapnuté auto-aktualizaci jsou novinky/týden zastaralé po uplynutí intervalu (i když stránka byla mezitím zavřená)
   const maxAge = (S.auto && p !== 'all' ? S.interval : PERIODS[p].ttl) * 60e3;
   let failed = false;
+  // Dokud není připojený Disk, z YouTube nic nestahujeme sami – čerstvá data můžou být na Disku zdarma (ruční ⟳ projde)
+  if (!force && driveGate()) { renderMain(); return; }
   if (force || !set || Date.now() - set.ts >= maxAge) {
     status(`Načítám ${c.name} – ${PERIODS[p].label}…`);
     try { set = await ensureSet(c, p, true, !force, true); status(''); }
@@ -1371,7 +1379,7 @@ async function showCountry(force) {
   renderMain();
 }
 function renderCountry(set, c, p) {
-  if (!set) { $('#main').innerHTML = `<div class="empty">${p === 'arch' ? 'Archiv je zatím prázdný – plní se sám z Novinek, Týdne a Celé doby.' : 'Zatím žádná data.'}</div>`; return; }
+  if (!set) { $('#main').innerHTML = (p !== 'arch' && driveGate() ? driveGateHtml() : '') + `<div class="empty">${p === 'arch' ? 'Archiv je zatím prázdný – plní se sám z Novinek, Týdne a Celé doby.' : 'Zatím žádná data.'}</div>`; return; }
   const list = prepare(set.items, c).filter(matchQ).sort(SORTS[S.sort]);
   const q = S.q.trim(), qTr = q && QTR[c.lang + '|' + q];
   const fm = countBy(list, it => it.formats.map(f => f[0]), it => it.views);
@@ -1390,6 +1398,7 @@ function renderCountry(set, c, p) {
   if (S.type !== 'long') sections.push(['📱 Shorts', shorts]);
   $('#main').innerHTML = `
     <div class="summary">
+      ${driveGate() ? driveGateHtml() : ''}
       <h3>${head}</h3>
       ${q ? `<div class="row"><span class="lbl">🔎 Hledám</span><span class="tag hot">${esc(q)}</span>${qTr && norm(qTr) !== norm(q) ? `<span class="ch">i jako</span><span class="tag blue">${esc(qTr)}</span>` : ''}</div>` : ''}
       <div class="row"><span class="lbl">Formáty</span>${fm.slice(0, 8).map(e => pill(e, 'ok')).join('') || '<span class="ch">–</span>'}</div>
@@ -1694,7 +1703,7 @@ function updateUpdated() {
 setInterval(() => {
   updateUpdated();
   if (!document.hidden) checkAllThumbs(); // sama si hlídá interval 30 min
-  if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || !S.nextAuto) return;
+  if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || !S.nextAuto || driveGate()) return;
   if (Date.now() >= S.nextAuto) { S.nextAuto = Date.now() + S.interval * 60e3; showCountry(false); }
 }, 1000);
 
@@ -1705,6 +1714,7 @@ document.addEventListener('click', e => {
   if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); show(); }
   else if (b.dataset.startab) renderMain();
   else if (b.id === 'btnDrive') driveConnect(false);
+  else if (b.id === 'btnNoDrive') { ss('bt_nodrive', true); showCountry(false); }
   else if (b.id === 'btnDriveCreate') driveConnect(true);
   else if (b.id === 'btnDriveOff') { REMOTE = null; DRIVE.token = null; DRIVE.state = 'off'; ss('bt_gdrive', false); SYNC.ok = false; pullShared(); rerender(); }
   else if (b.dataset.country) { S.view = null; S.country = b.dataset.country; ss('bt_country', S.country); show(); }
