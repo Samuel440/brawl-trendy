@@ -202,6 +202,7 @@ const PERIODS = {
   star: {label:'⭐ Uložené', local:true},
   ideas:{label:'💡 Nápady & trendy'},
 };
+const SHOW_STEP = 120;
 const TIME_PERIODS = ['day', 'week', 'month', 'all']; // jeden přepínač; archiv, uložené a nápady jsou zvlášť tlačítka
 const COST_SET = 102; // search 100 + videos 1 + channels 1
 
@@ -235,9 +236,41 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
  'dan yang di ini itu aku ke '+
  'và của là có không cho một').split(/\s+/));
 
+// ---------- Úložiště v prohlížeči ----------
+// Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
+// Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
+// Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$)/;
+const KV = new Map(); // klíč → JSON text
+var KV_OK = false;
+const inKV = k => KV_OK && KV_RX.test(k);
+const kvRaw = k => inKV(k) ? (KV.has(k) ? KV.get(k) : null) : localStorage.getItem(k);
+const kvKeys = () => [...new Set([...KV.keys(), ...Object.keys(localStorage)])];
+let kvPending = new Map(), kvTimer = null;
+function kvSetRaw(k, raw) {
+  if (!inKV(k)) { try { localStorage.setItem(k, raw); } catch {} return; }
+  KV.set(k, raw); kvPending.set(k, raw);
+  clearTimeout(kvTimer); kvTimer = setTimeout(kvFlush, 300);
+}
+async function kvFlush() {
+  const batch = kvPending; kvPending = new Map();
+  if (batch.size) await idbKv('readwrite', st => { for (const [k, v] of batch) st.put(v, k); }).catch(e => console.warn('IndexedDB', e));
+}
+function kvDelete(k) { KV.delete(k); try { localStorage.removeItem(k); } catch {} if (KV_OK) idbKv('readwrite', st => st.delete(k)).catch(() => {}); }
+// při startu: načíst IndexedDB do paměti a jednorázově přestěhovat stará data z localStorage
+async function kvLoad() {
+  const rows = await idbKv('readonly', st => ({keys:st.getAllKeys(), vals:st.getAll()}));
+  rows.keys.result.forEach((k, i) => KV.set(k, rows.vals.result[i]));
+  KV_OK = true;
+  const moved = Object.keys(localStorage).filter(k => KV_RX.test(k));
+  for (const k of moved) if (!KV.has(k)) kvSetRaw(k, localStorage.getItem(k));
+  clearTimeout(kvTimer); await kvFlush();
+  moved.forEach(k => localStorage.removeItem(k));
+}
+
 // ---------- Stav ----------
-const ls = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
-const ss = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} if (k.startsWith('bt_ch_') && typeof CHCACHE !== 'undefined') delete CHCACHE[k.slice(6)]; markShared(k); };
+const ls = (k, d) => { try { const v = kvRaw(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
+const ss = (k, v) => { kvSetRaw(k, JSON.stringify(v)); if (k.startsWith('bt_ch_') && typeof CHCACHE !== 'undefined') delete CHCACHE[k.slice(6)]; markShared(k); };
 const S = {
   key: ls('bt_key', ''),
   country: ls('bt_country', 'it'),
@@ -252,6 +285,7 @@ const S = {
   ai: ls('bt_ai', !matchMedia('(pointer:coarse)').matches),
   slimit: ls('bt_slimit', 100), // můj denní limit hledání (Google dává 100; grafikovi třeba 20)
   starTab: 'videos',
+  showN: 120, // kolik videí ukázat najednou (seznamy mají až 1 000) – zbytek tlačítkem
   noLive: ls('bt_noLive', true),
   q: '', qScope: 'view',
   nextAuto: 0,
@@ -284,7 +318,7 @@ const $ = s => document.querySelector(s);
 // ---------- 👥 Sdílení dat mezi lidmi ----------
 // Sdílí se videa, kanály, archiv, uložené, blokace, nápady a překlady. Nesdílí se API klíč, kvóta ani nastavení.
 // Úložiště (REMOTE): ☁️ Google Disk (po přihlášení – funguje i na mobilu bez PC), jinak server.py na PC, jinak nic.
-var SHARED_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$)/;
+var SHARED_RX = KV_RX; // sdílí se právě ta velká data
 var SYNC = {meta:null, dirty:{}, timer:null, ok:null, last:0};
 var REMOTE = null;
 function syncMeta() { return SYNC.meta ??= (() => { try { return JSON.parse(localStorage.getItem('bt_meta')) || {}; } catch { return {}; } })(); }
@@ -299,7 +333,7 @@ function markShared(k) {
 async function syncPush() {
   const keys = Object.keys(SYNC.dirty); if (!keys.length || !REMOTE?.ready) return;
   const body = {};
-  for (const k of keys) { const raw = localStorage.getItem(k); if (raw !== null) body[k] = {v:JSON.parse(raw), t:syncMeta()[k] || Date.now()}; }
+  for (const k of keys) { const raw = kvRaw(k); if (raw !== null) body[k] = {v:JSON.parse(raw), t:syncMeta()[k] || Date.now()}; }
   try { await REMOTE.put(body); keys.forEach(k => delete SYNC.dirty[k]); SYNC.ok = true; }
   catch (e) { SYNC.ok = false; if (e.message === 'auth') driveLost(); }
 }
@@ -467,10 +501,10 @@ async function syncPull() {
   SYNC.pulling = true;
   for (const [k, e] of Object.entries(remote)) {
     if (!SHARED_RX.test(k) || (meta[k] || 0) >= e.t) continue;
-    try { localStorage.setItem(k, JSON.stringify(e.v)); meta[k] = e.t; changed = true; } catch {}
+    kvSetRaw(k, JSON.stringify(e.v)); meta[k] = e.t; changed = true;
   }
   SYNC.pulling = false; saveMeta();
-  for (const k of Object.keys(localStorage)) if (SHARED_RX.test(k) && (!remote[k] || (meta[k] || 0) > remote[k].t)) { meta[k] ??= Date.now(); SYNC.dirty[k] = true; }
+  for (const k of kvKeys()) if (SHARED_RX.test(k) && (!remote[k] || (meta[k] || 0) > remote[k].t)) { meta[k] ??= Date.now(); SYNC.dirty[k] = true; }
   saveMeta(); syncPush(); SYNC.last = Date.now();
   return changed;
 }
@@ -721,8 +755,8 @@ async function ensureSet(c, p, force, light, extra) {
   archive(c.id, set.items);
   return set;
 }
-const MAX_SET = 250, MAX_ARCH = 250;
-// při přeplnění necháme nejsledovanější (localStorage má jen ~5 MB)
+const MAX_SET = 1000, MAX_ARCH = 2000; // data jsou v IndexedDB, místa je dost
+// při přeplnění necháme nejsledovanější
 const capItems = items => items.length <= MAX_SET ? items : [...items].sort((a, b) => b.views - a.views).slice(0, MAX_SET);
 function mergeInto(cid, p, items) {
   const set = getSet(cid, p);
@@ -838,7 +872,7 @@ function renderBlocked() {
 // Hodí se pro přenos mezi verzemi stránky (soubor z disku / localhost / web) – každá má v prohlížeči vlastní úložiště.
 function exportData() {
   const data = {};
-  for (const k of Object.keys(localStorage)) if (SHARED_RX.test(k)) data[k] = JSON.parse(localStorage.getItem(k));
+  for (const k of kvKeys()) if (SHARED_RX.test(k) && kvRaw(k) !== null) data[k] = JSON.parse(kvRaw(k));
   const blob = new Blob([JSON.stringify({brawlTrendy:1, at:Date.now(), meta:syncMeta(), data})], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = Object.assign(document.createElement('a'), {href:url, download:`brawl-trendy-zaloha-${new Date().toISOString().slice(0, 10)}.json`});
@@ -863,7 +897,7 @@ async function importData(file) {
   for (const [k, v] of Object.entries(j.data)) {
     if (!SHARED_RX.test(k)) continue;
     const merged = mergeKey(k, ls(k, null), v);
-    if (JSON.stringify(merged) !== localStorage.getItem(k)) { ss(k, merged); n++; } // ss → uloží čas změny a pošle na Disk
+    if (JSON.stringify(merged) !== kvRaw(k)) { ss(k, merged); n++; } // ss → uloží čas změny a pošle na Disk
   }
   reloadMemory(); TERMS = null;
   return n;
@@ -987,7 +1021,7 @@ const starKey = (who = meWho()) => 'bt_star' + (who ? '_' + who : '');
 const mixKey = (who = meWho()) => 'bt_mixsaved' + (who ? '_' + who : '');
 function collections(base) {
   const out = new Set([meWho(), '']);
-  for (const k of Object.keys(localStorage)) { const m = k.match(new RegExp(`^${base}_(g_[a-z0-9_]+)$`)); if (m) out.add(m[1]); }
+  for (const k of kvKeys()) { const m = k.match(new RegExp(`^${base}_(g_[a-z0-9_]+)$`)); if (m) out.add(m[1]); }
   return [...out];
 }
 const whoLabel = who => who === meWho() ? 'Moje' : who === '' ? 'Majitel' : who.slice(2).split('_')[0];
@@ -1024,18 +1058,23 @@ async function refreshStars() {
 // YouTube varianty A/B testu veřejně nedává – hlídáme aspoň, kdy se miniatura změní, a každou verzi uložíme.
 // Verze se ukládají jako obrázky do sdílené složky data/thumbs (přes server.py) – vidí je všichni a hlídá ten,
 // komu zrovna stránka běží. Bez serveru (stránka otevřená dvojklikem) zůstanou jen v tomhle prohlížeči (IndexedDB).
+// verze 2: navíc úložiště „kv“ pro všechna velká data stránky (viz Úložiště v prohlížeči)
 const IDB = new Promise((res, rej) => {
-  const r = indexedDB.open('brawltrendy', 1);
-  r.onupgradeneeded = () => r.result.createObjectStore('thumbs');
+  const r = indexedDB.open('brawltrendy', 2);
+  r.onupgradeneeded = () => {
+    if (!r.result.objectStoreNames.contains('thumbs')) r.result.createObjectStore('thumbs');
+    if (!r.result.objectStoreNames.contains('kv')) r.result.createObjectStore('kv');
+  };
   r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
 });
-async function idb(mode, fn) {
-  const db = await IDB;
-  return new Promise((res, rej) => {
-    const tx = db.transaction('thumbs', mode), req = fn(tx.objectStore('thumbs'));
-    tx.oncomplete = () => res(req.result); tx.onerror = () => rej(tx.error);
-  });
+function idbIn(store, mode, fn) {
+  return IDB.then(db => new Promise((res, rej) => {
+    const tx = db.transaction(store, mode), req = fn(tx.objectStore(store));
+    tx.oncomplete = () => res(req && 'result' in req ? req.result : req); tx.onerror = () => rej(tx.error);
+  }));
 }
+const idb = (mode, fn) => idbIn('thumbs', mode, fn);
+const idbKv = (mode, fn) => idbIn('kv', mode, fn);
 const idbGet = id => idb('readonly', st => st.get(id)).then(v => v || []).catch(() => []);
 // otisky ukládáme hexadecimálně (144 bodů → 36 znaků); starší verze v prohlížeči měly 0/1
 const toHex = bits => bits.length <= 40 ? bits : bits.match(/.{1,4}/g).map(b => parseInt(b.padEnd(4, '0'), 2).toString(16)).join('');
@@ -1495,7 +1534,7 @@ function renderCountry(set, c, p) {
         <div class="tags" style="margin-top:6px">${tracked.map(ch => `<span class="tag ${ch.manual ? 'ok' : ''}"><a href="https://www.youtube.com/channel/${esc(ch.id)}" target="_blank" rel="noopener" style="text-decoration:none">${ch.manual ? '📌 ' : ''}${esc(ch.name)}${ch.ids.length ? ' · ' + ch.ids.length + ' videí' : ''}</a>${ch.manual ? ` <button class="x" data-unch="${esc(ch.id)}" title="Přestat sledovat">✖</button>` : ''}</span>`).join('')}</div>
         <div class="addch"><input id="chInput" placeholder="@LukasBrawlStars nebo odkaz na kanál"><button id="btnAddCh">➕ Přidat kanál do ${esc(c.name)}</button></div></details>
     </div>
-    ${list.length ? sections.map(([h, l]) => `<div class="sec"><h2>${h} <span class="ch">(${l.length})</span></h2>${l.length ? `<div class="grid">${l.map((it, i) => card(it, i)).join('')}</div>` : '<div class="empty">Nic.</div>'}</div>`).join('') : '<div class="empty">Nic nenalezeno. Zkus jiný stát, nebo v ⚙️ Nastavení vypnout „Jen videa z daného státu“.</div>'}
+    ${list.length ? sections.map(([h, l]) => `<div class="sec"><h2>${h} <span class="ch">(${l.length})</span></h2>${l.length ? `<div class="grid">${l.slice(0, S.showN).map((it, i) => card(it, i)).join('')}</div>${l.length > S.showN ? `<button class="more" data-showmore>Zobrazit dalších ${Math.min(SHOW_STEP, l.length - S.showN)} (z ${l.length})</button>` : ''}` : '<div class="empty">Nic.</div>'}</div>`).join('') : '<div class="empty">Nic nenalezeno. Zkus jiný stát, nebo v ⚙️ Nastavení vypnout „Jen videa z daného státu“.</div>'}
     ${set.next ? `<button class="more" id="btnMore">Načíst dalších 50 (1 hledání)</button>` : ''}`;
   updateUpdated();
   autoTranslate();
@@ -1808,6 +1847,8 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.starwho !== undefined) { S.starWho = b.dataset.starwho; renderMain(); return; }
   if (b.dataset.startab) { S.starTab = b.dataset.startab; S.starWho = null; } // ⭐ Uložené: Videa / Nápady (i z odkazu v míchači)
+  if (b.dataset.showmore !== undefined) { const y = scrollY; S.showN += SHOW_STEP; renderMain(); scrollTo(0, y); return; }
+  if (b.dataset.period || b.dataset.country) S.showN = SHOW_STEP;
   if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); show(); }
   else if (b.dataset.startab) renderMain();
   else if (b.id === 'btnExport') exportData();
@@ -1908,7 +1949,7 @@ if (!ls('bt_mig_dub', false)) {
   ss('bt_mig_dub', true);
 }
 // uložená data odebraných států (Indonésie, Vietnam, arabské země) jen zabírají místo
-try { for (const k of Object.keys(localStorage)) if (/^bt_(c|ch|arch)_(id|vn|sa)(_|$)/.test(k)) localStorage.removeItem(k); } catch {}
+const cleanupRemovedCountries = () => { for (const k of kvKeys()) if (/^bt_(c|ch|arch)_(id|vn|sa)(_|$)/.test(k)) kvDelete(k); };
 // po stažení sdílených dat od ostatních obnovit to, co je načtené v paměti
 function reloadMemory() {
   const swap = (obj, val) => { for (const k of Object.keys(obj)) delete obj[k]; Object.assign(obj, val); };
@@ -1923,8 +1964,14 @@ async function pullShared() {
   // nepřekreslovat, když zrovna něco píšeš do pole na stránce
   if (S.key && !(document.activeElement?.closest?.('#main') && document.activeElement.matches('input, textarea'))) rerender();
 }
-show();
-pullShared();
+// start: nejdřív načíst velká data z IndexedDB (a poprvé je tam přestěhovat z localStorage), pak teprve kreslit
+(async () => {
+  try { await kvLoad(); } catch (e) { console.warn('IndexedDB nejde, jedu z localStorage', e); }
+  cleanupRemovedCountries();
+  reloadMemory();
+  show();
+  pullShared();
+})();
 // co minutu (když je stránka vidět) se podívat, jestli ostatní nenačetli něco nového – nic to nestojí
 setInterval(() => { if (!document.hidden && SYNC.ok) pullShared(); }, 60e3);
 </script>
