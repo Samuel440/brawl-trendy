@@ -249,7 +249,7 @@ const S = {
   trAuto: ls('bt_trAuto', false),
   // na mobilu AI kontrola standardně vypnutá (model má ~90 MB)
   ai: ls('bt_ai', !matchMedia('(pointer:coarse)').matches),
-  qlimit: ls('bt_qlimit', 10000),
+  slimit: ls('bt_slimit', 100), // můj denní limit hledání (Google dává 100; grafikovi třeba 20)
   starTab: 'videos',
   noLive: ls('bt_noLive', true),
   q: '', qScope: 'view',
@@ -424,6 +424,18 @@ const DRIVE_BACKEND = {
 };
 // připojení Disku (z tlačítka); při prvním připojení se na Disk nahraje všechno, co je v prohlížeči
 async function driveConnect(create) {
+  if (DRIVE.connecting) return;
+  DRIVE.connecting = true;
+  try { await driveConnectInner(create); } finally { DRIVE.connecting = false; }
+}
+// Přihlašovací okno Googlu jde otevřít jen po kliknutí → když už Disk používáš, připojí ho samo
+// tvoje první kliknutí kamkoli na stránce (a po hodině, kdy přihlášení vyprší, zase další kliknutí)
+document.addEventListener('click', e => {
+  if (!S.key || !gClientId() || !ls('bt_gdrive', false) || REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.state === 'nofolder') return;
+  if (e.target.closest('#btnDrive, #btnDriveCreate, #btnDriveOff, #btnNoDrive, #btnClose')) return;
+  driveConnect(false);
+}, true);
+async function driveConnectInner(create) {
   status('☁️ Připojuju Google Disk…');
   try {
     if (!DRIVE.token || Date.now() > DRIVE.exp - 60e3) await driveSignIn();
@@ -463,27 +475,42 @@ async function syncPull() {
 }
 
 // ---------- Kvóta (reset o půlnoci pacifického času) ----------
+// Google u YouTube API hlídá dva denní limity na projekt (= API klíč): 100 HLEDÁNÍ a 10 000 ostatních dotazů.
+// Úzké hrdlo je hledání; ostatní (zhlédnutí, sledované kanály, můj kanál) je prakticky neomezené.
+// Počítadlo je jen za tohle zařízení – Google sčítá všechna zařízení se stejným klíčem dohromady.
 const ptDate = () => new Date().toLocaleDateString('en-CA', {timeZone:'America/Los_Angeles'});
-function quota(add = 0) {
-  let q = ls('bt_quota', {d:'', used:0});
-  if (q.d !== ptDate()) q = {d:ptDate(), used:0};
-  q.used += add; ss('bt_quota', q);
-  $('#quota').textContent = `Kvóta dnes: ${q.used.toLocaleString('cs')} / ${S.qlimit.toLocaleString('cs')}`;
-  $('#quota').style.color = q.used > S.qlimit * .85 ? 'var(--hot)' : '';
-  return q.used;
+const SEARCH_MAX = 100, QUERY_MAX = 10000;
+function quota(search = 0, query = 0) {
+  let q = ls('bt_quota', {d:''});
+  if (q.d !== ptDate()) q = {d:ptDate(), s:0, q:0};
+  q.s = (q.s || 0) + search; q.q = (q.q || 0) + query; ss('bt_quota', q);
+  const el = $('#quota');
+  el.textContent = `Hledání dnes: ${q.s} / ${S.slimit}${searchBlocked() ? ' (došla)' : ''}`;
+  el.title = `Ostatní dotazy: ${q.q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}. Počítá se jen tohle zařízení – přesné číslo za všechna je v Google Cloud.`;
+  el.style.color = q.s >= S.slimit * .85 || searchBlocked() ? 'var(--hot)' : '';
+  return q;
 }
+// když Google řekne, že hledání došla (i z jiného zařízení), do resetu už hledat nezkoušíme
+const searchBlocked = () => ls('bt_sq_block', '') === ptDate();
+const searchLeft = () => !searchBlocked() && quota().s < S.slimit;
 
 // ---------- YouTube API ----------
-async function api(endpoint, params, cost) {
-  // vlastní denní limit (např. grafik 1 500) – nad něj se nic nestáhne
-  if (quota() + cost > S.qlimit) throw new Error(`Dosažen denní limit ${S.qlimit.toLocaleString('cs')} jednotek (nastavíš v ⚙️ Nastavení). Zatím vidíš uložená a sdílená data.`);
+async function api(endpoint, params) {
+  const isSearch = endpoint === 'search', q = quota();
+  // vlastní denní limit hledání (např. grafik 20) – nad něj se nic nehledá
+  if (isSearch && !searchLeft()) throw Object.assign(new Error(`Na dnešek došla hledání (${q.s}/${S.slimit}). Obnovují se v 9:00. Do té doby se dál obnovují zhlédnutí a nová videa ze sledovaných kanálů.`), {code:'search'});
+  if (q.q >= QUERY_MAX) throw new Error('Došel denní limit dotazů. Obnoví se v 9:00.');
   const url = 'https://www.googleapis.com/youtube/v3/' + endpoint + '?' + new URLSearchParams({...params, key:S.key});
   const res = await fetch(url);
-  quota(cost);
+  quota(isSearch ? 1 : 0, 1);
   const j = await res.json();
   if (j.error) {
     const reason = j.error.errors?.[0]?.reason || '';
-    if (reason === 'quotaExceeded') throw new Error('Došla denní kvóta API (10 000). Obnoví se o půlnoci pacifického času (~9:00 u nás). Zatím vidíš uložená data.');
+    if (reason === 'quotaExceeded' && /search/i.test(j.error.message)) {
+      ss('bt_sq_block', ptDate()); quota();
+      throw Object.assign(new Error('Google: na dnešek došlo 100 hledání pro tvůj klíč (sčítá všechna zařízení). Obnoví se v 9:00. Do té doby se dál obnovují zhlédnutí a nová videa ze sledovaných kanálů.'), {code:'search'});
+    }
+    if (reason === 'quotaExceeded') throw new Error('Došel denní limit dotazů YouTube API. Obnoví se o půlnoci pacifického času (~9:00 u nás). Zatím vidíš uložená data.');
     if (reason === 'keyInvalid' || res.status === 400 && /key/i.test(j.error.message)) throw new Error('Neplatný API klíč – zkontroluj ho v ⚙️ Nastavení.');
     if (/referer|referrer/i.test(j.error.message)) throw new Error(`API klíč nesmí běžet na téhle adrese. V Google Cloud → Credentials → tvůj klíč → Websites přidej ${location.origin}/*`);
     throw new Error(j.error.message);
@@ -543,15 +570,17 @@ const hasBrawler = it => BRAWLER_RX.some(b => b[1].test(it.t));
 // U videí ze sledovaných kanálů (src 'ch') stačí jen název – tagy a popis s „Brawl Stars“ kódem mají často u všech videí, i IRL.
 const classify = (it, src) => (src === 'ch' ? it.bsN : it.bsT) || hasBrawler(it) ? {...it, src} : {...it, src, cand:true, weak:src !== 'ch' && it.bs};
 
-// extra = k hledání podle zhlédnutí přidá i hledání nejnovějších videí (najde menší kanály, +100 jednotek)
+// extra = k hledání podle zhlédnutí přidá i hledání nejnovějších videí (najde menší kanály, +1 hledání) –
+// jen dokud stát nemá dost sledovaných kanálů; pak nová videa malých kanálů chodí přes ně (bez hledání)
+const needsDateSearch = c => trackedChannels(c).length < 10;
 async function fetchSet(c, p, pageToken, extra) {
   const params = {part:'snippet', type:'video', order:'viewCount', maxResults:50, q:c.q || 'brawl stars', relevanceLanguage:c.lang, regionCode:c.region};
   if (PERIODS[p].hours) params.publishedAfter = isoNoMs(new Date(Date.now() - PERIODS[p].hours * 3600e3));
   if (pageToken) params.pageToken = pageToken;
-  const s = await api('search', params, 100);
+  const s = await api('search', params);
   let ids = s.items.map(i => i.id.videoId).filter(Boolean);
-  if (extra && !pageToken && PERIODS[p].hours) {
-    const d = await api('search', {...params, order:'date'}, 100);
+  if (extra && !pageToken && PERIODS[p].hours && needsDateSearch(c) && searchLeft()) {
+    const d = await api('search', {...params, order:'date'});
     ids = [...new Set([...ids, ...d.items.map(i => i.id.videoId).filter(Boolean)])];
   }
   const items = ids.length ? (await details(ids)).map(it => classify(it)) : [];
@@ -629,7 +658,7 @@ async function fetchChannelVideos(c, p, have) {
   const since = Date.now() - PERIODS[p].hours * 3600e3;
   const res = await Promise.allSettled(chans.map(ch =>
     api('playlistItems', {part:'contentDetails', playlistId:'UU' + ch.id.slice(2), maxResults:p === 'day' ? 10 : 50}, 1)));
-  const quotaErr = res.find(r => r.status === 'rejected' && /kvóta/.test(r.reason.message));
+  const quotaErr = res.find(r => r.status === 'rejected' && /limit dotazů/.test(r.reason.message));
   if (quotaErr) throw quotaErr.reason;
   const ids = [...new Set(res.flatMap(r => r.status === 'fulfilled' ? r.value.items : [])
     .filter(x => new Date(x.contentDetails.videoPublishedAt || 0) >= since && !have.has(x.contentDetails.videoId))
@@ -637,11 +666,14 @@ async function fetchChannelVideos(c, p, have) {
   if (!ids.length) return [];
   return (await details(ids)).map(it => classify(it, 'ch'));
 }
-// extra = otevření ze seznamu státu (hledá i nejnovější videa, +100)
+// Kolik HLEDÁNÍ by načtení stálo (ostatní dotazy jsou prakticky zdarma). 0 = jen lehká aktualizace.
+// extra = otevření ze seznamu státu (může přidat hledání nejnovějších)
 function costFor(c, p, extra) {
-  if (!PERIODS[p].hours) return 102;
-  const set = getSet(c.id, p), chans = trackedChannels(c).length + 2;
-  return set?.searchTs && Date.now() - set.searchTs < SEARCH_EVERY * 60e3 ? Math.ceil(set.items.length / 50) * 2 + chans : (extra ? 202 : 102) + chans;
+  if (!PERIODS[p].hours) return 1;
+  const set = getSet(c.id, p);
+  if (set?.searchTs && Date.now() - set.searchTs < SEARCH_EVERY * 60e3) return 0;
+  if (!searchLeft()) return 0; // hledání došla → stejně proběhne jen lehká aktualizace
+  return extra && needsDateSearch(c) ? 2 : 1;
 }
 // Kolik by stálo otevřít tenhle stát/období (stejná pravidla jako showCountry); 0 = jsou uložená čerstvá data
 function openCost(c, p) {
@@ -650,7 +682,7 @@ function openCost(c, p) {
   const maxAge = (S.auto && p !== 'all' ? S.interval : PERIODS[p].ttl) * 60e3;
   return set && Date.now() - set.ts < maxAge ? 0 : costFor(c, p, true);
 }
-const costAttr = cost => cost ? ` costly" title="⚡ Ještě nenačtené – kliknutí stáhne data za ≈ ${cost} jednotek kvóty` : '';
+const costAttr = cost => cost ? ` costly" title="⚡ Ještě nenačtené – kliknutí stojí ${cost} ${cost === 1 ? 'hledání' : 'hledání'} ze 100 denních` : '';
 
 // ---------- Cache ----------
 const ckey = (cid, p) => `bt_c_${cid}_${p}`;
@@ -659,14 +691,21 @@ const fixItem = it => it.t0 ? {...it, t:it.t0, t0:undefined, loc:undefined} : it
 const getSet = (cid, p) => { const s = ls(ckey(cid, p), null); return s && {...s, items:s.items.map(fixItem)}; };
 const putSet = (cid, p, set) => { ss(ckey(cid, p), set); TERMS = null; };
 const isFresh = (set, p) => set && (Date.now() - set.ts) < PERIODS[p].ttl * 60e3;
-// Šetření kvóty: plné hledání (100 jednotek) nejvýš jednou za 2 h, mezitím jen „lehká“ aktualizace (~30 jednotek)
-const SEARCH_EVERY = 120;
+// Šetření hledání (jen 100 denně): plné hledání nejvýš jednou za 6 h, mezitím jen „lehká“ aktualizace
+// (nové počty zhlédnutí + nová videa ze sledovaných kanálů – hledání nestojí). Když hledání dojdou, jede jen lehká.
+const SEARCH_EVERY = 360;
 async function ensureSet(c, p, force, light, extra) {
   let set = getSet(c.id, p);
   if (!force && isFresh(set, p)) return set;
-  if (light && set?.searchTs && PERIODS[p].hours && Date.now() - set.searchTs < SEARCH_EVERY * 60e3) set = await refreshLight(c, p, set);
+  const canLight = set && PERIODS[p].hours;
+  if (canLight && (!searchLeft() || (light && set.searchTs && Date.now() - set.searchTs < SEARCH_EVERY * 60e3))) set = await refreshLight(c, p, set);
   else {
-    const r = await fetchSet(c, p, null, extra);
+    let r;
+    try { r = await fetchSet(c, p, null, extra); }
+    catch (e) {
+      if (e.code === 'search' && canLight) { set = await refreshLight(c, p, set); putSet(c.id, p, set); status(e.message, true); return set; }
+      throw e;
+    }
     // videa z minulých hledání, která jsou pořád v časovém okně, nezahazujeme (nové hledání je jen doplní)
     const since = PERIODS[p].hours ? Date.now() - PERIODS[p].hours * 3600e3 : 0;
     const found = new Set(r.items.map(i => i.id));
@@ -808,12 +847,12 @@ function renderSettings() {
     </div>
     <div class="sec"><h2>⟳ Aktualizace</h2>
       ${chk('auto', 'Automaticky aktualizovat', 'Jen když máš stránku otevřenou a vidíš ji. Plné hledání nejvýš jednou za 2 h, mezitím levná aktualizace zhlédnutí a nových videí ze sledovaných kanálů.')}
-      <label class="setrow"><select data-set="interval">${[15, 30, 60, 120].map(m => opt(m, 'každých ' + m + ' min')).join('')}</select><span><b>Jak často</b><span class="ch">Delší interval = menší spotřeba kvóty. Při 30 min a jednom státě to vyjde zhruba na 2–3 tisíce jednotek denně.</span></span></label>
-      ${TIME_PERIODS.includes(S.period) ? `<div class="setrow"><button id="btnRefresh">⟳ Aktualizovat teď</button><span><b>${esc(C(S.country).name)} – ${PERIODS[S.period].label}</b><span class="ch">Plné hledání hned teď (≈200 jednotek), bez čekání na časomíru. Pak se vrátíš na seznam.</span></span></div>` : ''}
+      <label class="setrow"><select data-set="interval">${[15, 30, 60, 120].map(m => opt(m, 'každých ' + m + ' min')).join('')}</select><span><b>Jak často</b><span class="ch">Automatická obnova hledání skoro nestojí: plné hledání proběhne nejvýš jednou za 6 hodin, mezitím jen obnova zhlédnutí a nových videí ze sledovaných kanálů.</span></span></label>
+      ${TIME_PERIODS.includes(S.period) ? `<div class="setrow"><button id="btnRefresh">⟳ Aktualizovat teď</button><span><b>${esc(C(S.country).name)} – ${PERIODS[S.period].label}</b><span class="ch">Plné hledání hned teď (1–2 hledání ze 100 denních), bez čekání na časomíru. Pak se vrátíš na seznam.</span></span></div>` : ''}
     </div>
     <div class="sec"><h2>🔑 YouTube API</h2>
-      <div class="setrow"><span><b>Kvóta dnes: ${(q.used || 0).toLocaleString('cs')} / ${S.qlimit.toLocaleString('cs')}</b><span class="ch">Obnoví se o půlnoci pacifického času (kolem 9:00 u nás).</span></span></div>
-      <label class="setrow"><input type="number" min="100" max="10000" step="100" data-set="qlimit" value="${S.qlimit}" style="width:90px"><span><b>Můj denní limit kvóty</b><span class="ch">Nad tenhle počet jednotek denně stránka nic nestáhne (YouTube dává max 10 000). Grafikovi nastav třeba 1 500.</span></span></label>
+      <div class="setrow"><span><b>Hledání dnes: ${q.s || 0} / ${S.slimit}${searchBlocked() ? ' – došla' : ''} · ostatní dotazy: ${(q.q || 0).toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}</b><span class="ch">Google dává na jeden API klíč 100 hledání a 10 000 ostatních dotazů denně, obnoví se kolem 9:00. Hledání je to vzácné: plné načtení státu stojí 1–2 hledání; obnova zhlédnutí a nová videa ze sledovaných kanálů hledání nestojí. Číslo tady je jen za tohle zařízení – Google sčítá všechna zařízení s tvým klíčem.</span></span></div>
+      <label class="setrow"><input type="number" min="1" max="100" step="1" data-set="slimit" value="${S.slimit}" style="width:70px"><span><b>Můj denní limit hledání</b><span class="ch">Nad tenhle počet hledání denně stránka už nehledá (ostatní jede dál). Grafikovi s vlastním klíčem klidně nech 100, jinak třeba 20.</span></span></label>
       <div class="setrow"><button id="btnKey">Změnit API klíč</button><span class="ch">Každý člověk má mít svůj vlastní klíč – pak si navzájem kvótu neberete.</span></div>
     </div>
     <div class="sec"><h2>👥 Sdílení s ostatními</h2>
@@ -1411,7 +1450,7 @@ function renderCountry(set, c, p) {
         <div class="addch"><input id="chInput" placeholder="@LukasBrawlStars nebo odkaz na kanál"><button id="btnAddCh">➕ Přidat kanál do ${esc(c.name)}</button></div></details>
     </div>
     ${list.length ? sections.map(([h, l]) => `<div class="sec"><h2>${h} <span class="ch">(${l.length})</span></h2>${l.length ? `<div class="grid">${l.map((it, i) => card(it, i)).join('')}</div>` : '<div class="empty">Nic.</div>'}</div>`).join('') : '<div class="empty">Nic nenalezeno. Zkus jiný stát, nebo v ⚙️ Nastavení vypnout „Jen videa z daného státu“.</div>'}
-    ${set.next ? `<button class="more" id="btnMore">Načíst dalších 50 (≈${COST_SET} jednotek kvóty)</button>` : ''}`;
+    ${set.next ? `<button class="more" id="btnMore">Načíst dalších 50 (1 hledání)</button>` : ''}`;
   updateUpdated();
   autoTranslate();
   aiCheck(set.items.filter(it => !S.strict || langOk(it, c)));
@@ -1570,7 +1609,9 @@ function renderIdeas() {
   const total = COUNTRIES.length - 1;
   const info = g => g.loaded ? `${g.loaded}/${total} států · nejstarší data ${ago((Date.now() - g.oldest) / 3600e3)}` : 'zatím nenačteno';
   const btn = (p, l) => { const cost = staleCost(p);
-    return cost ? `<button class="costly" data-loadall="${p}" title="⚡ Stojí kvótu">${l} (≈${cost.toLocaleString('cs')} jednotek)</button>` : `<button data-loadall="${p}" disabled>✔ Načteno – nic se nestahuje</button>`; };
+    const stale = COUNTRIES.filter(c => !isFresh(getSet(c.id, p), p)).length;
+    if (!stale) return `<button data-loadall="${p}" disabled>✔ Načteno – nic se nestahuje</button>`;
+    return `<button class="${cost ? 'costly' : ''}" data-loadall="${p}" title="${cost ? '⚡ Stojí hledání ze 100 denních' : 'Jen obnova zhlédnutí a sledovaných kanálů – hledání nestojí'}">${l} (${cost ? `${cost} hledání` : 'bez hledání'})</button>`; };
 
   // 1) Co letí teď
   const byVph = [...day.list].sort((a, b) => b.vph - a.vph);
@@ -1615,7 +1656,7 @@ function renderIdeas() {
       <div class="row"><span class="lbl">Novinky 24 h</span><span class="ch">${info(day)}</span>${btn('day', '⟳ Načíst novinky ze všech států')}</div>
       <div class="row"><span class="lbl">Týden</span><span class="ch">${info(week)}</span>${btn('week', 'Načíst týden')}</div>
       <div class="row"><span class="lbl">Celá doba</span><span class="ch">${info(all)}</span>${btn('all', 'Načíst celou dobu')}</div>
-      <div class="row ch">Denní limit je 10 000 jednotek. Novinky ze všech států ≈ 1 500 (když jsou všechna data stará), takže je klidně obnovuj několikrát denně. Data se ukládají, takže když je čerstvá, nic se nestahuje znovu.</div>
+      <div class="row ch">Google dává 100 hledání denně. Plné načtení všech států stojí kolem 12 hledání, další obnovy během 6 hodin jsou bez hledání (jen zhlédnutí a nová videa sledovaných kanálů). Co je čerstvé, se nestahuje vůbec.</div>
     </div>
 
     ${sec('mix', '🎲 Míchač nápadů z mých videí', ls(mixKey(), []).length ? ls(mixKey(), []).length + ' uložených' : '',
@@ -1669,7 +1710,7 @@ function renderSetup() {
     </ol>
     <input id="keyInput" placeholder="AIza..." value="${esc(S.key)}">
     <button class="primary" id="btnSaveKey">Uložit a spustit</button>
-    <p class="ch">Klíč se ukládá jen v tomhle prohlížeči na tvém PC. Zdarma máš 10 000 jednotek denně – jedno načtení státu stojí ≈${COST_SET}.</p>
+    <p class="ch">Klíč se ukládá jen v tomhle prohlížeči na tvém PC. Zdarma máš 100 hledání a 10 000 ostatních dotazů denně – jedno načtení státu stojí 1–2 hledání.</p>
   </div>`;
 }
 
@@ -1778,8 +1819,8 @@ document.addEventListener('change', e => {
   if (e.target.id === 'gcidInput') { ss('bt_gcid', e.target.value.trim()); renderMain(); return; }
   if (e.target.dataset.chmode) { BLOCK.channels[e.target.dataset.chmode].mode = e.target.value; saveBlock(); return; }
   const k = e.target.dataset.set; if (!k) return;
-  S[k] = e.target.type === 'checkbox' ? e.target.checked : (k === 'interval' ? +e.target.value : k === 'qlimit' ? Math.min(10000, Math.max(100, +e.target.value || 10000)) : e.target.value);
-  if (k === 'qlimit') quota();
+  S[k] = e.target.type === 'checkbox' ? e.target.checked : (k === 'interval' ? +e.target.value : k === 'slimit' ? Math.min(SEARCH_MAX, Math.max(1, +e.target.value || SEARCH_MAX)) : e.target.value);
+  if (k === 'slimit') quota();
   ss('bt_' + k, S[k]);
   if (k === 'interval' || k === 'auto') S.nextAuto = Math.max(Date.now() + 5e3, (getSet(S.country, S.period)?.ts || 0) + S.interval * 60e3);
   rerender();
