@@ -262,8 +262,9 @@ async function kvLoad() {
   const rows = await idbKv('readonly', st => ({keys:st.getAllKeys(), vals:st.getAll()}));
   rows.keys.result.forEach((k, i) => KV.set(k, rows.vals.result[i]));
   KV_OK = true;
+  // co je ještě v localStorage, je novější (po přesunu se odtud maže) → má přednost
   const moved = Object.keys(localStorage).filter(k => KV_RX.test(k));
-  for (const k of moved) if (!KV.has(k)) kvSetRaw(k, localStorage.getItem(k));
+  for (const k of moved) kvSetRaw(k, localStorage.getItem(k));
   clearTimeout(kvTimer); await kvFlush();
   moved.forEach(k => localStorage.removeItem(k));
 }
@@ -1065,7 +1066,10 @@ const IDB = new Promise((res, rej) => {
     if (!r.result.objectStoreNames.contains('thumbs')) r.result.createObjectStore('thumbs');
     if (!r.result.objectStoreNames.contains('kv')) r.result.createObjectStore('kv');
   };
-  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  // jiná otevřená karta se starou verzí drží databázi → poprosit o zavření (přesun se pak dokončí sám)
+  r.onblocked = () => status('Zavři ostatní otevřené karty s Brawl Trendy – stará verze v nich blokuje přechod na nové úložiště.', true);
+  r.onsuccess = () => { r.result.onversionchange = () => r.result.close(); res(r.result); };
+  r.onerror = () => rej(r.error);
 });
 function idbIn(store, mode, fn) {
   return IDB.then(db => new Promise((res, rej) => {
@@ -1966,7 +1970,10 @@ async function pullShared() {
 }
 // start: nejdřív načíst velká data z IndexedDB (a poprvé je tam přestěhovat z localStorage), pak teprve kreslit
 (async () => {
-  try { await kvLoad(); } catch (e) { console.warn('IndexedDB nejde, jedu z localStorage', e); }
+  const load = kvLoad().catch(e => console.warn('IndexedDB nejde, jedu z localStorage', e));
+  // když IndexedDB do 2,5 s neodpoví (blokuje ji jiná karta), kreslíme z localStorage a přepneme se, až bude
+  const ready = await Promise.race([load.then(() => true), new Promise(r => setTimeout(() => r(false), 2500))]);
+  if (!ready) load.then(() => { if (KV_OK) { reloadMemory(); rerender(); status(''); } });
   cleanupRemovedCountries();
   reloadMemory();
   show();
