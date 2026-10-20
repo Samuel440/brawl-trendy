@@ -249,7 +249,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$)/;
-const APP_VERSION = '2026-10-20.5'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-20.6'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -377,15 +377,16 @@ function loadGis() {
   });
 }
 // přihlašovací okno Googlu jde otevřít jen po kliknutí – proto se Disk připojuje tlačítkem
-async function driveSignIn() {
+async function driveSignIn(pick) {
   if (!gClientId()) throw new Error('Chybí Client ID pro přihlášení Googlem (⚙️ Nastavení).');
   await loadGis();
   await new Promise((res, rej) => {
     google.accounts.oauth2.initTokenClient({
-      client_id:gClientId(), scope:'https://www.googleapis.com/auth/drive', login_hint:ls('bt_gemail', '') || undefined,
+      client_id:gClientId(), scope:'https://www.googleapis.com/auth/drive', login_hint:pick ? undefined : ls('bt_gemail', '') || undefined,
+      ...(pick ? {prompt:'select_account'} : {}),
       callback:r => { if (r.error) return rej(new Error(r.error_description || r.error)); DRIVE.token = r.access_token; DRIVE.exp = Date.now() + r.expires_in * 1000; res(); },
       error_callback:e => rej(new Error(e.type === 'popup_closed' ? 'Přihlášení zavřeno.' : 'Přihlašovací okno se neotevřelo (blokované vyskakovací okno?).')),
-    }).requestAccessToken({prompt:''});
+    }).requestAccessToken({prompt:pick ? 'select_account' : ''});
   });
 }
 async function gfetch(url, opts = {}) {
@@ -471,22 +472,31 @@ const DRIVE_BACKEND = {
   async delVers(id) { for (const v of await this.listVers(id)) await dDel(v.fid); },
 };
 // připojení Disku (z tlačítka); při prvním připojení se na Disk nahraje všechno, co je v prohlížeči
-async function driveConnect(create) {
+async function driveConnect(create, pick) {
   if (DRIVE.connecting) return;
   DRIVE.connecting = true;
-  try { await driveConnectInner(create); } finally { DRIVE.connecting = false; }
+  try { await driveConnectInner(create, pick); } finally { DRIVE.connecting = false; }
+}
+// 🔄 Změnit účet: odhlásí současný Google účet ze stránky a otevře výběr účtu
+function driveSwitch() {
+  if (DRIVE.token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(DRIVE.token, () => {});
+  logEvent(`🔄 odpojil Google účet ${DRIVE.email || ''}`);
+  Object.assign(DRIVE, {token:null, exp:0, email:'', folder:null, thumbs:null, cache:{}, mine:{}, owner:undefined, state:'off'});
+  REMOTE = null; DRIVE_BACKEND.ready = false; SYNC.ok = false;
+  ss('bt_gemail', '');
+  driveConnect(false, true);
 }
 // Přihlašovací okno Googlu jde otevřít jen po kliknutí → když už Disk používáš, připojí ho samo
 // tvoje první kliknutí kamkoli na stránce (a po hodině, kdy přihlášení vyprší, zase další kliknutí)
 document.addEventListener('click', e => {
   if (!S.key || !gClientId() || !ls('bt_gdrive', false) || REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.state === 'nofolder') return;
-  if (e.target.closest('#btnDrive, #btnDriveCreate, #btnDriveOff, #btnNoDrive, #btnClose')) return;
+  if (e.target.closest('#btnDrive, #btnDriveCreate, #btnDriveOff, #btnDriveSwitch, #btnNoDrive, #btnClose')) return;
   driveConnect(false);
 }, true);
-async function driveConnectInner(create) {
+async function driveConnectInner(create, pick) {
   status('☁️ Připojuju Google Disk…');
   try {
-    if (!DRIVE.token || Date.now() > DRIVE.exp - 60e3) await driveSignIn();
+    if (pick || !DRIVE.token || Date.now() > DRIVE.exp - 60e3) await driveSignIn(pick);
     if (!await driveInit(create)) { status('☁️ Na Disku zatím není složka „' + DRIVE_FOLDER + '“ – založ ji v ⚙️ Nastavení, nebo počkej, až ti ji někdo nasdílí.', true); renderMain(); return; }
     REMOTE = DRIVE_BACKEND; DRIVE_BACKEND.ready = false; ss('bt_gdrive', true);
     S.starWho = null; reloadMemory(); // kolekce ⭐ a 💡 podle toho, kdo je přihlášený
@@ -965,7 +975,9 @@ function renderSettings() {
         <span class="ch">Videa, kanály, archiv, ⭐ uložené, blokace, nápady, překlady i verze miniatur se ukládají na Google Disk do složky „${DRIVE_FOLDER}“. Kdo ji má nasdílenou a připojí se, vidí totéž – na PC, Macu i mobilu, i když ostatní mají vypnuté počítače.${SYNC.last ? ` Poslední synchronizace ${ago((Date.now() - SYNC.last) / 3600e3)}.` : ''}</span></span></div>
       ${REMOTE === DRIVE_BACKEND
         ? '<div class="setrow"><button id="btnDriveOff">Odpojit Disk</button><span class="ch">Data v prohlížeči zůstanou, jen se přestanou sdílet.</span></div>'
+          + `<div class="setrow"><button id="btnDriveSwitch">🔄 Změnit Google účet</button><span class="ch">Teď: <b>${esc(DRIVE.email)}</b>. Odhlásí tenhle účet ze stránky a nechá tě vybrat jiný (třeba ten, kterému patří složka „${DRIVE_FOLDER}“).</span></div>`
         : gClientId() ? `<div class="setrow"><button class="primary" id="btnDrive">☁️ Připojit Google Disk</button><span class="ch">Přihlášení Googlem. Platí hodinu, pak stačí kliknout znovu (nahoře se ukáže tlačítko).</span></div>
+          <div class="setrow"><button id="btnDriveSwitch">🔄 Přihlásit jiným účtem</button><span class="ch">${ls('bt_gemail', '') ? `Naposledy: <b>${esc(ls('bt_gemail', ''))}</b>. ` : ''}Otevře výběr Google účtu – když se omylem přihlašuje špatný.</span></div>
           ${DRIVE.state === 'nofolder' ? `<div class="setrow"><button id="btnDriveCreate">Založit složku „${DRIVE_FOLDER}“</button><span class="ch">Jen pro toho, kdo sdílení zakládá (ty). Grafik ji nezakládá – počká, až mu ji nasdílíš, jinak by měl vlastní, oddělenou.</span></div>` : ''}` : ''}
       <label class="setrow"><input id="gcidInput" value="${esc(gClientId())}" placeholder="…apps.googleusercontent.com" style="flex:1;min-width:0"><span><b>Client ID pro přihlášení Googlem</b><span class="ch">Z Google Cloud (OAuth klient typu Webová aplikace). Stačí vyplnit jednou; když je doplněný přímo ve stránce, nemusíš nic.</span></span></label>
     </div>
@@ -1901,6 +1913,7 @@ document.addEventListener('click', e => {
   else if (b.id === 'btnDrive') driveConnect(false);
   else if (b.id === 'btnNoDrive') { ss('bt_nodrive', true); showCountry(false); }
   else if (b.id === 'btnDriveCreate') driveConnect(true);
+  else if (b.id === 'btnDriveSwitch') driveSwitch();
   else if (b.id === 'btnDriveOff') { REMOTE = null; DRIVE.token = null; DRIVE.state = 'off'; ss('bt_gdrive', false); SYNC.ok = false; pullShared(); rerender(); }
   else if (b.dataset.country) { S.view = null; S.country = b.dataset.country; ss('bt_country', S.country); show(); }
   else if (b.dataset.loadall) loadAll(b.dataset.loadall);
