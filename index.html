@@ -249,7 +249,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$)/;
-const APP_VERSION = '2026-10-20.4'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-20.5'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2025,10 +2025,11 @@ async function pullShared() {
 })();
 // co minutu (když je stránka vidět) se podívat, jestli ostatní nenačetli něco nového – nic to nestojí
 setInterval(() => { if (!document.hidden && SYNC.ok) pullShared(); }, 30e3);
-// Nová verze stránky: co 5 minut se podívat, jestli na webu není novější APP_VERSION. Pokud ano, stránka se sama
+// Nová verze stránky: co 2 minuty (a při návratu do okna) se podívat, jestli na webu není novější APP_VERSION. Pokud ano, stránka se sama
 // obnoví (data zůstanou) – jen ne, když zrovna píšeš; pak ukáže tlačítko.
 async function checkNewVersion() {
-  if (location.protocol === 'file:') return;
+  if (location.protocol === 'file:' || Date.now() - (checkNewVersion.at || 0) < 20e3) return;
+  checkNewVersion.at = Date.now();
   try {
     const html = await (await fetch(location.pathname + '?v=' + Date.now(), {cache:'no-store'})).text();
     const v = (html.match(/APP_VERSION = '([^']+)'/) || [])[1];
@@ -2039,7 +2040,8 @@ async function checkNewVersion() {
     $('#status').insertAdjacentHTML('beforeend', '<button onclick="location.reload()">Obnovit</button>');
   } catch {}
 }
-setInterval(() => { if (!document.hidden) checkNewVersion(); }, 5 * 60e3);
+setInterval(() => { if (!document.hidden) checkNewVersion(); }, 2 * 60e3);
+addEventListener('focus', () => checkNewVersion());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNewVersion(); });
 </script>
 </body>
