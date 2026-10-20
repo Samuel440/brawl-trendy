@@ -506,11 +506,12 @@ async function api(endpoint, params) {
   const j = await res.json();
   if (j.error) {
     const reason = j.error.errors?.[0]?.reason || '';
-    if (reason === 'quotaExceeded' && /search/i.test(j.error.message)) {
+    // Google posílá „došla hledání“ s různými kódy (quotaExceeded, rateLimitExceeded, 429…) → poznáme to podle textu
+    if (/quota|limit/i.test(j.error.message) && /search/i.test(j.error.message)) {
       ss('bt_sq_block', ptDate()); quota();
       throw Object.assign(new Error('Google: na dnešek došlo 100 hledání pro tvůj klíč (sčítá všechna zařízení). Obnoví se v 9:00. Do té doby se dál obnovují zhlédnutí a nová videa ze sledovaných kanálů.'), {code:'search'});
     }
-    if (reason === 'quotaExceeded') throw new Error('Došel denní limit dotazů YouTube API. Obnoví se o půlnoci pacifického času (~9:00 u nás). Zatím vidíš uložená data.');
+    if (reason === 'quotaExceeded' || /quota exceeded/i.test(j.error.message)) throw new Error('Došel denní limit dotazů YouTube API. Obnoví se o půlnoci pacifického času (~9:00 u nás). Zatím vidíš uložená data.');
     if (reason === 'keyInvalid' || res.status === 400 && /key/i.test(j.error.message)) throw new Error('Neplatný API klíč – zkontroluj ho v ⚙️ Nastavení.');
     if (/referer|referrer/i.test(j.error.message)) throw new Error(`API klíč nesmí běžet na téhle adrese. V Google Cloud → Credentials → tvůj klíč → Websites přidej ${location.origin}/*`);
     throw new Error(j.error.message);
@@ -1418,7 +1419,12 @@ async function showCountry(force) {
   renderMain();
 }
 function renderCountry(set, c, p) {
-  if (!set) { $('#main').innerHTML = (p !== 'arch' && driveGate() ? driveGateHtml() : '') + `<div class="empty">${p === 'arch' ? 'Archiv je zatím prázdný – plní se sám z Novinek, Týdne a Celé doby.' : 'Zatím žádná data.'}</div>`; return; }
+  if (!set) {
+    const why = p === 'arch' ? 'Archiv je zatím prázdný – plní se sám z Novinek, Týdne a Celé doby.'
+      : searchBlocked() ? `Tenhle stát ještě nemáš načtený a na dnešek došla hledání (Google dává 100 denně, sčítá všechna zařízení s tvým klíčem). Obnoví se v 9:00. Do té doby: státy, které už načtené máš, se dál obnovují bez hledání – a data z jiných zařízení přijdou přes ☁️ Disk.`
+      : 'Zatím žádná data.';
+    $('#main').innerHTML = (p !== 'arch' && driveGate() ? driveGateHtml() : '') + `<div class="empty">${why}</div>`; return;
+  }
   const list = prepare(set.items, c).filter(matchQ).sort(SORTS[S.sort]);
   const q = S.q.trim(), qTr = q && QTR[c.lang + '|' + q];
   const fm = countBy(list, it => it.formats.map(f => f[0]), it => it.views);
