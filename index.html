@@ -89,6 +89,7 @@ details summary{cursor:pointer}
 .mixcard:hover{border-color:var(--accent)}
 .mixcard img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px}
 .mixcard b{font-size:15px}
+.mixtr{font-size:13px;color:var(--ok)}
 .mixnote{width:100%;margin-top:4px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
 .tver{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
 .tver > button{font-size:12px;padding:4px 8px}
@@ -833,6 +834,41 @@ function renderBlocked() {
         <div class="grow"><a class="chlink" href="${ytUrl(id)}" target="_blank" rel="noopener">${esc(e.t)}</a><div class="ch">${esc(e.ch)}</div></div>
         ${own ? `<button data-unblockv="${esc(id)}">↩ Vrátit</button>` : ''}</div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>`;
 }
+// ---------- 💾 Záloha dat: export do souboru a import (sloučí se s tím, co už je) ----------
+// Hodí se pro přenos mezi verzemi stránky (soubor z disku / localhost / web) – každá má v prohlížeči vlastní úložiště.
+function exportData() {
+  const data = {};
+  for (const k of Object.keys(localStorage)) if (SHARED_RX.test(k)) data[k] = JSON.parse(localStorage.getItem(k));
+  const blob = new Blob([JSON.stringify({brawlTrendy:1, at:Date.now(), meta:syncMeta(), data})], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), {href:url, download:`brawl-trendy-zaloha-${new Date().toISOString().slice(0, 10)}.json`});
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+const byId = (a = [], b = []) => { const m = new Map(a.map(i => [i.id, i])); b.forEach(i => { const o = m.get(i.id); if (!o || (i.views || 0) >= (o.views || 0)) m.set(i.id, i); }); return [...m.values()]; };
+// sloučení jednoho klíče: seznamy videí sjednotit, objekty doplnit, nápady sjednotit; nic se nemaže
+function mergeKey(k, mine, theirs) {
+  if (mine == null) return theirs;
+  if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), items:capItems(byId(mine.items, theirs.items))};
+  if (/^bt_mixsaved/.test(k)) { const seen = new Set(mine.map(s => s.at)); return [...mine, ...theirs.filter(s => !seen.has(s.at))].sort((a, b) => b.at - a.at); }
+  if (k === 'bt_my') return (theirs.videos?.length || 0) > (mine.videos?.length || 0) ? theirs : mine;
+  if (k === 'bt_block') return {videos:{...theirs.videos, ...mine.videos}, channels:{...theirs.channels, ...mine.channels}};
+  if (/^bt_ch_/.test(k)) { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) out[id] = out[id] ? {...out[id], ...e, ids:[...new Set([...(out[id].ids || []), ...(e.ids || [])])].slice(-40), manual:e.manual || out[id].manual, home:e.home || out[id].home} : e; return out; }
+  if (typeof mine === 'object' && !Array.isArray(mine)) return {...theirs, ...mine}; // ⭐, archiv, překlady, AI…
+  return mine;
+}
+async function importData(file) {
+  const j = JSON.parse(await file.text());
+  if (!j?.brawlTrendy || !j.data) throw new Error('Tohle není záloha Brawl Trendy.');
+  let n = 0;
+  for (const [k, v] of Object.entries(j.data)) {
+    if (!SHARED_RX.test(k)) continue;
+    const merged = mergeKey(k, ls(k, null), v);
+    if (JSON.stringify(merged) !== localStorage.getItem(k)) { ss(k, merged); n++; } // ss → uloží čas změny a pošle na Disk
+  }
+  reloadMemory(); TERMS = null;
+  return n;
+}
+
 // ---------- ⚙️ Nastavení ----------
 function renderSettings() {
   pageHeader('⚙️ Nastavení', 'Změny se ukládají hned.');
@@ -855,6 +891,10 @@ function renderSettings() {
       <div class="setrow"><span><b>Hledání dnes: ${q.s || 0} / ${S.slimit}${searchBlocked() ? ' – došla' : ''} · ostatní dotazy: ${(q.q || 0).toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}</b><span class="ch">Google dává na jeden API klíč 100 hledání a 10 000 ostatních dotazů denně, obnoví se kolem 9:00. Hledání je to vzácné: plné načtení státu stojí 1–2 hledání; obnova zhlédnutí a nová videa ze sledovaných kanálů hledání nestojí. Číslo tady je jen za tohle zařízení – Google sčítá všechna zařízení s tvým klíčem.</span></span></div>
       <label class="setrow"><input type="number" min="1" max="100" step="1" data-set="slimit" value="${S.slimit}" style="width:70px"><span><b>Můj denní limit hledání</b><span class="ch">Nad tenhle počet hledání denně stránka už nehledá (ostatní jede dál). Grafikovi s vlastním klíčem klidně nech 100, jinak třeba 20.</span></span></label>
       <div class="setrow"><button id="btnKey">Změnit API klíč</button><span class="ch">Každý člověk má mít svůj vlastní klíč – pak si navzájem kvótu neberete.</span></div>
+    </div>
+    <div class="sec"><h2>💾 Záloha dat</h2>
+      <div class="setrow"><button id="btnExport">⬇ Exportovat data</button><span class="ch">Stáhne soubor se všemi videi, kanály, archivem, ⭐, nápady a blokacemi. Hodí se na přenos mezi verzemi stránky (soubor z disku / localhost / web) nebo jako záloha.</span></div>
+      <label class="setrow"><input type="file" id="importInput" accept=".json,application/json"><span><b>⬆ Importovat data</b><span class="ch">Vyber soubor zálohy – data se přidají k tomu, co už tu je (nic se nesmaže). S připojeným Diskem se rovnou nahrají i tam.</span></span></label>
     </div>
     <div class="sec"><h2>👥 Sdílení s ostatními</h2>
       <div class="setrow"><span><b>${REMOTE === DRIVE_BACKEND ? `☁️ Google Disk připojen – ${esc(DRIVE.email)}` : SYNC.ok ? '🟢 Sdílení přes složku data (server na PC)' : '⚪ Sdílení neběží – data jsou jen v tomhle prohlížeči'}</b>
@@ -1565,8 +1605,17 @@ function reroll() {
   if (MIX.mode === 'trend') { const pool = trendPool(); MIX.b = pool.length ? pick(pool) : null; }
   else { do { MIX.b = pick(mine); } while (mine.length > 1 && MIX.b.id === MIX.a.id); }
 }
+// u videa ze zahraničí (v.c = stát) se pod originál vždy ukáže český překlad
 const mixCard = (v, lbl) => v ? `<a class="mixcard" href="${ytUrl(v.id)}" target="_blank" rel="noopener">
-    <img src="https://i.ytimg.com/vi/${esc(v.id)}/mqdefault.jpg" alt=""><span class="ch">${lbl}${v.c ? ' · ' + flag(v.c) + esc(v.c.name) : ''}</span><b>${esc(v.t)}</b></a>` : '<div class="empty">Pro trendy načti nejdřív Novinky nebo Týden (bere jen dlouhá videa, ne shorty).</div>';
+    <img src="https://i.ytimg.com/vi/${esc(v.id)}/mqdefault.jpg" alt=""><span class="ch">${lbl}${v.c ? ' · ' + flag(v.c) + esc(v.c.name) : ''}</span><b>${esc(v.t)}</b>
+    ${v.c ? `<span class="mixtr" data-mixtr="${esc(v.t)}" data-lang="${v.c.lang}">🇨🇿 ${TR[v.t] ? esc(TR[v.t]) : 'překládám…'}</span>` : ''}</a>` : '<div class="empty">Pro trendy načti nejdřív Novinky nebo Týden (bere jen dlouhá videa, ne shorty).</div>';
+async function translateMix() {
+  for (const el of document.querySelectorAll('.mixtr')) {
+    const t = el.dataset.mixtr;
+    if (!TR[t]) { try { await translate([t], el.dataset.lang); } catch { el.textContent = ''; continue; } }
+    el.textContent = '🇨🇿 ' + TR[t];
+  }
+}
 function mixSection() {
   const my = ls('bt_my', null), saved = ls(mixKey(), []);
   if (!my) return `<div class="addch"><input id="myInput" placeholder="@tvujkanal nebo odkaz na tvůj YouTube kanál"><button class="primary" id="btnMyLoad">Načíst moje videa za 2 roky (≈1 jednotka za 25 videí)</button></div>`;
@@ -1699,6 +1748,7 @@ function renderIdeas() {
       <div class="tags" style="margin-top:10px">${everBr.map(e => `<span class="tag ok">${esc(e.k)} · ${n(e.views)}</span>`).join('')}</div>` : '<div class="empty">Načti „Celá doba“ tlačítkem nahoře.</div>')}`;
   autoTranslate();
   aiCheck(COUNTRIES.flatMap(c => ['day', 'week'].flatMap(p => getSet(c.id, p)?.items || [])));
+  translateMix();
 }
 
 // ---------- Nastavení klíče ----------
@@ -1760,6 +1810,7 @@ document.addEventListener('click', e => {
   if (b.dataset.startab) { S.starTab = b.dataset.startab; S.starWho = null; } // ⭐ Uložené: Videa / Nápady (i z odkazu v míchači)
   if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); show(); }
   else if (b.dataset.startab) renderMain();
+  else if (b.id === 'btnExport') exportData();
   else if (b.id === 'btnDrive') driveConnect(false);
   else if (b.id === 'btnNoDrive') { ss('bt_nodrive', true); showCountry(false); }
   else if (b.id === 'btnDriveCreate') driveConnect(true);
@@ -1822,6 +1873,10 @@ document.addEventListener('input', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'mixNote') $('#btnMixSave').click(); if (e.key === 'Enter' && e.target.id === 'myInput') $('#btnMyLoad').click(); });
 document.addEventListener('change', e => {
   if (e.target.id === 'qScope') { S.qScope = e.target.value; onSearchInput(S.q); return; }
+  if (e.target.id === 'importInput' && e.target.files[0]) {
+    importData(e.target.files[0]).then(n => status(`💾 Import hotový – sloučeno ${n} částí dat.${REMOTE === DRIVE_BACKEND ? ' Nahrávám na Disk…' : ''}`)).catch(err => status(err.message, true));
+    return;
+  }
   if (e.target.id === 'gcidInput') { ss('bt_gcid', e.target.value.trim()); renderMain(); return; }
   if (e.target.dataset.chmode) { BLOCK.channels[e.target.dataset.chmode].mode = e.target.value; saveBlock(); return; }
   const k = e.target.dataset.set; if (!k) return;
