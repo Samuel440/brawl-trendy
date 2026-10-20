@@ -282,7 +282,7 @@ const $ = s => document.querySelector(s);
 // ---------- 👥 Sdílení dat mezi lidmi ----------
 // Sdílí se videa, kanály, archiv, uložené, blokace, nápady a překlady. Nesdílí se API klíč, kvóta ani nastavení.
 // Úložiště (REMOTE): ☁️ Google Disk (po přihlášení – funguje i na mobilu bez PC), jinak server.py na PC, jinak nic.
-var SHARED_RX = /^bt_(c_|ch_|arch_|block$|star$|mixsaved$|my$|aicache$|tr$|qtr$)/;
+var SHARED_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$)/;
 var SYNC = {meta:null, dirty:{}, timer:null, ok:null, last:0};
 var REMOTE = null;
 function syncMeta() { return SYNC.meta ??= (() => { try { return JSON.parse(localStorage.getItem('bt_meta')) || {}; } catch { return {}; } })(); }
@@ -375,6 +375,7 @@ async function driveInit(create) {
   const mime = "mimeType='application/vnd.google-apps.folder' and trashed=false";
   const found = await dList(`name='${dEsc(DRIVE_FOLDER)}' and ${mime}`);
   if (!found.length && !create) { DRIVE.state = 'nofolder'; return false; }
+  DRIVE.owner = found.length ? !!found[0].ownedByMe : true; // majitel složky = majitel stránky (smí blokovat)
   DRIVE.folder = found[0]?.id || await dFolder(DRIVE_FOLDER);
   DRIVE.thumbs = (await dList(`name='thumbs' and '${DRIVE.folder}' in parents and ${mime}`))[0]?.id || await dFolder('thumbs', DRIVE.folder);
   DRIVE.state = 'on';
@@ -427,6 +428,7 @@ async function driveConnect(create) {
     if (!DRIVE.token || Date.now() > DRIVE.exp - 60e3) await driveSignIn();
     if (!await driveInit(create)) { status('☁️ Na Disku zatím není složka „' + DRIVE_FOLDER + '“ – založ ji v ⚙️ Nastavení, nebo počkej, až ti ji někdo nasdílí.', true); renderMain(); return; }
     REMOTE = DRIVE_BACKEND; DRIVE_BACKEND.ready = false; ss('bt_gdrive', true);
+    S.starWho = null; reloadMemory(); // kolekce ⭐ a 💡 podle toho, kdo je přihlášený
     await pullShared(true);
     status(`☁️ Disk připojen (${DRIVE.email}).`);
   } catch (e) { DRIVE.state = 'off'; status(e.message === 'auth' ? 'Přihlášení vypršelo – připoj Disk znovu.' : e.message, true); }
@@ -770,7 +772,8 @@ function pageHeader(title, note) {
   $('#controls').innerHTML = `<div class="pagehead"><h2>${title}</h2><span class="ch">${note}</span><button id="btnClose" title="Zpět">✖</button></div>`;
 }
 function renderBlocked() {
-  pageHeader('🚫 Zablokované', 'Blokace platí pro všechny státy.');
+  const own = isOwner(); // blokovat a vracet smí jen majitel, ostatní seznam jen vidí
+  pageHeader('🚫 Zablokované', own ? 'Blokace platí pro všechny státy.' : 'Blokovat a vracet může jen majitel – tady jen vidíš, co je skryté.');
   const chs = Object.entries(BLOCK.channels).sort((a, b) => b[1].at - a[1].at);
   const vids = Object.entries(BLOCK.videos).sort((a, b) => b[1].at - a[1].at);
   const mopt = (id, e, v, l) => `<option value="${v}" ${e.mode === v ? 'selected' : ''}>${l}</option>`;
@@ -779,13 +782,13 @@ function renderBlocked() {
       <p class="hint">„Jen ověřená Brawl videa“ = z kanálu se ukáže jen video s Brawl Stars přímo v názvu, nebo v tazích a zároveň s Brawl miniaturou podle AI.</p>
       <div class="blist">${chs.map(([id, e]) => `<div class="brow">
         <a class="grow chlink" href="https://www.youtube.com/channel/${esc(id)}/videos" target="_blank" rel="noopener"><b>${esc(e.name)}</b></a>
-        <select data-chmode="${esc(id)}">${mopt(id, e, 'all', 'Celý kanál blokovaný')}${mopt(id, e, 'strict', 'Jen ověřená Brawl videa')}</select>
-        <button data-unblockch="${esc(id)}">↩ Vrátit</button></div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>
+        ${own ? `<select data-chmode="${esc(id)}">${mopt(id, e, 'all', 'Celý kanál blokovaný')}${mopt(id, e, 'strict', 'Jen ověřená Brawl videa')}</select>
+        <button data-unblockch="${esc(id)}">↩ Vrátit</button>` : `<span class="ch">${e.mode === 'strict' ? 'jen ověřená Brawl videa' : 'celý kanál'}</span>`}</div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>
     <div class="sec"><h2>🚫 Zablokovaná videa (${vids.length})</h2>
       <div class="blist">${vids.map(([id, e]) => `<div class="brow">
         <img src="https://i.ytimg.com/vi/${esc(id)}/default.jpg" width="80" alt="">
         <div class="grow"><a class="chlink" href="${ytUrl(id)}" target="_blank" rel="noopener">${esc(e.t)}</a><div class="ch">${esc(e.ch)}</div></div>
-        <button data-unblockv="${esc(id)}">↩ Vrátit</button></div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>`;
+        ${own ? `<button data-unblockv="${esc(id)}">↩ Vrátit</button>` : ''}</div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>`;
 }
 // ---------- ⚙️ Nastavení ----------
 function renderSettings() {
@@ -821,6 +824,7 @@ function renderSettings() {
     </div></div>`;
 }
 function block(it, kind) {
+  if (!isOwner()) return;
   if (kind === 'video') BLOCK.videos[it.id] = {t:it.t, ch:it.ch, chId:it.chId, at:Date.now()};
   else BLOCK.channels[it.chId] = {name:it.ch, mode:kind === 'channel' ? 'all' : 'strict', at:Date.now()};
   saveBlock();
@@ -891,12 +895,30 @@ function status(t, err) { const el = $('#status'); el.textContent = t; el.classN
 
 const CARD_ITEMS = new Map(); // id → video, kvůli tlačítkům na kartě
 // ---------- ⭐ Uložená videa (nejnověji uložené vždy první) ----------
-const STARS = ls('bt_star', {});
+// Kolekce podle člověka: majitel (komu patří složka na Disku, nebo kdo jede bez Disku) má bt_star / bt_mixsaved,
+// ostatní bt_star_g_<e-mail> / bt_mixsaved_g_<e-mail>. Vlastní kolekce se vybere sama podle přihlášení na zařízení.
+const slug = e => e.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+const isOwner = () => REMOTE !== DRIVE_BACKEND || DRIVE.owner !== false;
+const meWho = () => isOwner() ? '' : 'g_' + slug(DRIVE.email);
+const starKey = (who = meWho()) => 'bt_star' + (who ? '_' + who : '');
+const mixKey = (who = meWho()) => 'bt_mixsaved' + (who ? '_' + who : '');
+function collections(base) {
+  const out = new Set([meWho(), '']);
+  for (const k of Object.keys(localStorage)) { const m = k.match(new RegExp(`^${base}_(g_[a-z0-9_]+)$`)); if (m) out.add(m[1]); }
+  return [...out];
+}
+const whoLabel = who => who === meWho() ? 'Moje' : who === '' ? 'Majitel' : who.slice(2).split('_')[0];
+// miniatury se hlídají u videí ze všech kolekcí – hlídá ten, komu zrovna stránka běží
+const allStarIds = () => [...new Set(collections('bt_star').flatMap(w => Object.keys(w === meWho() ? STARS : ls(starKey(w), {}))))];
+const STARS = ls(starKey(), {});
 const RAW_KEYS = ['id', 't', 'ch', 'chId', 'pub', 'views', 'likes', 'com', 'dur', 'subs', 'cc', 'lang', 'chL', 'homeL', 'bs', 'bsT', 'bsN', 'bsTag', 'live', 'src', 'cand', 'weak'];
 function toggleStar(it, b) {
-  if (STARS[it.id]) { delete STARS[it.id]; delVers(it.id).catch(() => {}); }
+  if (STARS[it.id]) {
+    delete STARS[it.id];
+    if (!allStarIds().includes(it.id)) delVers(it.id).catch(() => {}); // verze mazat, jen když video nemá uložené nikdo jiný
+  }
   else { STARS[it.id] = {...Object.fromEntries(RAW_KEYS.filter(k => k in it).map(k => [k, it[k]])), cid:it.c.id, at:Date.now()}; checkThumb(it.id).catch(() => {}); }
-  ss('bt_star', STARS);
+  ss(starKey(), STARS);
   if (S.period === 'star' && !S.view) { renderHeader(); renderMain(); return; }
   document.querySelectorAll(`.card[data-id="${it.id}"] .star`).forEach(el => {
     el.classList.toggle('on', !!STARS[it.id]); el.textContent = STARS[it.id] ? '★' : '☆';
@@ -911,7 +933,7 @@ async function refreshStars() {
   ss('bt_star_ts', Date.now());
   try {
     for (const it of await details(ids)) if (STARS[it.id]) STARS[it.id] = {...STARS[it.id], views:it.views, likes:it.likes, com:it.com, subs:it.subs};
-    ss('bt_star', STARS);
+    ss(starKey(), STARS);
     if (S.period === 'star' && !S.view) renderMain();
   } catch {}
 }
@@ -989,7 +1011,7 @@ async function checkThumb(id) {
 }
 let thumbsRunning = false;
 async function checkAllThumbs(force) {
-  const ids = Object.keys(STARS);
+  const ids = allStarIds();
   if (thumbsRunning || !ids.length || (!force && Date.now() - ls('bt_thumbs_ts', 0) < 30 * 60e3)) return;
   thumbsRunning = true; ss('bt_thumbs_ts', Date.now());
   let changed = false;
@@ -1000,8 +1022,8 @@ async function checkAllThumbs(force) {
 const fmtDate = t => new Date(t).toLocaleString('cs', {day:'numeric', month:'numeric', hour:'2-digit', minute:'2-digit'});
 // do karet v Uložených doplní počet verzí a rozbalovací pás se všemi verzemi
 async function fillVersions() {
-  for (const id of Object.keys(STARS)) {
-    const card = document.querySelector(`.card[data-id="${id}"] .body`); if (!card) continue;
+  for (const el of document.querySelectorAll('#main .card[data-id]')) {
+    const id = el.dataset.id, card = el.querySelector('.body');
     const vers = await getVers(id).catch(() => []);
     card.querySelector('.tver')?.remove();
     card.insertAdjacentHTML('beforeend', `<div class="tver">
@@ -1026,23 +1048,29 @@ async function downloadVersion(b) {
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 function renderStars() {
-  const nIdeas = ls('bt_mixsaved', []).length;
-  const tabs = `<div class="mixbar"><span class="seg"><button data-startab="videos" class="${S.starTab !== 'ideas' ? 'on' : ''}">⭐ Videa (${Object.keys(STARS).length})</button><button data-startab="ideas" class="${S.starTab === 'ideas' ? 'on' : ''}">💡 Nápady (${nIdeas})</button></span></div>`;
-  if (S.starTab === 'ideas') {
-    $('#main').innerHTML = tabs + `<div class="summary"><h3>💡 Uložené nápady – ${nIdeas}</h3>
-      <div class="row ch">Kombinace z 🎲 Míchače (v Nápadech & trendech) i s tvou poznámkou. Poznámku můžeš kdykoli upravit, ukládá se rovnou.</div></div>
-      ${savedIdeasHtml() || '<div class="empty">Zatím nic. V 💡 Nápady & trendy → 🎲 Míchač zamíchej videa a ulož nápad.</div>'}`;
+  const ideas = S.starTab === 'ideas', base = ideas ? 'bt_mixsaved' : 'bt_star';
+  const who = S.starWho ?? meWho(), mine = who === meWho();
+  const coll = ideas ? ls(mixKey(who), []) : mine ? STARS : ls(starKey(who), {});
+  const count = (b, w) => b === 'bt_star' ? Object.keys(w === meWho() ? STARS : ls(starKey(w), {})).length : ls(mixKey(w), []).length;
+  // nahoře: Videa / Nápady, pod tím kolekce lidí (vlastní je vybraná automaticky podle přihlášení)
+  const tabs = `<div class="mixbar"><span class="seg"><button data-startab="videos" class="${!ideas ? 'on' : ''}">⭐ Videa</button><button data-startab="ideas" class="${ideas ? 'on' : ''}">💡 Nápady</button></span>
+    <span class="seg">${collections(base).map(w => `<button data-starwho="${w}" class="${w === who ? 'on' : ''}">${w === meWho() ? '👤 ' : '👥 '}${esc(whoLabel(w))} (${count(base, w)})</button>`).join('')}</span></div>`;
+  if (ideas) {
+    $('#main').innerHTML = tabs + `<div class="summary"><h3>💡 Uložené nápady – ${esc(whoLabel(who))} – ${coll.length}</h3>
+      <div class="row ch">${mine ? 'Kombinace z 🎲 Míchače (v Nápadech & trendech) i s tvou poznámkou. Poznámku můžeš kdykoli upravit, ukládá se rovnou.' : 'Nápady druhého člověka – jen ke čtení.'}</div></div>
+      ${savedIdeasHtml(who) || '<div class="empty">Zatím nic. V 💡 Nápady & trendy → 🎲 Míchač zamíchej videa a ulož nápad.</div>'}`;
     return;
   }
-  const list = Object.values(STARS).sort((a, b) => b.at - a.at).map(s => enrich(s, C(s.cid)))
+  const list = Object.values(coll).sort((a, b) => b.at - a.at).map(s => enrich(s, C(s.cid)))
     .filter(it => S.type === 'all' || (S.type === 'short' ? it.short : !it.short)).filter(matchQ);
-  $('#main').innerHTML = tabs + `<div class="summary"><h3>⭐ Uložená videa – ${list.length}</h3>
+  $('#main').innerHTML = tabs + `<div class="summary"><h3>⭐ Uložená videa – ${esc(whoLabel(who))} – ${list.length}</h3>
+    ${mine ? '' : '<div class="row ch">Kolekce druhého člověka. ☆ u videa ho uloží do tvé kolekce.</div>'}
     <div class="row ch">Naposledy uložené jsou vždy první. Hvězdičkou ☆ v rohu miniatury video uložíš, ★ ho zase odebereš. Uložená videa nemizí ani když vypadnou z Novinek a Týdne.</div>
     <div class="row ch">🖼️ U uložených videí se každých 30 min hlídá miniatura – když ji youtuber změní (třeba po A/B testu), uloží se nová verze do sdílené složky. Hlídá ten, komu zrovna stránka běží, a verze vidí všichni. Varianty, které YouTube během testu ukazuje jen části diváků, veřejně dostupné nejsou.
       <button id="btnThumbsNow">Zkontrolovat miniatury teď</button></div></div>
     ${list.length ? `<div class="grid">${list.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Zatím nic. Klikni na ☆ v rohu miniatury u videa, které se ti líbí.</div>'}`;
   autoTranslate();
-  refreshStars();
+  if (mine) refreshStars();
   fillVersions();
 }
 // Stažení miniatury v nejvyšší dostupné kvalitě (maxres 1280×720 → sd → hq)
@@ -1086,14 +1114,14 @@ function card(it, i, showCountry) {
       <div class="stats"><span><b>${n(it.views)}</b> zhlédnutí</span><span>${n(it.vph)}/h</span><span>${ago(it.ageH)}</span></div>
       <div class="tags">${tags.join('')}</div>
       <div class="idea">💡 ${esc(ideaFor(it))}</div>
-      <div class="actions"><button data-tr>🌐 ${S.trAuto && TR[it.t] ? 'Originál' : 'Přeložit'}</button><button data-copy>📋 Kopírovat</button><button data-thumb title="Stáhnout miniaturu v plné kvalitě">🖼️</button><a href="${trUrl(it.t)}" target="_blank" rel="noopener" title="Otevřít v Google Překladači">↗</a><button class="blockbtn" data-block title="Nemá to nic s Brawlem – zablokovat">✖</button></div>
-      <div class="blockmenu" hidden>
+      <div class="actions"><button data-tr>🌐 ${S.trAuto && TR[it.t] ? 'Originál' : 'Přeložit'}</button><button data-copy>📋 Kopírovat</button><button data-thumb title="Stáhnout miniaturu v plné kvalitě">🖼️</button><a href="${trUrl(it.t)}" target="_blank" rel="noopener" title="Otevřít v Google Překladači">↗</a>${isOwner() ? '<button class="blockbtn" data-block title="Nemá to nic s Brawlem – zablokovat">✖</button>' : ''}</div>
+      ${isOwner() ? `<div class="blockmenu" hidden>
         <b>Zablokovat:</b>
         <button data-blockkind="video">Jen toto video</button>
         <button data-blockkind="channel">Celý kanál</button>
         <button data-blockkind="strict" title="Ukáže z kanálu jen videa s Brawl Stars v názvu, nebo v tazích + Brawl miniaturou">Kanál – jen ověřená Brawl videa</button>
         <button data-blockcancel>Zrušit</button>
-      </div>
+      </div>` : ''}
     </div></article>`;
 }
 
@@ -1486,7 +1514,7 @@ function reroll() {
 const mixCard = (v, lbl) => v ? `<a class="mixcard" href="${ytUrl(v.id)}" target="_blank" rel="noopener">
     <img src="https://i.ytimg.com/vi/${esc(v.id)}/mqdefault.jpg" alt=""><span class="ch">${lbl}${v.c ? ' · ' + flag(v.c) + esc(v.c.name) : ''}</span><b>${esc(v.t)}</b></a>` : '<div class="empty">Pro trendy načti nejdřív Novinky nebo Týden (bere jen dlouhá videa, ne shorty).</div>';
 function mixSection() {
-  const my = ls('bt_my', null), saved = ls('bt_mixsaved', []);
+  const my = ls('bt_my', null), saved = ls(mixKey(), []);
   if (!my) return `<div class="addch"><input id="myInput" placeholder="@tvujkanal nebo odkaz na tvůj YouTube kanál"><button class="primary" id="btnMyLoad">Načíst moje videa za 2 roky (≈1 jednotka za 25 videí)</button></div>`;
   // starší uložený kanál ještě nemá délky videí → jednorázově doplnit (pak se vyřadí shorty a streamy)
   if (my.videos.some(v => v.dur === undefined) && !MIX.enriching && !MIX.enrichFailed) {
@@ -1509,13 +1537,13 @@ function mixSection() {
     ${saved.length ? `<div class="row ch">📌 Uložených nápadů: ${saved.length} – najdeš je v <button data-period="star" data-startab="ideas">⭐ Uložené → 💡 Nápady</button></div>` : ''}`;
 }
 // seznam uložených nápadů (zobrazuje se v ⭐ Uložené → 💡 Nápady)
-function savedIdeasHtml() {
-  const saved = ls('bt_mixsaved', []);
+function savedIdeasHtml(who = meWho()) {
+  const saved = ls(mixKey(who), []), ro = who !== meWho(); // cizí nápady jen ke čtení
   return saved.length ? `<div class="blist">${saved.map((s, i) => `<div class="brow">
       <a href="${ytUrl(s.a.id)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${esc(s.a.id)}/default.jpg" width="64" alt=""></a><span class="plus">+</span><a href="${ytUrl(s.b.id)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${esc(s.b.id)}/default.jpg" width="64" alt=""></a>
       <div class="grow"><div class="ch">${esc(s.a.t)} <b>+</b> ${esc(s.b.t)} · ${fmtDate(s.at)}</div>
-        <input class="mixnote" data-mixnote="${i}" value="${esc(s.note)}" placeholder="Můj nápad…"></div>
-      <button data-mixdel="${i}" title="Smazat">✖</button></div>`).join('')}</div>` : '';
+        <input class="mixnote" ${ro ? 'disabled' : `data-mixnote="${i}"`} value="${esc(s.note)}" placeholder="${ro ? '' : 'Můj nápad…'}"></div>
+      ${ro ? '' : `<button data-mixdel="${i}" title="Smazat">✖</button>`}</div>`).join('')}</div>` : '';
 }
 async function myLoadUI(b) {
   status('📺 Načítám tvoje videa…');
@@ -1581,7 +1609,7 @@ function renderIdeas() {
       <div class="row ch">Denní limit je 10 000 jednotek. Novinky ze všech států ≈ 1 500 (když jsou všechna data stará), takže je klidně obnovuj několikrát denně. Data se ukládají, takže když je čerstvá, nic se nestahuje znovu.</div>
     </div>
 
-    ${sec('mix', '🎲 Míchač nápadů z mých videí', ls('bt_mixsaved', []).length ? ls('bt_mixsaved', []).length + ' uložených' : '',
+    ${sec('mix', '🎲 Míchač nápadů z mých videí', ls(mixKey(), []).length ? ls(mixKey(), []).length + ' uložených' : '',
       'Dvě náhodná videa vedle sebe – zkus z nich spojit nový nápad (např. „účet v jedné barvě“ + „co o tobě říká tvůj main“ → hraju za mainu na účtu v jedné barvě). Dobrou kombinaci si ulož i s poznámkou.',
       mixSection())}
 
@@ -1672,7 +1700,8 @@ setInterval(() => {
 
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.startab) S.starTab = b.dataset.startab; // ⭐ Uložené: Videa / Nápady (i z odkazu v míchači)
+  if (b.dataset.starwho !== undefined) { S.starWho = b.dataset.starwho; renderMain(); return; }
+  if (b.dataset.startab) { S.starTab = b.dataset.startab; S.starWho = null; } // ⭐ Uložené: Videa / Nápady (i z odkazu v míchači)
   if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); show(); }
   else if (b.dataset.startab) renderMain();
   else if (b.id === 'btnDrive') driveConnect(false);
@@ -1698,10 +1727,10 @@ document.addEventListener('click', e => {
   else if (b.dataset.mixmode) { MIX.mode = b.dataset.mixmode; ss('bt_mixmode', MIX.mode); reroll(); renderMain(); }
   else if (b.id === 'btnMixSave') {
     if (!MIX.a || !MIX.b) return;
-    ss('bt_mixsaved', [{a:slim(MIX.a), b:slim(MIX.b), note:$('#mixNote').value.trim(), at:Date.now()}, ...ls('bt_mixsaved', [])]);
+    ss(mixKey(), [{a:slim(MIX.a), b:slim(MIX.b), note:$('#mixNote').value.trim(), at:Date.now()}, ...ls(mixKey(), [])]);
     reroll(); renderMain();
   }
-  else if (b.dataset.mixdel !== undefined) { const s = ls('bt_mixsaved', []); s.splice(+b.dataset.mixdel, 1); ss('bt_mixsaved', s); renderMain(); }
+  else if (b.dataset.mixdel !== undefined) { const s = ls(mixKey(), []); s.splice(+b.dataset.mixdel, 1); ss(mixKey(), s); renderMain(); }
   else if (b.dataset.tver !== undefined) showVersions(b);
   else if (b.dataset.vdl !== undefined) downloadVersion(b);
   else if (b.id === 'btnThumbsNow') { b.textContent = 'Kontroluju…'; checkAllThumbs(true).then(() => { b.textContent = '✔ Hotovo'; fillVersions(); }); }
@@ -1731,7 +1760,7 @@ document.addEventListener('toggle', e => {
 document.addEventListener('input', e => {
   if (e.target.id === 'q') onSearchInput(e.target.value);
   // poznámka u uloženého nápadu se ukládá rovnou při psaní (bez překreslení)
-  if (e.target.dataset.mixnote !== undefined) { const s = ls('bt_mixsaved', []); s[+e.target.dataset.mixnote].note = e.target.value; ss('bt_mixsaved', s); }
+  if (e.target.dataset.mixnote !== undefined) { const s = ls(mixKey(), []); s[+e.target.dataset.mixnote].note = e.target.value; ss(mixKey(), s); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'mixNote') $('#btnMixSave').click(); if (e.key === 'Enter' && e.target.id === 'myInput') $('#btnMyLoad').click(); });
 document.addEventListener('change', e => {
@@ -1771,7 +1800,7 @@ try { for (const k of Object.keys(localStorage)) if (/^bt_(c|ch|arch)_(id|vn|sa)
 // po stažení sdílených dat od ostatních obnovit to, co je načtené v paměti
 function reloadMemory() {
   const swap = (obj, val) => { for (const k of Object.keys(obj)) delete obj[k]; Object.assign(obj, val); };
-  swap(STARS, ls('bt_star', {})); swap(BLOCK, ls('bt_block', {videos:{}, channels:{}}));
+  swap(STARS, ls(starKey(), {})); swap(BLOCK, ls('bt_block', {videos:{}, channels:{}}));
   swap(AI_CACHE, ls('bt_aicache', {})); swap(TR, ls('bt_tr', {})); swap(QTR, ls('bt_qtr', {}));
   for (const k of Object.keys(CHCACHE)) delete CHCACHE[k];
   TERMS = null;
