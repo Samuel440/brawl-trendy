@@ -1,0 +1,1791 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Brawl Trendy</title>
+<style>
+:root{--bg:#0f1117;--panel:#181b24;--panel2:#212532;--text:#e9ecf2;--muted:#9aa3b2;--accent:#ffcc00;--hot:#ff4f6d;--ok:#3ddc84;--blue:#4fa3ff;--line:#2a2f3c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 "Segoe UI",system-ui,Roboto,sans-serif}
+a{color:inherit}
+button,select{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.costly{background:#fff;color:#111;border-color:#fff}
+button.costly:hover{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+button:disabled{opacity:.55;cursor:default}
+button.primary{background:var(--accent);color:#111;border-color:var(--accent);font-weight:700}
+header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.96);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 16px}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.logo{font-weight:900;font-size:20px;letter-spacing:.5px}
+.logo span{color:var(--accent)}
+#status{color:var(--muted);flex:1;min-width:160px}
+#status.err{color:var(--hot)}
+.right{display:flex;gap:8px;align-items:center}
+#quota{color:var(--muted);font-size:12px}
+nav{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+nav button{border-radius:999px;padding:7px 14px;font-weight:600}
+nav button.on{background:var(--accent);color:#111;border-color:var(--accent)}
+#countries{display:flex;gap:6px;margin-top:8px;overflow-x:auto;padding-bottom:4px}
+#countries button{white-space:nowrap;border-radius:8px;padding:5px 10px}
+#countries button.on{border-color:var(--accent);color:var(--accent);font-weight:700}
+.flag{width:20px;height:15px;object-fit:cover;border-radius:2px;vertical-align:-2px;margin-right:6px;box-shadow:0 0 0 1px rgba(255,255,255,.15)}
+.tag .flag{width:14px;height:10px;margin-right:4px;vertical-align:-1px}
+#controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;color:var(--muted);font-size:13px}
+#controls label{display:flex;gap:5px;align-items:center}
+main{padding:16px;max-width:1500px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.thumb{position:relative;display:block;aspect-ratio:16/9;background:#000}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.rank{position:absolute;left:8px;top:8px;background:var(--accent);color:#111;font-weight:900;border-radius:6px;padding:1px 7px}
+.dur{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.8);border-radius:4px;padding:0 5px;font-size:12px}
+.body{padding:10px 12px;display:flex;flex-direction:column;gap:6px;flex:1}
+.title{font-weight:650;text-decoration:none;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.title:hover{color:var(--accent)}
+.chlink{text-decoration:none;color:var(--text)}
+.chlink:hover{color:var(--accent);text-decoration:underline}
+.ch{color:var(--muted);font-size:12.5px}
+.stats{display:flex;gap:10px;flex-wrap:wrap;font-size:13px}
+.stats b{color:var(--accent)}
+.tags{display:flex;gap:4px;flex-wrap:wrap}
+.tag{font-size:11px;border-radius:999px;padding:1px 8px;background:#2b3142;color:#cfd6e4}
+.tag.hot{background:rgba(255,79,109,.18);color:#ff8ea2}
+.tag.ok{background:rgba(61,220,132,.15);color:#7ff0b0}
+.tag.blue{background:rgba(79,163,255,.15);color:#9cc9ff}
+.idea{font-size:12.5px;background:rgba(255,204,0,.08);border-left:3px solid var(--accent);padding:5px 8px;border-radius:4px}
+.actions{display:flex;gap:6px;margin-top:auto;padding-top:4px}
+.actions a,.actions button{font-size:12px;padding:4px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);text-decoration:none}
+.summary{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px}
+.summary h3,.sec h2{margin:0 0 8px}
+.summary .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0}
+.summary .lbl{color:var(--muted);font-size:12px;min-width:90px}
+.sec{margin:22px 0}
+.sec h2{font-size:18px}
+.sec p.hint{color:var(--muted);margin:-4px 0 10px}
+table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);font-size:13px}
+th{color:var(--muted);font-weight:600}
+.bar{height:6px;background:var(--accent);border-radius:3px}
+.empty{color:var(--muted);padding:40px;text-align:center}
+.more{display:block;margin:18px auto}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:var(--panel2);padding:6px 12px}
+.seg button.on{background:var(--accent);color:#111;font-weight:700}
+.seg button.costly{background:#fff;color:#111}
+.sec h3{margin:14px 0 8px}
+details summary{cursor:pointer}
+.addch{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.addch input{flex:1;min-width:200px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
+.thumb .star{position:absolute;right:6px;top:6px;width:32px;height:32px;border-radius:50%;border:0;padding:0;font-size:19px;line-height:32px;background:rgba(0,0,0,.6);color:#fff;cursor:pointer}
+.thumb .star:hover{background:rgba(0,0,0,.85);color:var(--accent)}
+.thumb .star.on{color:var(--accent)}
+.mixbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.mix{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center}
+@media (max-width:700px){.mix{grid-template-columns:1fr}}
+.mix .plus,.brow .plus{font-size:28px;font-weight:900;color:var(--accent);text-align:center}
+.brow .plus{font-size:18px}
+.mixcard{display:flex;flex-direction:column;gap:6px;text-decoration:none;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px}
+.mixcard:hover{border-color:var(--accent)}
+.mixcard img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px}
+.mixcard b{font-size:15px}
+.mixnote{width:100%;margin-top:4px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
+.tver{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
+.tver > button{font-size:12px;padding:4px 8px}
+.tstrip{display:flex;gap:8px;overflow-x:auto;width:100%;padding-bottom:4px}
+.tstrip[hidden]{display:none}
+.tstrip figure{margin:0;flex:0 0 150px}
+.tstrip img{width:150px;border-radius:6px;display:block}
+.tstrip figcaption{font-size:11px;color:var(--muted);display:flex;gap:4px;align-items:center;margin-top:3px}
+.tstrip figcaption button{margin-left:auto;font-size:11px;padding:1px 6px}
+.isec{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:0 14px;margin:10px 0}
+.isec[open]{padding-bottom:14px}
+.isec > summary{display:flex;gap:10px;align-items:center;padding:12px 0;cursor:pointer;list-style:none}
+.isec > summary::-webkit-details-marker{display:none}
+.isec > summary::before{content:'▸';color:var(--accent);transition:transform .15s}
+.isec[open] > summary::before{transform:rotate(90deg)}
+.isec > summary h2{margin:0;font-size:17px}
+.isec .fmt{background:var(--panel2)}
+.fmts{display:grid;gap:8px}
+.fmt{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:0 12px}
+.fmt[open]{padding-bottom:12px}
+.fmt summary{display:flex;gap:12px;align-items:center;padding:10px 0;flex-wrap:wrap}
+.fmt summary b{min-width:170px}
+.fmt .fbar{flex:1;min-width:80px;max-width:300px}
+.fmt .idea{margin-bottom:10px}
+button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
+/* mobil: lišta se nelepí nahoře (jinak zabere půl obrazovky) a tlačítka jsou menší */
+@media (max-width:600px){
+  header{position:static;padding:8px 12px}
+  main{padding:12px}
+  nav{gap:4px;margin-top:6px}
+  nav button,.seg button{padding:5px 8px;font-size:12.5px}
+  .right{gap:4px;flex-wrap:wrap}
+  .right button{padding:4px 7px;font-size:12px}
+  #quota{font-size:11px}
+  #countries button{padding:4px 8px;font-size:12.5px}
+  #controls{gap:6px;font-size:12px}
+  .search{flex-wrap:wrap}
+  .search select{width:100%}
+  .grid{grid-template-columns:1fr}
+}
+.chip{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:var(--ok)}
+.pagehead{display:flex;align-items:center;gap:12px;width:100%}
+.pagehead h2{margin:0;font-size:20px;color:var(--text)}
+.pagehead #btnClose{margin-left:auto;width:38px;height:38px;border-radius:50%;font-size:16px;padding:0}
+.pagehead #btnClose:hover{border-color:var(--hot);color:var(--hot)}
+.settings{max-width:760px}
+.setrow{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px}
+.setrow input[type=checkbox]{margin-top:3px;width:18px;height:18px;accent-color:var(--accent)}
+.setrow > span{display:flex;flex-direction:column;gap:2px}
+.search{display:flex;gap:8px;margin-top:8px}
+.search input{flex:1;min-width:0;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
+.search input:focus{outline:none;border-color:var(--accent)}
+.actions .blockbtn{margin-left:auto;color:var(--hot)}
+.blockmenu{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;background:rgba(255,79,109,.08);border:1px solid rgba(255,79,109,.35);border-radius:8px;padding:8px}
+.blockmenu[hidden]{display:none}
+.blockmenu button{font-size:12px;padding:4px 8px}
+.blist{display:grid;gap:6px}
+.brow{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;flex-wrap:wrap}
+.brow .grow{flex:1;min-width:200px}
+.tag button.x{background:none;border:0;padding:0 0 0 4px;font-size:11px;color:inherit;cursor:pointer}
+.setup{max-width:720px;margin:30px auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+.setup ol{padding-left:20px}
+.setup li{margin:6px 0}
+.setup input{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;margin:8px 0}
+.setup code{background:var(--panel2);padding:1px 5px;border-radius:4px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:800px){.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div class="logo">BRAWL<span>TRENDY</span></div>
+    <div id="status"></div>
+    <div class="right"><span id="quota"></span><span id="driveSlot"></span><button id="btnBlocked">🚫 Zablokované</button><button id="btnSettings">⚙️ Nastavení</button></div>
+  </div>
+  <nav id="tabs"></nav>
+  <div id="countries"></div>
+  <div id="controls"></div>
+  <div class="search">
+    <input id="q" type="search" placeholder="🔎 Hledat v názvech videí – piš česky, přeloží se do jazyka státu (např. opening, nový brawler, glitch)">
+    <select id="qScope"><option value="view">v tomto výběru</option><option value="all">ve všech uložených videích</option></select>
+  </div>
+</header>
+<main id="main"></main>
+
+<script>
+// ---------- Konfigurace ----------
+const COUNTRIES = [
+  {id:'it', name:'Itálie',    lang:'it', region:'IT'},
+  {id:'de', name:'Německo',   lang:'de', region:'DE', regions:['DE', 'AT', 'CH']},
+  {id:'ru', name:'Rusko',     lang:'ru', region:'RU', q:'brawl stars|бравл старс', script:/[Ѐ-ӿ]/},
+  {id:'ua', name:'Ukrajina',  lang:'uk', region:'UA', q:'brawl stars|бравл старс', script:/[Ѐ-ӿ]/},
+  {id:'pl', name:'Polsko',    lang:'pl', region:'PL'},
+  {id:'fr', name:'Francie',   lang:'fr', region:'FR', regions:['FR', 'BE']},
+  {id:'es', name:'Španělsko', lang:'es', region:'ES', regions:['ES', 'MX', 'AR', 'CO', 'CL', 'PE']},
+  {id:'br', name:'Brazílie',  lang:'pt', region:'BR', regions:['BR', 'PT']},
+  {id:'tr', name:'Turecko',   lang:'tr', region:'TR'},
+  {id:'jp', name:'Japonsko',  lang:'ja', region:'JP', q:'brawl stars|ブロスタ', script:/[぀-ヿ一-鿿]/},
+  {id:'kr', name:'Korea',     lang:'ko', region:'KR', q:'brawl stars|브롤스타즈', script:/[가-힯]/},
+  {id:'cz', name:'Česko (konkurence)', lang:'cs', region:'CZ'},
+];
+const PERIODS = {
+  day:  {label:'🔥 Novinky 24 h', hours:24,  ttl:20},
+  week: {label:'📅 Týden',        hours:168, ttl:120},
+  month:{label:'📆 Měsíc',        hours:720, ttl:360},
+  all:  {label:'🏆 Celá doba',    hours:null, ttl:1440},
+  arch: {label:'🗄️ Archiv', local:true},
+  star: {label:'⭐ Uložené', local:true},
+  ideas:{label:'💡 Nápady & trendy'},
+};
+const TIME_PERIODS = ['day', 'week', 'month', 'all']; // jeden přepínač; archiv, uložené a nápady jsou zvlášť tlačítka
+const COST_SET = 102; // search 100 + videos 1 + channels 1
+
+// Formáty videí (vícejazyčně) + tip, co s tím udělat na CZ kanálu
+const FORMATS = [
+  ['Nový brawler', /new brawler|nuovo brawler|neuer brawler|nouveau brawler|nuevo brawler|novo brawler|now[ya] (zadymiarz|brawler)|нов(ый|ого) (бравлер|боец|персонаж)|yeni (savaşçı|karakter)|brawler baru/i, 'Novinka – natoč CZ video o novém brawlerovi co nejdřív, dokud to v ČR nikdo nemá.'],
+  ['Update / Brawl Talk', /update|aggiornamento|aktualisierung|mise à jour|actualizaci[oó]n|atualiza[cç][aã]o|aktualizacj|обновлени|güncelleme|brawl ?talk|sneak ?peek|leak|утечк|слив/i, 'Rychlá reakce/shrnutí updatu česky – rychlost je tu všechno.'],
+  ['Zdarma / free', /free|gratis|kostenlos|gratuit|gr[aá]tis|za darmo|бесплатн|bedava|ücretsiz|halal/i, '„Jak získat X zdarma“ – udělej CZ návod, pokud to opravdu funguje.'],
+  ['Bug / glitch / trik', /\bbug|glitch|hack|trick|trucco|astuce|truco|баг|глитч|фишк|секрет|hile|secret|segreto|geheim/i, 'Ověř bug/trik ve hře a natoč vlastní CZ verzi.'],
+  ['Opening boxů / dropů', /\bbox|drop|opening|apertura|öffn|ouverture|открыт|кейс|сундук|дроп|açılım|kutu|starr/i, 'Opening ve stejném stylu (stejný počet/typ dropů, podobná miniatura).'],
+  ['Challenge', /challenge|sfida|herausforderung|d[ée]fi|desaf[ií]o|wyzwanie|челлендж|испытани|meydan okuma|tantangan/i, 'Přeber pravidla challenge a udělej ji s vlastním twistem.'],
+  ['Noob vs Pro', /noob|нуб|nub\b|\bpro\b|про\b/i, 'Noob vs Pro formát funguje skoro vždy – udělej s aktuálním brawlerem.'],
+  ['Versus / 1v1', /\bvs\.?\b|versus|против|\b1v1\b|1 vs 1/i, 'Souboj dvou brawlerů/hráčů – vyber dvojici, která je teď v meta.'],
+  ['Trofeje / rank / rekord', /troph|trofe|kubk|кубк|rank|ранг|рекорд|record|rekord|masters|legendary|mythic|push/i, 'Push/rekord video – ukaž vlastní cestu k cíli.'],
+  ['Tier list / nejlepší', /tier ?list|\bbest\b|miglior|beste[nr]?\b|meilleur|mejor|melhor|najlepsz|лучш|en iyi|terbaik|top ?\d+/i, 'CZ tier list / TOP 5 – vždycky dobře hledané.'],
+  ['Skiny / gemy', /skin|скин|\bgem|гем|kostüm/i, 'Recenze nových skinů nebo „za co utratit gemy“.'],
+  ['Event / mód', /event|evento|ивент|режим|\bmode\b|modalit|modus|etkinlik/i, 'Ukaž nový event/mód a nejlepší brawlery do něj.'],
+  ['Vtipné / meme', /funny|divertent|lustig|dr[oô]le|gracios|engra[cç]ad|śmieszn|смешн|мем|meme|komik|lucu|lol\b|xd\b/i, 'Krátké vtipné shorts – kopíruj vtip/situaci, ne celé video.'],
+];
+const BRAWLERS = ['Shelly','Colt','Bull','Brock','Rico','Spike','Barley','Jessie','Nita','Dynamike','El Primo','Mortis','Crow','Poco','Piper','Pam','Tara','Darryl','Penny','Frank','Gene','Tick','Leon','Rosa','Carl','Bibi','8-Bit','Sandy','Bea','Emz','Mr. P','Jacky','Gale','Nani','Sprout','Surge','Colette','Amber','Lou','Byron','Edgar','Ruffs','Stu','Belle','Squeak','Grom','Buzz','Griff','Ash','Meg','Lola','Fang','Eve','Janet','Bonnie','Otis','Gus','Buster','Chester','Gray','Mandy','R-T','Willow','Maisie','Hank','Cordelius','Doug','Pearl','Chuck','Charlie','Mico','Kit','Larry','Melodie','Angelo','Draco','Lily','Berry','Clancy','Moe','Kenji','Shade','Juju','Meeple','Ollie','Lumi','Finx','Jae-Yong','Kaze','Alli','Trunk','Mina','Ziggy','Gigi','Pierce','Glowbert'];
+const BRAWLER_RX = BRAWLERS.map(n => [n, new RegExp('(^|[^a-z])' + n.toLowerCase().replace(/[.\-]/g, m => '\\' + m) + '([^a-z]|$)', 'i')]);
+const STOP = new Set(('brawl stars brawlstars бравл старс бравлстарс ブロスタ 브롤스타즈 shorts short video videos youtube game gameplay new the and for with you your this that from are was what how why who all not but have has just like out one get got '+
+ 'per con che non una gli del della di da il la le lo un mio mia sono come più anche nel '+
+ 'und der die das ich ist mit ein eine mein nicht auf den dem von zu im es so wie '+
+ 'и в на не я с это как что по за из у мой все а но то от ты он мы вы для '+
+ 'i w z na nie się jak to mój do że od '+
+ 'le la les de des du un une et en pour avec mon ma est pas que qui '+
+ 'el los las de del y en un una con por para mi es que '+
+ 'o os as de do da e em um uma com para meu é que no na '+
+ 'bir ve ile bu çok için en '+
+ 'dan yang di ini itu aku ke '+
+ 'và của là có không cho một').split(/\s+/));
+
+// ---------- Stav ----------
+const ls = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
+const ss = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} if (k.startsWith('bt_ch_') && typeof CHCACHE !== 'undefined') delete CHCACHE[k.slice(6)]; markShared(k); };
+const S = {
+  key: ls('bt_key', ''),
+  country: ls('bt_country', 'it'),
+  period: ls('bt_period', 'day'),
+  sort: ls('bt_sort', 'views'),
+  type: ls('bt_type', 'all'),
+  strict: ls('bt_strict', true),
+  auto: ls('bt_auto', true),
+  interval: ls('bt_interval', 30),
+  trAuto: ls('bt_trAuto', false),
+  // na mobilu AI kontrola standardně vypnutá (model má ~90 MB)
+  ai: ls('bt_ai', !matchMedia('(pointer:coarse)').matches),
+  qlimit: ls('bt_qlimit', 10000),
+  starTab: 'videos',
+  noLive: ls('bt_noLive', true),
+  q: '', qScope: 'view',
+  nextAuto: 0,
+  loadToken: 0,
+  busy: false,
+};
+// Vlajky jako SVG přímo ve stránce (emoji vlajky Windows neumí, cizí obrázky nemusí načíst). Plátno 30×20.
+const hz = (...c) => c.map((col, i) => `<rect y="${i * 20 / c.length}" width="30" height="${20 / c.length + .1}" fill="${col}"/>`).join('');
+const vt = (...c) => c.map((col, i) => `<rect x="${i * 10}" width="10.1" height="20" fill="${col}"/>`).join('');
+const FLAGS = {
+  IT: vt('#009246', '#fff', '#ce2b37'),
+  FR: vt('#0055a4', '#fff', '#ef4135'),
+  DE: hz('#000', '#dd0000', '#ffce00'),
+  RU: hz('#fff', '#0039a6', '#d52b1e'),
+  UA: hz('#0057b7', '#ffd700'),
+  PL: hz('#fff', '#dc143c'),
+  ES: '<rect width="30" height="20" fill="#aa151b"/><rect y="5" width="30" height="10" fill="#f1bf00"/>',
+  CZ: '<rect width="30" height="10" fill="#fff"/><rect y="10" width="30" height="10" fill="#d7141a"/><path d="M0 0L15 10L0 20Z" fill="#11457e"/>',
+  TR: '<rect width="30" height="20" fill="#e30a17"/><circle cx="11" cy="10" r="5" fill="#fff"/><circle cx="12.3" cy="10" r="4" fill="#e30a17"/><path d="M15.2 10l4.6-1.5-2.8 3.9V7.6l2.8 3.9z" fill="#fff"/>',
+  JP: '<rect width="30" height="20" fill="#fff"/><circle cx="15" cy="10" r="6" fill="#bc002d"/>',
+  BR: '<rect width="30" height="20" fill="#009c3b"/><path d="M15 2.5L27.5 10L15 17.5L2.5 10Z" fill="#ffdf00"/><circle cx="15" cy="10" r="4.4" fill="#002776"/>',
+  KR: '<rect width="30" height="20" fill="#fff"/><path d="M11 10a4 4 0 0 1 8 0z" fill="#cd2e3a"/><path d="M11 10a4 4 0 0 0 8 0z" fill="#0047a0"/>' +
+      '<g fill="#000"><rect x="4" y="4" width="4" height=".8" transform="rotate(-33 6 4.4)"/><rect x="4.6" y="5.4" width="4" height=".8" transform="rotate(-33 6.6 5.8)"/><rect x="22" y="4" width="4" height=".8" transform="rotate(33 24 4.4)"/><rect x="21.4" y="5.4" width="4" height=".8" transform="rotate(33 23.4 5.8)"/>' +
+      '<rect x="4" y="15" width="4" height=".8" transform="rotate(33 6 15.4)"/><rect x="4.6" y="13.6" width="4" height=".8" transform="rotate(33 6.6 14)"/><rect x="22" y="15" width="4" height=".8" transform="rotate(-33 24 15.4)"/><rect x="21.4" y="13.6" width="4" height=".8" transform="rotate(-33 23.4 14)"/></g>',
+};
+const flag = c => `<svg class="flag" viewBox="0 0 30 20" role="img" aria-label="${c.name}">${FLAGS[c.region] || ''}</svg>`;
+const C = id =>COUNTRIES.find(c => c.id === id) || COUNTRIES[0];
+const $ = s => document.querySelector(s);
+
+// ---------- 👥 Sdílení dat mezi lidmi ----------
+// Sdílí se videa, kanály, archiv, uložené, blokace, nápady a překlady. Nesdílí se API klíč, kvóta ani nastavení.
+// Úložiště (REMOTE): ☁️ Google Disk (po přihlášení – funguje i na mobilu bez PC), jinak server.py na PC, jinak nic.
+var SHARED_RX = /^bt_(c_|ch_|arch_|block$|star$|mixsaved$|my$|aicache$|tr$|qtr$)/;
+var SYNC = {meta:null, dirty:{}, timer:null, ok:null, last:0};
+var REMOTE = null;
+function syncMeta() { return SYNC.meta ??= (() => { try { return JSON.parse(localStorage.getItem('bt_meta')) || {}; } catch { return {}; } })(); }
+function saveMeta() { try { localStorage.setItem('bt_meta', JSON.stringify(SYNC.meta)); } catch {} }
+// každá změna sdíleného klíče dostane čas a za chvíli se pošle do úložiště (Disk dávkujeme víc – je pomalejší)
+function markShared(k) {
+  if (!SHARED_RX.test(k) || SYNC.pulling) return;
+  syncMeta()[k] = Date.now(); saveMeta();
+  SYNC.dirty[k] = true;
+  clearTimeout(SYNC.timer); SYNC.timer = setTimeout(syncPush, REMOTE?.name === 'drive' ? 10000 : 3000);
+}
+async function syncPush() {
+  const keys = Object.keys(SYNC.dirty); if (!keys.length || !REMOTE?.ready) return;
+  const body = {};
+  for (const k of keys) { const raw = localStorage.getItem(k); if (raw !== null) body[k] = {v:JSON.parse(raw), t:syncMeta()[k] || Date.now()}; }
+  try { await REMOTE.put(body); keys.forEach(k => delete SYNC.dirty[k]); SYNC.ok = true; }
+  catch (e) { SYNC.ok = false; if (e.message === 'auth') driveLost(); }
+}
+
+// --- úložiště 1: server.py na PC / Macu (složka data/) ---
+const SERVER_BACKEND = {
+  name:'server', ready:true,
+  async getAll() { const r = await fetch('/api/sync', {cache:'no-store'}); if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error('no server'); return r.json(); },
+  async put(body) { const r = await fetch('/api/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); if (!r.ok) throw new Error('server'); },
+  async listVers(id) { const r = await fetch('/api/thumbs?id=' + id, {cache:'no-store'}); if (!r.ok) throw new Error('server'); return (await r.json()).map(v => ({at:v.t, hash:v.hash, src:v.url})); },
+  async saveVer(id, at, hash, blob) { const r = await fetch(`/api/thumbsave?id=${id}&t=${at}&hash=${hash}`, {method:'POST', body:blob}); if (!r.ok) throw new Error('server'); },
+  async delVers(id) { await fetch('/api/thumbdel?id=' + id, {method:'POST'}); },
+};
+
+// --- úložiště 2: ☁️ Google Disk (přihlášení Googlem, složka „Brawl Trendy – data“) ---
+// Každý sdílený klíč je malý soubor s_<klíč>__<e-mail>.json – každý člověk zapisuje jen svoje soubory (žádné konflikty)
+// a při čtení vyhrává u každého klíče novější. Verze miniatur jsou obrázky v podsložce thumbs: <video>~<čas>~<otisk>.jpg.
+const GOOGLE_CLIENT_ID = ''; // Client ID z Google Cloud (OAuth, webová aplikace) – doplní se po nastavení
+const DRIVE_FOLDER = 'Brawl Trendy – data';
+const DAPI = 'https://www.googleapis.com/drive/v3';
+const DRIVE = {token:null, exp:0, email:'', folder:null, thumbs:null, cache:{}, mine:{}, state:'off', error:''};
+const gClientId = () => GOOGLE_CLIENT_ID || ls('bt_gcid', '');
+function loadGis() {
+  return new Promise((res, rej) => {
+    if (window.google?.accounts?.oauth2) return res();
+    const s = Object.assign(document.createElement('script'), {src:'https://accounts.google.com/gsi/client', onload:res, onerror:() => rej(new Error('Google přihlášení se nenačetlo'))});
+    document.head.append(s);
+  });
+}
+// přihlašovací okno Googlu jde otevřít jen po kliknutí – proto se Disk připojuje tlačítkem
+async function driveSignIn() {
+  if (!gClientId()) throw new Error('Chybí Client ID pro přihlášení Googlem (⚙️ Nastavení).');
+  await loadGis();
+  await new Promise((res, rej) => {
+    google.accounts.oauth2.initTokenClient({
+      client_id:gClientId(), scope:'https://www.googleapis.com/auth/drive', login_hint:ls('bt_gemail', '') || undefined,
+      callback:r => { if (r.error) return rej(new Error(r.error_description || r.error)); DRIVE.token = r.access_token; DRIVE.exp = Date.now() + r.expires_in * 1000; res(); },
+      error_callback:e => rej(new Error(e.type === 'popup_closed' ? 'Přihlášení zavřeno.' : 'Přihlašovací okno se neotevřelo (blokované vyskakovací okno?).')),
+    }).requestAccessToken({prompt:''});
+  });
+}
+async function gfetch(url, opts = {}) {
+  if (!DRIVE.token || Date.now() > DRIVE.exp - 60e3) throw new Error('auth');
+  const r = await fetch(url, {...opts, headers:{...(opts.headers || {}), Authorization:'Bearer ' + DRIVE.token}});
+  if (r.status === 401) { DRIVE.token = null; throw new Error('auth'); }
+  if (!r.ok) throw new Error('Google Disk odpověděl chybou ' + r.status);
+  return r;
+}
+async function dList(q) {
+  const out = []; let page;
+  do {
+    const r = await (await gfetch(`${DAPI}/files?` + new URLSearchParams({q, pageSize:1000, orderBy:'createdTime', fields:'nextPageToken,files(id,name,modifiedTime,ownedByMe)', ...(page ? {pageToken:page} : {})}))).json();
+    out.push(...r.files); page = r.nextPageToken;
+  } while (page);
+  return out;
+}
+const dEsc = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+async function dFolder(name, parent) {
+  const r = await gfetch(`${DAPI}/files?fields=id`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, mimeType:'application/vnd.google-apps.folder', ...(parent ? {parents:[parent]} : {})})});
+  return (await r.json()).id;
+}
+async function dUpload(name, parent, blob, fileId) {
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(fileId ? {name} : {name, parents:[parent]})], {type:'application/json'}));
+  form.append('file', blob);
+  const r = await gfetch(`https://www.googleapis.com/upload/drive/v3/files${fileId ? '/' + fileId : ''}?uploadType=multipart&fields=id,modifiedTime`, {method:fileId ? 'PATCH' : 'POST', body:form});
+  return r.json();
+}
+const dGet = id => gfetch(`${DAPI}/files/${id}?alt=media`);
+const dDel = id => gfetch(`${DAPI}/files/${id}`, {method:'DELETE'}).catch(() => {}); // cizí soubor smazat nejde – nevadí
+// najde sdílenou složku (nejstarší, kterou vidím – i nasdílenou od ostatních); create=true ji založí
+async function driveInit(create) {
+  DRIVE.email = (await (await gfetch(`${DAPI}/about?fields=user(emailAddress)`)).json()).user.emailAddress;
+  ss('bt_gemail', DRIVE.email);
+  const mime = "mimeType='application/vnd.google-apps.folder' and trashed=false";
+  const found = await dList(`name='${dEsc(DRIVE_FOLDER)}' and ${mime}`);
+  if (!found.length && !create) { DRIVE.state = 'nofolder'; return false; }
+  DRIVE.folder = found[0]?.id || await dFolder(DRIVE_FOLDER);
+  DRIVE.thumbs = (await dList(`name='thumbs' and '${DRIVE.folder}' in parents and ${mime}`))[0]?.id || await dFolder('thumbs', DRIVE.folder);
+  DRIVE.state = 'on';
+  return true;
+}
+const DRIVE_BACKEND = {
+  name:'drive', ready:false,
+  async getAll() {
+    const files = (await dList(`'${DRIVE.folder}' in parents and name contains 's_' and trashed=false`)).filter(f => f.name.startsWith('s_') && f.name.endsWith('.json'));
+    const ids = new Set(files.map(f => f.id));
+    for (const id of Object.keys(DRIVE.cache)) if (!ids.has(id)) delete DRIVE.cache[id];
+    for (const f of files) {
+      if (DRIVE.cache[f.id]?.mt === f.modifiedTime) continue; // nezměněné nestahujeme znovu
+      try { DRIVE.cache[f.id] = {mt:f.modifiedTime, name:f.name, e:await (await dGet(f.id)).json()}; } catch (e) { if (e.message === 'auth') throw e; }
+    }
+    const out = {}, suffix = `__${DRIVE.email}.json`;
+    DRIVE.mine = {};
+    for (const [id, c] of Object.entries(DRIVE.cache)) {
+      const {k, v, t} = c.e;
+      if (!out[k] || t > out[k].t) out[k] = {v, t};
+      if (c.name.endsWith(suffix)) DRIVE.mine[k] = id;
+    }
+    this.ready = true;
+    return out;
+  },
+  async put(body) {
+    for (const [k, e] of Object.entries(body)) {
+      const name = `s_${k}__${DRIVE.email}.json`, doc = {k, ...e};
+      const r = await dUpload(name, DRIVE.folder, new Blob([JSON.stringify(doc)], {type:'application/json'}), DRIVE.mine[k]);
+      DRIVE.mine[k] = r.id; DRIVE.cache[r.id] = {mt:r.modifiedTime, name, e:doc};
+    }
+  },
+  async listVers(id) {
+    return (await dList(`'${DRIVE.thumbs}' in parents and name contains '${dEsc(id)}~' and trashed=false`))
+      .filter(f => f.name.startsWith(id + '~')).sort((a, b) => a.name < b.name ? -1 : 1)
+      .map(f => { const [, t, hash] = f.name.replace(/\.jpg$/, '').split('~'); return {at:+t, hash, src:{drive:f.id}, fid:f.id}; });
+  },
+  async saveVer(id, at, hash, blob) {
+    const vers = await this.listVers(id);
+    if (vers.length && hamHex(vers[vers.length - 1].hash, hash) <= 6) return; // stejnou změnu už uložil někdo jiný
+    await dUpload(`${id}~${at}~${hash}.jpg`, DRIVE.thumbs, blob);
+    for (const old of [...vers, {}].slice(1, -(MAX_VERS - 1))) if (old.fid) await dDel(old.fid); // nechat první a posledních 5
+  },
+  async delVers(id) { for (const v of await this.listVers(id)) await dDel(v.fid); },
+};
+// připojení Disku (z tlačítka); při prvním připojení se na Disk nahraje všechno, co je v prohlížeči
+async function driveConnect(create) {
+  status('☁️ Připojuju Google Disk…');
+  try {
+    if (!DRIVE.token || Date.now() > DRIVE.exp - 60e3) await driveSignIn();
+    if (!await driveInit(create)) { status('☁️ Na Disku zatím není složka „' + DRIVE_FOLDER + '“ – založ ji v ⚙️ Nastavení, nebo počkej, až ti ji někdo nasdílí.', true); renderMain(); return; }
+    REMOTE = DRIVE_BACKEND; DRIVE_BACKEND.ready = false; ss('bt_gdrive', true);
+    await pullShared(true);
+    status(`☁️ Disk připojen (${DRIVE.email}).`);
+  } catch (e) { DRIVE.state = 'off'; status(e.message === 'auth' ? 'Přihlášení vypršelo – připoj Disk znovu.' : e.message, true); }
+  rerender();
+}
+// přihlášení Googlem platí hodinu – pak sdílení počká na nové kliknutí
+function driveLost() {
+  if (REMOTE !== DRIVE_BACKEND) return;
+  DRIVE.state = 'expired'; REMOTE = null; SYNC.ok = false;
+  renderHeader();
+}
+
+// stáhne, co mezitím načetli ostatní (novější vyhrává), a pošle, co máme novější my
+async function syncPull() {
+  let remote;
+  if (!REMOTE) { try { remote = await SERVER_BACKEND.getAll(); REMOTE = SERVER_BACKEND; } catch { SYNC.ok = false; return false; } }
+  else { try { remote = await REMOTE.getAll(); } catch (e) { SYNC.ok = false; if (e.message === 'auth') driveLost(); return false; } }
+  SYNC.ok = true;
+  const meta = syncMeta(); let changed = false;
+  SYNC.pulling = true;
+  for (const [k, e] of Object.entries(remote)) {
+    if (!SHARED_RX.test(k) || (meta[k] || 0) >= e.t) continue;
+    try { localStorage.setItem(k, JSON.stringify(e.v)); meta[k] = e.t; changed = true; } catch {}
+  }
+  SYNC.pulling = false; saveMeta();
+  for (const k of Object.keys(localStorage)) if (SHARED_RX.test(k) && (!remote[k] || (meta[k] || 0) > remote[k].t)) { meta[k] ??= Date.now(); SYNC.dirty[k] = true; }
+  saveMeta(); syncPush(); SYNC.last = Date.now();
+  return changed;
+}
+
+// ---------- Kvóta (reset o půlnoci pacifického času) ----------
+const ptDate = () => new Date().toLocaleDateString('en-CA', {timeZone:'America/Los_Angeles'});
+function quota(add = 0) {
+  let q = ls('bt_quota', {d:'', used:0});
+  if (q.d !== ptDate()) q = {d:ptDate(), used:0};
+  q.used += add; ss('bt_quota', q);
+  $('#quota').textContent = `Kvóta dnes: ${q.used.toLocaleString('cs')} / ${S.qlimit.toLocaleString('cs')}`;
+  $('#quota').style.color = q.used > S.qlimit * .85 ? 'var(--hot)' : '';
+  return q.used;
+}
+
+// ---------- YouTube API ----------
+async function api(endpoint, params, cost) {
+  // vlastní denní limit (např. grafik 1 500) – nad něj se nic nestáhne
+  if (quota() + cost > S.qlimit) throw new Error(`Dosažen denní limit ${S.qlimit.toLocaleString('cs')} jednotek (nastavíš v ⚙️ Nastavení). Zatím vidíš uložená a sdílená data.`);
+  const url = 'https://www.googleapis.com/youtube/v3/' + endpoint + '?' + new URLSearchParams({...params, key:S.key});
+  const res = await fetch(url);
+  quota(cost);
+  const j = await res.json();
+  if (j.error) {
+    const reason = j.error.errors?.[0]?.reason || '';
+    if (reason === 'quotaExceeded') throw new Error('Došla denní kvóta API (10 000). Obnoví se o půlnoci pacifického času (~9:00 u nás). Zatím vidíš uložená data.');
+    if (reason === 'keyInvalid' || res.status === 400 && /key/i.test(j.error.message)) throw new Error('Neplatný API klíč – zkontroluj ho v ⚙️ Nastavení.');
+    if (/referer|referrer/i.test(j.error.message)) throw new Error(`API klíč nesmí běžet na téhle adrese. V Google Cloud → Credentials → tvůj klíč → Websites přidej ${location.origin}/*`);
+    throw new Error(j.error.message);
+  }
+  return j;
+}
+const isoNoMs = d => d.toISOString().replace(/\.\d+Z$/, 'Z');
+function parseDur(s) { const m = /P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(s || '') || []; return (+m[1]||0)*86400 + (+m[2]||0)*3600 + (+m[3]||0)*60 + (+m[4]||0); }
+const BRAWL_RX = /brawl|бравл|ブロスタ|브롤|براول/i;
+
+const chunks = (a, size) => Array.from({length:Math.ceil(a.length / size)}, (_, i) => a.slice(i * size, i * size + size));
+
+// Detaily videí + odběry, země a jazyk kanálů. Bereme vždy ORIGINÁLNÍ název a původní jazyk zvuku –
+// AI dabing jen přidává přeložené názvy a zvukové stopy, podle nich by se jedno video objevilo v každém státě.
+// bsT = Brawl Stars v názvu/tazích (silný důkaz), bs = kdekoli včetně popisu (popis mívá u všech videí stejný text s kódem)
+async function details(ids) {
+  const vids = [];
+  for (const part of chunks(ids, 50)) vids.push(...(await api('videos', {part:'snippet,statistics,contentDetails,localizations,liveStreamingDetails', id:part.join(',')}, 1)).items);
+  const subs = {}, country = {}, chLang = {};
+  for (const part of chunks([...new Set(vids.map(x => x.snippet.channelId))], 50)) {
+    const ch = await api('channels', {part:'snippet,statistics', id:part.join(',')}, 1);
+    ch.items.forEach(x => {
+      subs[x.id] = x.statistics.hiddenSubscriberCount ? null : +x.statistics.subscriberCount;
+      country[x.id] = x.snippet.country || ''; chLang[x.id] = x.snippet.defaultLanguage || '';
+    });
+  }
+  return vids.map(x => {
+    const orig = x.snippet.title, tags = (x.snippet.tags || []).join(' ');
+    return {
+    id: x.id, t: orig, ch: x.snippet.channelTitle, chId: x.snippet.channelId,
+    pub: x.snippet.publishedAt, views: +x.statistics.viewCount || 0, likes: +x.statistics.likeCount || 0,
+    com: +x.statistics.commentCount || 0, dur: parseDur(x.contentDetails.duration),
+    subs: subs[x.snippet.channelId] ?? null, cc: country[x.snippet.channelId] || '',
+    lang: (x.snippet.defaultAudioLanguage || x.snippet.defaultLanguage || '').toLowerCase(),
+    chL: (chLang[x.snippet.channelId] || '').split('-')[0].toLowerCase(),
+    homeL: homeLangs(x),
+    bsT: BRAWL_RX.test(orig + ' ' + tags),
+    bsTag: BRAWL_RX.test(tags),
+    live: !!x.liveStreamingDetails || (x.snippet.liveBroadcastContent || 'none') !== 'none',
+    bsN: BRAWL_RX.test(orig),
+    bs: BRAWL_RX.test(orig + ' ' + tags + ' ' + x.snippet.description + ' ' + x.snippet.channelTitle),
+  }; });
+}
+// Youtuber, který dabuje do angličtiny (LukasBS), má originál anglicky, ale název přeložený do svého jazyka.
+// Když video má překlad jen do pár jazyků, je mezi nimi jeho domácí. Velké kanály dabují do 10+ jazyků – ty nebereme.
+function homeLangs(x) {
+  const langs = [...new Set(Object.keys(x.localizations || {}).map(l => l.split('-')[0].toLowerCase()))];
+  return langs.length && langs.length <= 3 ? langs : [];
+}
+// Stream: YouTube to u videa řekne (live); u starších uložených dat a u mých videí v míchači poznáme podle názvu
+const LIVE_RX = /🔴|\b(live|livestream|stream|streaming|en directo|en vivo|ao vivo|diretta|canlı)\b|стрим|прямой эфир|ライブ配信|라이브/i;
+const isStream = it => it.live || LIVE_RX.test(it.t);
+// miniaturu neukládáme (šetří místo), adresa jde složit z ID videa
+const thumb = it => it.th || `https://i.ytimg.com/vi/${it.id}/mqdefault.jpg`;
+const hasBrawler = it => BRAWLER_RX.some(b => b[1].test(it.t));
+// Bez Brawl Stars v názvu/tazích a bez jména brawlera = kandidát; o něm rozhodnou slova sezóny nebo AI.
+// U videí ze sledovaných kanálů (src 'ch') stačí jen název – tagy a popis s „Brawl Stars“ kódem mají často u všech videí, i IRL.
+const classify = (it, src) => (src === 'ch' ? it.bsN : it.bsT) || hasBrawler(it) ? {...it, src} : {...it, src, cand:true, weak:src !== 'ch' && it.bs};
+
+// extra = k hledání podle zhlédnutí přidá i hledání nejnovějších videí (najde menší kanály, +100 jednotek)
+async function fetchSet(c, p, pageToken, extra) {
+  const params = {part:'snippet', type:'video', order:'viewCount', maxResults:50, q:c.q || 'brawl stars', relevanceLanguage:c.lang, regionCode:c.region};
+  if (PERIODS[p].hours) params.publishedAfter = isoNoMs(new Date(Date.now() - PERIODS[p].hours * 3600e3));
+  if (pageToken) params.pageToken = pageToken;
+  const s = await api('search', params, 100);
+  let ids = s.items.map(i => i.id.videoId).filter(Boolean);
+  if (extra && !pageToken && PERIODS[p].hours) {
+    const d = await api('search', {...params, order:'date'}, 100);
+    ids = [...new Set([...ids, ...d.items.map(i => i.id.videoId).filter(Boolean)])];
+  }
+  const items = ids.length ? (await details(ids)).map(it => classify(it)) : [];
+  learnChannels(c, items.filter(it => !it.cand));
+  // Novinky/týden doplníme o nová videa ze sledovaných kanálů (i bez „Brawl Stars“ v názvu)
+  if (!pageToken && PERIODS[p].hours) {
+    const have = new Set(items.map(i => i.id));
+    items.push(...(await fetchChannelVideos(c, p, have)).filter(it => !have.has(it.id)));
+  }
+  return {items, next:s.nextPageToken || null};
+}
+
+// ---------- Sledované kanály ----------
+// Stránka si sama pamatuje kanály, které v daném státě točí Brawl Stars (učí se z výsledků hledání)
+const chKey = cid => `bt_ch_${cid}`;
+// databáze kanálů se čte u každého videa → držíme ji v paměti (ss ji při zápisu zahodí)
+var CHCACHE = {}; // var: ss() na ni sahá a musí ji vidět vždy
+const chDb = cid => CHCACHE[cid] ??= ls(chKey(cid), {});
+const MAX_TRACKED = 60;
+function learnChannels(c, items) {
+  const db = ls(chKey(c.id), {});
+  for (const it of items) {
+    if (!langOk(it, c) || !notBlocked(it)) continue;
+    const e = db[it.chId] || {name:it.ch, ids:[], views:0};
+    if (!e.ids.includes(it.id)) { e.ids = [...e.ids, it.id].slice(-40); e.views += it.views; }
+    e.name = it.ch; e.subs = it.subs; db[it.chId] = e;
+    // jasný důkaz, že je kanál odsud → pak bereme všechna jeho videa (i ta jen anglicky bez překladu)
+    if (homeSignal(it, c)) e.home = true;
+  }
+  ss(chKey(c.id), db);
+}
+// Sleduje se každý kanál, který se objevil s Brawl videem (i malý); nejvíc Brawl videí a zhlédnutí první. Ručně přidané vždy navíc.
+function trackedChannels(c) {
+  const all = Object.entries(ls(chKey(c.id), {})).map(([id, e]) => ({id, ...e})).filter(e => BLOCK.channels[e.id]?.mode !== 'all');
+  return [...all.filter(e => e.manual),
+    ...all.filter(e => !e.manual && e.ids.length >= 1).sort((a, b) => b.ids.length - a.ids.length || b.views - a.views).slice(0, MAX_TRACKED)];
+}
+const manualIds = c => new Set(Object.entries(ls(chKey(c.id), {})).filter(([, e]) => e.manual).map(([id]) => id));
+const isDedicated = e => e.manual || e.ids.length >= 3;
+// Ruční přidání kanálu: @handle, odkaz youtube.com/@handle nebo youtube.com/channel/UC…
+async function addChannel(c, input) {
+  const s = input.trim();
+  const id = (s.match(/(UC[\w-]{22})/) || [])[1];
+  const handle = id ? null : (s.match(/@([\w.\-·]+)/) || [null, s.replace(/^https?:\/\/(www\.)?youtube\.com\//, '')])[1];
+  if (!id && !handle) throw new Error('Zadej @jméno kanálu nebo odkaz na kanál.');
+  const r = await api('channels', id ? {part:'snippet', id} : {part:'snippet', forHandle:'@' + handle.replace(/^@/, '')}, 1);
+  const ch = r.items?.[0];
+  if (!ch) throw new Error(`Kanál „${s}“ jsem na YouTube nenašel.`);
+  const db = ls(chKey(c.id), {});
+  db[ch.id] = {...(db[ch.id] || {ids:[], views:0}), name:ch.snippet.title, manual:true};
+  ss(chKey(c.id), db); TERMS = null;
+  return ch.snippet.title;
+}
+async function addChannelUI() {
+  const c = C(S.country), val = $('#chInput')?.value || '';
+  if (!val.trim()) return;
+  try {
+    const name = await addChannel(c, val);
+    status(`📌 ${name} se teď sleduje v ${c.name} – načítám jeho nová videa…`);
+    // vynutí lehkou aktualizaci (bez drahého hledání), která stáhne i videa nového kanálu
+    for (const p of ['day', 'week']) { const set = getSet(c.id, p); if (set) putSet(c.id, p, {...set, ts:0}); }
+    if (S.period === 'all') { status(`📌 ${name} přidán – jeho nová videa uvidíš v Novinkách a Týdnu.`); rerender(); }
+    else await showCountry(false);
+  } catch (e) { status(e.message, true); }
+}
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'chInput') addChannelUI(); });
+function removeChannel(c, id) {
+  const db = ls(chKey(c.id), {});
+  if (db[id]) { delete db[id].manual; if (!db[id].ids.length) delete db[id]; }
+  ss(chKey(c.id), db); TERMS = null;
+}
+async function fetchChannelVideos(c, p, have) {
+  const chans = trackedChannels(c);
+  if (!chans.length) return [];
+  const since = Date.now() - PERIODS[p].hours * 3600e3;
+  const res = await Promise.allSettled(chans.map(ch =>
+    api('playlistItems', {part:'contentDetails', playlistId:'UU' + ch.id.slice(2), maxResults:p === 'day' ? 10 : 50}, 1)));
+  const quotaErr = res.find(r => r.status === 'rejected' && /kvóta/.test(r.reason.message));
+  if (quotaErr) throw quotaErr.reason;
+  const ids = [...new Set(res.flatMap(r => r.status === 'fulfilled' ? r.value.items : [])
+    .filter(x => new Date(x.contentDetails.videoPublishedAt || 0) >= since && !have.has(x.contentDetails.videoId))
+    .map(x => x.contentDetails.videoId))];
+  if (!ids.length) return [];
+  return (await details(ids)).map(it => classify(it, 'ch'));
+}
+// extra = otevření ze seznamu státu (hledá i nejnovější videa, +100)
+function costFor(c, p, extra) {
+  if (!PERIODS[p].hours) return 102;
+  const set = getSet(c.id, p), chans = trackedChannels(c).length + 2;
+  return set?.searchTs && Date.now() - set.searchTs < SEARCH_EVERY * 60e3 ? Math.ceil(set.items.length / 50) * 2 + chans : (extra ? 202 : 102) + chans;
+}
+// Kolik by stálo otevřít tenhle stát/období (stejná pravidla jako showCountry); 0 = jsou uložená čerstvá data
+function openCost(c, p) {
+  if (!TIME_PERIODS.includes(p)) return 0;
+  const set = getSet(c.id, p);
+  const maxAge = (S.auto && p !== 'all' ? S.interval : PERIODS[p].ttl) * 60e3;
+  return set && Date.now() - set.ts < maxAge ? 0 : costFor(c, p, true);
+}
+const costAttr = cost => cost ? ` costly" title="⚡ Ještě nenačtené – kliknutí stáhne data za ≈ ${cost} jednotek kvóty` : '';
+
+// ---------- Cache ----------
+const ckey = (cid, p) => `bt_c_${cid}_${p}`;
+// starší uložená data měla u dabovaných videí přeložený název (t) a originál v t0 → vrátíme originál
+const fixItem = it => it.t0 ? {...it, t:it.t0, t0:undefined, loc:undefined} : it;
+const getSet = (cid, p) => { const s = ls(ckey(cid, p), null); return s && {...s, items:s.items.map(fixItem)}; };
+const putSet = (cid, p, set) => { ss(ckey(cid, p), set); TERMS = null; };
+const isFresh = (set, p) => set && (Date.now() - set.ts) < PERIODS[p].ttl * 60e3;
+// Šetření kvóty: plné hledání (100 jednotek) nejvýš jednou za 2 h, mezitím jen „lehká“ aktualizace (~30 jednotek)
+const SEARCH_EVERY = 120;
+async function ensureSet(c, p, force, light, extra) {
+  let set = getSet(c.id, p);
+  if (!force && isFresh(set, p)) return set;
+  if (light && set?.searchTs && PERIODS[p].hours && Date.now() - set.searchTs < SEARCH_EVERY * 60e3) set = await refreshLight(c, p, set);
+  else {
+    const r = await fetchSet(c, p, null, extra);
+    // videa z minulých hledání, která jsou pořád v časovém okně, nezahazujeme (nové hledání je jen doplní)
+    const since = PERIODS[p].hours ? Date.now() - PERIODS[p].hours * 3600e3 : 0;
+    const found = new Set(r.items.map(i => i.id));
+    const kept = (set?.items || []).filter(i => !found.has(i.id) && new Date(i.pub) >= since);
+    set = {ts:Date.now(), searchTs:Date.now(), items:capItems([...r.items, ...kept]), next:r.next};
+  }
+  putSet(c.id, p, set);
+  // novinky se rovnou přesunou i do Týdne (z něj pak po 7 dnech zůstanou v Archivu)
+  if (p === 'day') mergeInto(c.id, 'week', set.items);
+  if (p === 'day' || p === 'week') mergeInto(c.id, 'month', set.items); // a z Týdne do Měsíce
+  archive(c.id, set.items);
+  return set;
+}
+const MAX_SET = 250, MAX_ARCH = 250;
+// při přeplnění necháme nejsledovanější (localStorage má jen ~5 MB)
+const capItems = items => items.length <= MAX_SET ? items : [...items].sort((a, b) => b.views - a.views).slice(0, MAX_SET);
+function mergeInto(cid, p, items) {
+  const set = getSet(cid, p);
+  if (!set) return;
+  const byId = new Map(set.items.map(i => [i.id, i]));
+  items.forEach(i => byId.set(i.id, i)); // novější data (počty zhlédnutí) vyhrávají
+  putSet(cid, p, {...set, items:capItems([...byId.values()])});
+}
+// ---------- Archiv: všechna kdy nalezená videa daného státu (bez API, jen z uložených dat) ----------
+const akey = cid => `bt_arch_${cid}`;
+function archive(cid, items) {
+  const db = ls(akey(cid), {});
+  items.forEach(i => { db[i.id] = i; });
+  let all = Object.values(db);
+  if (all.length > MAX_ARCH) all = all.sort((a, b) => b.views - a.views).slice(0, MAX_ARCH);
+  ss(akey(cid), Object.fromEntries(all.map(i => [i.id, i])));
+}
+const getArchive = cid => { const items = Object.values(ls(akey(cid), {})).map(fixItem); return items.length ? {ts:Date.now(), items, next:null} : null; };
+// Lehká aktualizace: nové počty zhlédnutí u známých videí + nová videa ze sledovaných kanálů
+async function refreshLight(c, p, set) {
+  const since = Date.now() - PERIODS[p].hours * 3600e3;
+  const old = new Map(set.items.map(i => [i.id, i]));
+  const items = (await details([...old.keys()]))
+    .map(it => classify(it, old.get(it.id).src))
+    .filter(it => new Date(it.pub) >= since);
+  const have = new Set(items.map(i => i.id));
+  items.push(...await fetchChannelVideos(c, p, have));
+  return {...set, ts:Date.now(), items:capItems(items)};
+}
+
+// ---------- Slova Brawl sezóny ----------
+// Kanály, které točí jen Brawl (3+ Brawl videa), používají u updatů stejné názvy (např. „coffin boxy“).
+// Slovo, které píše víc takových kanálů a nevyskytuje se u videí z jiných her, bereme jako důkaz Brawl Stars.
+let TERMS = null;
+const GENERIC = new Set(('new free update season event skin skins box boxes challenge noob best live stream part games mobile epic insane funny rank ranked trophies trophy push legendary mythic rare hack glitch secret tips tricks broken account gems opening shop deal deals offer part1 part2 '+
+  'nuovo nuova nuovi gratis aggiornamento stagione evento sfida neue neuer neues kostenlos saison nouveau nouvelle gratuit saison nuevo nueva gratis temporada novo nova grátis temporada nowy nowa darmo sezon новый новая новые бесплатно сезон обновление yeni bedava sezon baru gratis').split(/\s+/));
+function brawlTerms() {
+  if (TERMS) return TERMS;
+  const brawlCh = new Map(), other = new Map();
+  const add = (m, w, ch) => { const s = m.get(w) || new Set(); s.add(ch); m.set(w, s); };
+  for (const c of COUNTRIES) {
+    const dedicated = new Set(Object.entries(ls(chKey(c.id), {})).filter(([, e]) => isDedicated(e)).map(([id]) => id));
+    for (const p of ['day', 'week', 'month', 'all']) for (const it of getSet(c.id, p)?.items || []) {
+      // zablokované video/kanál = jasně ne Brawl → jeho slova bereme jako „jiná hra“
+      const words = tokens(it.t).filter(w => w.length >= 4 && !GENERIC.has(w));
+      if (!notBlocked(it)) { words.forEach(w => add(other, w, it.chId)); continue; }
+      // jako „jiná hra“ počítáme jen videa, u kterých AI jasně řekla, že to není Brawl
+      if (it.cand && AI_CACHE[it.id]?.s < 0.2) words.forEach(w => add(other, w, it.chId));
+      else if (!it.cand && it.bs && dedicated.has(it.chId)) words.forEach(w => add(brawlCh, w, it.chId));
+    }
+  }
+  // aspoň 3 Brawl kanály a u ostatních kanálů (jiné hry) nejvýš poloviční výskyt
+  TERMS = new Map([...brawlCh].filter(([w, s]) => s.size >= 3 && (other.get(w)?.size || 0) * 2 <= s.size).map(([w, s]) => [w, s.size]).sort((a, b) => b[1] - a[1]));
+  return TERMS;
+}
+const termPills = max => [...brawlTerms()].slice(0, max).map(([w, k]) => `<button class="tag hot" data-q="${esc(w)}" title="používá ${k} Brawl kanálů – klikni pro videa">${esc(w)} · ${k}</button>`).join('') || '<span class="ch">zatím málo dat – načti Týden a Celou dobu u pár států</span>';
+const termHits = it => tokens(it.t).filter(w => brawlTerms().has(w));
+// Kandidát (bez Brawl Stars v názvu/tazích) se ukáže, když:
+//  - má slovo sezóny a AI nic nenamítá,
+//  - ho našlo hledání a Brawl Stars má aspoň v popisu (AI nic nenamítá),
+//  - je ze sledovaného Brawl kanálu a AI miniaturu uzná (IRL videa tím vypadnou),
+//  - nebo si je AI úplně jistá.
+function candOk(it) {
+  const a = S.ai ? aiOf(it) : null;
+  if (termHits(it).length || (it.weak && it.src !== 'ch')) return !a || a.s >= AI_WEAK;
+  if (it.src === 'ch') return !!a && a.s >= 0.5;
+  return !!a && a.s >= AI_SURE;
+}
+
+// ---------- Blokování videí a kanálů ----------
+// channels[id].mode: 'all' = celý kanál pryč, 'strict' = jen ověřená Brawl videa
+const BLOCK = ls('bt_block', {videos:{}, channels:{}});
+const saveBlock = () => { ss('bt_block', BLOCK); TERMS = null; };
+const strictCh = it => BLOCK.channels[it.chId]?.mode === 'strict';
+// Ověřené video: Brawl Stars přímo v názvu, nebo v tazích a k tomu Brawl miniatura (AI), nebo AI úplná jistota
+function verified(it) {
+  const a = aiOf(it);
+  if (it.bsN ?? it.bsT) return true;
+  if ((it.bsTag ?? it.bsT) && a && a.s >= 0.5) return true;
+  return !!a && a.s >= AI_SURE;
+}
+function notBlocked(it) {
+  if (BLOCK.videos[it.id]) return false;
+  const ch = BLOCK.channels[it.chId];
+  return !ch || (ch.mode === 'strict' && verified(it));
+}
+// Stránky Nastavení / Zablokované: místo celé horní lišty jen nadpis a ✖ zpět na předchozí záložku
+function pageHeader(title, note) {
+  renderHeader();
+  for (const sel of ['#tabs', '#countries', '.search', '#btnBlocked', '#btnSettings', '#driveSlot']) $(sel).style.display = 'none';
+  $('#controls').innerHTML = `<div class="pagehead"><h2>${title}</h2><span class="ch">${note}</span><button id="btnClose" title="Zpět">✖</button></div>`;
+}
+function renderBlocked() {
+  pageHeader('🚫 Zablokované', 'Blokace platí pro všechny státy.');
+  const chs = Object.entries(BLOCK.channels).sort((a, b) => b[1].at - a[1].at);
+  const vids = Object.entries(BLOCK.videos).sort((a, b) => b[1].at - a[1].at);
+  const mopt = (id, e, v, l) => `<option value="${v}" ${e.mode === v ? 'selected' : ''}>${l}</option>`;
+  $('#main').innerHTML = `
+    <div class="sec"><h2>🚫 Zablokované kanály (${chs.length})</h2>
+      <p class="hint">„Jen ověřená Brawl videa“ = z kanálu se ukáže jen video s Brawl Stars přímo v názvu, nebo v tazích a zároveň s Brawl miniaturou podle AI.</p>
+      <div class="blist">${chs.map(([id, e]) => `<div class="brow">
+        <a class="grow chlink" href="https://www.youtube.com/channel/${esc(id)}/videos" target="_blank" rel="noopener"><b>${esc(e.name)}</b></a>
+        <select data-chmode="${esc(id)}">${mopt(id, e, 'all', 'Celý kanál blokovaný')}${mopt(id, e, 'strict', 'Jen ověřená Brawl videa')}</select>
+        <button data-unblockch="${esc(id)}">↩ Vrátit</button></div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>
+    <div class="sec"><h2>🚫 Zablokovaná videa (${vids.length})</h2>
+      <div class="blist">${vids.map(([id, e]) => `<div class="brow">
+        <img src="https://i.ytimg.com/vi/${esc(id)}/default.jpg" width="80" alt="">
+        <div class="grow"><a class="chlink" href="${ytUrl(id)}" target="_blank" rel="noopener">${esc(e.t)}</a><div class="ch">${esc(e.ch)}</div></div>
+        <button data-unblockv="${esc(id)}">↩ Vrátit</button></div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>`;
+}
+// ---------- ⚙️ Nastavení ----------
+function renderSettings() {
+  pageHeader('⚙️ Nastavení', 'Změny se ukládají hned.');
+  const chk = (k, title, desc) => `<label class="setrow"><input type="checkbox" data-set="${k}" ${S[k] ? 'checked' : ''}><span><b>${title}</b><span class="ch">${desc}</span></span></label>`;
+  const opt = (v, l) => `<option value="${v}" ${S.interval === v ? 'selected' : ''}>${l}</option>`;
+  const q = ls('bt_quota', {used:0});
+  $('#main').innerHTML = `<div class="settings">
+    <div class="sec"><h2>🔎 Co se hledá a ukazuje</h2>
+      ${chk('strict', 'Jen videa z daného státu', 'Bere kanál podle země, původního jazyka a překladů názvu. Když vypneš, uvidíš i cizí (hlavně anglická) videa, která YouTube k hledání přimíchá.')}
+      ${chk('ai', '🤖 AI kontrola miniatur', 'U sporných videí (bez „Brawl Stars“ v názvu) se podívá na miniaturu – vyřadí Minecraft, Roblox, IRL. Poprvé stáhne model (~15 s), kvótu YouTube nebere.')}
+      ${chk('noLive', '🔴 Skrýt streamy', 'Živé přenosy a záznamy streamů se nikde neukážou – ani v seznamech, ani v Nápadech a míchači.')}
+      ${chk('trAuto', '🌐 Překládat názvy do češtiny', 'Všechny názvy se rovnou přeloží (Google Překladač, zdarma). Jinak jde přeložit jednotlivě tlačítkem u videa.')}
+    </div>
+    <div class="sec"><h2>⟳ Aktualizace</h2>
+      ${chk('auto', 'Automaticky aktualizovat', 'Jen když máš stránku otevřenou a vidíš ji. Plné hledání nejvýš jednou za 2 h, mezitím levná aktualizace zhlédnutí a nových videí ze sledovaných kanálů.')}
+      <label class="setrow"><select data-set="interval">${[15, 30, 60, 120].map(m => opt(m, 'každých ' + m + ' min')).join('')}</select><span><b>Jak často</b><span class="ch">Delší interval = menší spotřeba kvóty. Při 30 min a jednom státě to vyjde zhruba na 2–3 tisíce jednotek denně.</span></span></label>
+      ${TIME_PERIODS.includes(S.period) ? `<div class="setrow"><button id="btnRefresh">⟳ Aktualizovat teď</button><span><b>${esc(C(S.country).name)} – ${PERIODS[S.period].label}</b><span class="ch">Plné hledání hned teď (≈200 jednotek), bez čekání na časomíru. Pak se vrátíš na seznam.</span></span></div>` : ''}
+    </div>
+    <div class="sec"><h2>🔑 YouTube API</h2>
+      <div class="setrow"><span><b>Kvóta dnes: ${(q.used || 0).toLocaleString('cs')} / ${S.qlimit.toLocaleString('cs')}</b><span class="ch">Obnoví se o půlnoci pacifického času (kolem 9:00 u nás).</span></span></div>
+      <label class="setrow"><input type="number" min="100" max="10000" step="100" data-set="qlimit" value="${S.qlimit}" style="width:90px"><span><b>Můj denní limit kvóty</b><span class="ch">Nad tenhle počet jednotek denně stránka nic nestáhne (YouTube dává max 10 000). Grafikovi nastav třeba 1 500.</span></span></label>
+      <div class="setrow"><button id="btnKey">Změnit API klíč</button><span class="ch">Každý člověk má mít svůj vlastní klíč – pak si navzájem kvótu neberete.</span></div>
+    </div>
+    <div class="sec"><h2>👥 Sdílení s ostatními</h2>
+      <div class="setrow"><span><b>${REMOTE === DRIVE_BACKEND ? `☁️ Google Disk připojen – ${esc(DRIVE.email)}` : SYNC.ok ? '🟢 Sdílení přes složku data (server na PC)' : '⚪ Sdílení neběží – data jsou jen v tomhle prohlížeči'}</b>
+        <span class="ch">Videa, kanály, archiv, ⭐ uložené, blokace, nápady, překlady i verze miniatur se ukládají na Google Disk do složky „${DRIVE_FOLDER}“. Kdo ji má nasdílenou a připojí se, vidí totéž – na PC, Macu i mobilu, i když ostatní mají vypnuté počítače.${SYNC.last ? ` Poslední synchronizace ${ago((Date.now() - SYNC.last) / 3600e3)}.` : ''}</span></span></div>
+      ${REMOTE === DRIVE_BACKEND
+        ? '<div class="setrow"><button id="btnDriveOff">Odpojit Disk</button><span class="ch">Data v prohlížeči zůstanou, jen se přestanou sdílet.</span></div>'
+        : gClientId() ? `<div class="setrow"><button class="primary" id="btnDrive">☁️ Připojit Google Disk</button><span class="ch">Přihlášení Googlem. Platí hodinu, pak stačí kliknout znovu (nahoře se ukáže tlačítko).</span></div>
+          ${DRIVE.state === 'nofolder' ? `<div class="setrow"><button id="btnDriveCreate">Založit složku „${DRIVE_FOLDER}“</button><span class="ch">Jen pro toho, kdo sdílení zakládá (ty). Grafik ji nezakládá – počká, až mu ji nasdílíš, jinak by měl vlastní, oddělenou.</span></div>` : ''}` : ''}
+      <label class="setrow"><input id="gcidInput" value="${esc(gClientId())}" placeholder="…apps.googleusercontent.com" style="flex:1;min-width:0"><span><b>Client ID pro přihlášení Googlem</b><span class="ch">Z Google Cloud (OAuth klient typu Webová aplikace). Stačí vyplnit jednou; když je doplněný přímo ve stránce, nemusíš nic.</span></span></label>
+    </div></div>`;
+}
+function block(it, kind) {
+  if (kind === 'video') BLOCK.videos[it.id] = {t:it.t, ch:it.ch, chId:it.chId, at:Date.now()};
+  else BLOCK.channels[it.chId] = {name:it.ch, mode:kind === 'channel' ? 'all' : 'strict', at:Date.now()};
+  saveBlock();
+}
+
+// ---------- Analýza ----------
+const OTHER_SCRIPT = /[Ѐ-ӿ؀-ۿ぀-ヿ一-鿿가-힯]/;
+const homeSignal = (it, c) => (it.cc && (c.regions || [c.region]).includes(it.cc)) || it.lang.split('-')[0] === c.lang || it.chL === c.lang || (it.homeL || []).includes(c.lang);
+// Video patří ke státu, když je kanál z té země, sedí původní jazyk, výchozí jazyk kanálu, nebo má kanál
+// název přeložený jen do pár jazyků včetně tohoto (youtuber dabující do angličtiny, např. LukasBS)
+function langOk(it, c) {
+  if (it.cc && (c.regions || [c.region]).includes(it.cc)) return true;
+  const known = chDb(c.id)[it.chId];
+  if (known?.manual || known?.home) return true; // ručně přidaný / kanál už poznaný jako domácí
+  const L = it.lang.split('-')[0];
+  if (L === c.lang || it.chL === c.lang || (it.homeL || []).includes(c.lang)) return true;
+  if (L || it.cc) return false;
+  if (c.script) return c.script.test(it.t);
+  return !OTHER_SCRIPT.test(it.t);
+}
+function enrich(it, c) {
+  const ageH = Math.max((Date.now() - new Date(it.pub)) / 3600e3, 0.25);
+  const formats = FORMATS.filter(f => f[1].test(it.t));
+  const brawlers = BRAWLER_RX.filter(b => b[1].test(it.t)).map(b => b[0]);
+  return {...it, c, ageH, vph: it.views / ageH, outlier: it.subs ? it.views / it.subs : null,
+    eng: it.views ? (it.likes + it.com) / it.views : 0, short: it.dur > 0 && it.dur <= 180, formats, brawlers};
+}
+function prepare(items, c) {
+  return items
+    .filter(it => !S.strict || langOk(it, c))
+    .filter(it => !it.cand || candOk(it))
+    .filter(notBlocked)
+    .filter(it => !S.noLive || !isStream(it))
+    .map(it => enrich(it, c))
+    .filter(it => S.type === 'all' || (S.type === 'short' ? it.short : !it.short));
+}
+const SORTS = {
+  views: (a, b) => b.views - a.views,
+  vph: (a, b) => b.vph - a.vph,
+  outlier: (a, b) => (b.outlier ?? -1) - (a.outlier ?? -1),
+  eng: (a, b) => b.eng - a.eng,
+  new: (a, b) => new Date(b.pub) - new Date(a.pub),
+};
+function tokens(t) { return [...new Set((t.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}'\-]*/gu) || []).filter(w => w.length >= 3 && !/^\d+$/.test(w) && !STOP.has(w)))]; }
+function countBy(list, keyFn, weightFn) {
+  const m = new Map();
+  for (const it of list) for (const k of keyFn(it)) {
+    const e = m.get(k) || {k, n:0, w:0, views:0};
+    e.n++; e.w += weightFn(it); e.views += it.views; m.set(k, e);
+  }
+  return [...m.values()].sort((a, b) => b.w - a.w);
+}
+function ideaFor(it) {
+  if (it.formats.length) return it.formats[0][2] + (it.brawlers.length ? ` (${it.brawlers.slice(0, 2).join(', ')})` : '');
+  if (it.brawlers.length) return `Video točené kolem: ${it.brawlers.slice(0, 2).join(', ')} – přelož název a udělej vlastní CZ verzi.`;
+  return 'Přelož název a podívej se, proč to letí – zkopíruj nápad, ne video.';
+}
+
+// ---------- Formátování ----------
+const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const NF = new Intl.NumberFormat('cs', {notation:'compact', maximumFractionDigits:1});
+const n = x => x == null ? '?' : NF.format(Math.round(x));
+function ago(h) { if (h < 1) return `před ${Math.round(h * 60)} min`; if (h < 48) return `před ${Math.round(h)} h`; if (h < 24 * 60) return `před ${Math.round(h / 24)} d`; if (h < 24 * 730) return `před ${Math.round(h / 720)} měs.`; return `před ${(h / 8760).toFixed(1)} r.`; }
+function dur(s) { if (!s) return ''; const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
+const trUrl = t => 'https://translate.google.com/?sl=auto&tl=cs&op=translate&text=' + encodeURIComponent(t);
+const ytUrl = id => 'https://www.youtube.com/watch?v=' + id;
+function status(t, err) { const el = $('#status'); el.textContent = t; el.className = err ? 'err' : ''; }
+
+const CARD_ITEMS = new Map(); // id → video, kvůli tlačítkům na kartě
+// ---------- ⭐ Uložená videa (nejnověji uložené vždy první) ----------
+const STARS = ls('bt_star', {});
+const RAW_KEYS = ['id', 't', 'ch', 'chId', 'pub', 'views', 'likes', 'com', 'dur', 'subs', 'cc', 'lang', 'chL', 'homeL', 'bs', 'bsT', 'bsN', 'bsTag', 'live', 'src', 'cand', 'weak'];
+function toggleStar(it, b) {
+  if (STARS[it.id]) { delete STARS[it.id]; delVers(it.id).catch(() => {}); }
+  else { STARS[it.id] = {...Object.fromEntries(RAW_KEYS.filter(k => k in it).map(k => [k, it[k]])), cid:it.c.id, at:Date.now()}; checkThumb(it.id).catch(() => {}); }
+  ss('bt_star', STARS);
+  if (S.period === 'star' && !S.view) { renderHeader(); renderMain(); return; }
+  document.querySelectorAll(`.card[data-id="${it.id}"] .star`).forEach(el => {
+    el.classList.toggle('on', !!STARS[it.id]); el.textContent = STARS[it.id] ? '★' : '☆';
+    el.title = STARS[it.id] ? 'Odebrat z uložených' : 'Uložit do ⭐ Uložené';
+  });
+  renderHeader();
+}
+// čísla u uložených videí obnovíme nejvýš jednou za hodinu (stojí ~2 jednotky za 50 videí)
+async function refreshStars() {
+  const ids = Object.keys(STARS);
+  if (!ids.length || Date.now() - ls('bt_star_ts', 0) < 60 * 60e3) return;
+  ss('bt_star_ts', Date.now());
+  try {
+    for (const it of await details(ids)) if (STARS[it.id]) STARS[it.id] = {...STARS[it.id], views:it.views, likes:it.likes, com:it.com, subs:it.subs};
+    ss('bt_star', STARS);
+    if (S.period === 'star' && !S.view) renderMain();
+  } catch {}
+}
+// ---------- Verze miniatur u uložených videí ----------
+// YouTube varianty A/B testu veřejně nedává – hlídáme aspoň, kdy se miniatura změní, a každou verzi uložíme.
+// Verze se ukládají jako obrázky do sdílené složky data/thumbs (přes server.py) – vidí je všichni a hlídá ten,
+// komu zrovna stránka běží. Bez serveru (stránka otevřená dvojklikem) zůstanou jen v tomhle prohlížeči (IndexedDB).
+const IDB = new Promise((res, rej) => {
+  const r = indexedDB.open('brawltrendy', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('thumbs');
+  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+});
+async function idb(mode, fn) {
+  const db = await IDB;
+  return new Promise((res, rej) => {
+    const tx = db.transaction('thumbs', mode), req = fn(tx.objectStore('thumbs'));
+    tx.oncomplete = () => res(req.result); tx.onerror = () => rej(tx.error);
+  });
+}
+const idbGet = id => idb('readonly', st => st.get(id)).then(v => v || []).catch(() => []);
+// otisky ukládáme hexadecimálně (144 bodů → 36 znaků); starší verze v prohlížeči měly 0/1
+const toHex = bits => bits.length <= 40 ? bits : bits.match(/.{1,4}/g).map(b => parseInt(b.padEnd(4, '0'), 2).toString(16)).join('');
+const hamHex = (a, b) => { let n = 0; for (let i = 0; i < Math.max(a.length, b.length); i++) { let x = parseInt(a[i] || '0', 16) ^ parseInt(b[i] || '0', 16); while (x) { n += x & 1; x >>= 1; } } return n; };
+// verze: [{at, hash, src}] – src je adresa obrázku (server), {drive:id} (Google Disk), nebo Blob (jen prohlížeč)
+async function getVers(id) {
+  if (REMOTE) { try { return await REMOTE.listVers(id); } catch {} }
+  return (await idbGet(id)).map(v => ({at:v.at, hash:toHex(v.hash), src:v.blob}));
+}
+async function saveVer(id, at, hash, blob) {
+  if (REMOTE) { try { return await REMOTE.saveVer(id, at, hash, blob); } catch {} }
+  const vers = await idbGet(id);
+  vers.push({at, hash, blob});
+  await idb('readwrite', st => st.put(vers.length > MAX_VERS ? [vers[0], ...vers.slice(-(MAX_VERS - 1))] : vers, id));
+}
+async function delVers(id) {
+  if (REMOTE) await REMOTE.delVers(id).catch(() => {});
+  await idb('readwrite', st => st.delete(id)).catch(() => {});
+}
+// verze, které byly dřív uložené jen v prohlížeči, jednou přeneseme do sdíleného úložiště
+async function migrateLocalVers(id) {
+  if (!REMOTE) return;
+  const local = await idbGet(id);
+  if (!local.length) return;
+  for (const v of local) await REMOTE.saveVer(id, v.at, toHex(v.hash), v.blob);
+  await idb('readwrite', st => st.delete(id)).catch(() => {});
+}
+// obrázek z Disku potřebuje přihlášení → stáhneme ho jako Blob
+async function verBlob(v) { return v.src instanceof Blob ? v.src : v.src.drive ? (await dGet(v.src.drive)).blob() : fetchBlob(v.src); }
+async function verUrl(v) { return typeof v.src === 'string' ? v.src : URL.createObjectURL(await verBlob(v)); }
+// otisk obrázku 16×9 (světlejší/tmavší než průměr) – změna miniatury = hodně jiných bodů
+async function thumbHash(blob) {
+  const bmp = await createImageBitmap(blob), cv = document.createElement('canvas');
+  cv.width = 16; cv.height = 9;
+  const cx = cv.getContext('2d'); cx.drawImage(bmp, 0, 0, 16, 9);
+  const d = cx.getImageData(0, 0, 16, 9).data, g = [];
+  for (let i = 0; i < d.length; i += 4) g.push(d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11);
+  const avg = g.reduce((a, b) => a + b, 0) / g.length;
+  return toHex(g.map(v => v > avg ? 1 : 0).join(''));
+}
+async function fetchBlob(url) { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.blob(); }
+async function bestThumb(id) {
+  for (const s of ['maxresdefault', 'sddefault', 'hqdefault']) { try { return await fetchBlob(`https://i.ytimg.com/vi/${id}/${s}.jpg`); } catch {} }
+  throw new Error('miniatura nedostupná');
+}
+const MAX_VERS = 6;
+// vrátí true, když přibyla nová verze
+async function checkThumb(id) {
+  const h = await thumbHash(await fetchBlob(`https://i.ytimg.com/vi/${id}/mqdefault.jpg?t=${Date.now()}`));
+  await migrateLocalVers(id);
+  const vers = await getVers(id), last = vers[vers.length - 1];
+  // stejný obrázek = 0 rozdílných bodů, různé miniatury v testu 38+ ze 144; 6 zachytí i menší úpravu (jiný text, barva)
+  if (last && hamHex(h, last.hash) <= 6) return false;
+  await saveVer(id, Date.now(), h, await bestThumb(id));
+  return true;
+}
+let thumbsRunning = false;
+async function checkAllThumbs(force) {
+  const ids = Object.keys(STARS);
+  if (thumbsRunning || !ids.length || (!force && Date.now() - ls('bt_thumbs_ts', 0) < 30 * 60e3)) return;
+  thumbsRunning = true; ss('bt_thumbs_ts', Date.now());
+  let changed = false;
+  for (const id of ids) { try { changed = await checkThumb(id) || changed; } catch {} }
+  thumbsRunning = false;
+  if (changed && S.period === 'star' && !S.view) renderMain();
+}
+const fmtDate = t => new Date(t).toLocaleString('cs', {day:'numeric', month:'numeric', hour:'2-digit', minute:'2-digit'});
+// do karet v Uložených doplní počet verzí a rozbalovací pás se všemi verzemi
+async function fillVersions() {
+  for (const id of Object.keys(STARS)) {
+    const card = document.querySelector(`.card[data-id="${id}"] .body`); if (!card) continue;
+    const vers = await getVers(id).catch(() => []);
+    card.querySelector('.tver')?.remove();
+    card.insertAdjacentHTML('beforeend', `<div class="tver">
+      <button data-tver>🖼️ Verze miniatury: ${vers.length || '…'}</button>${vers.length > 1 ? '<span class="tag hot">🔄 měnil miniaturu</span>' : ''}
+      <div class="tstrip" hidden></div></div>`);
+  }
+}
+async function showVersions(b) {
+  const id = b.closest('.card').dataset.id, strip = b.parentElement.querySelector('.tstrip');
+  if (!strip.hidden) { strip.hidden = true; return; }
+  strip.innerHTML = '<span class="ch">Načítám verze…</span>'; strip.hidden = false;
+  const vers = await getVers(id), urls = await Promise.all(vers.map(v => verUrl(v).catch(() => '')));
+  strip.innerHTML = vers.length ? vers.map((v, i) => `<figure>
+      <img src="${urls[i]}" alt="">
+      <figcaption>${i === vers.length - 1 ? '<b>aktuální</b>' : 'verze ' + (i + 1)} · ${fmtDate(v.at)}<button data-vdl="${i}">⬇</button></figcaption>
+    </figure>`).join('') : '<span class="ch">Zatím žádná verze – stáhne se během chvíle.</span>';
+}
+async function downloadVersion(b) {
+  const card = b.closest('.card'), it = CARD_ITEMS.get(card.dataset.id), v = (await getVers(it.id))[+b.dataset.vdl];
+  const url = URL.createObjectURL(await verBlob(v));
+  const a = Object.assign(document.createElement('a'), {href:url, download:`${it.t.replace(/[\\/:*?"<>|]+/g, '').slice(0, 70).trim()} - verze ${+b.dataset.vdl + 1}.jpg`});
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+function renderStars() {
+  const nIdeas = ls('bt_mixsaved', []).length;
+  const tabs = `<div class="mixbar"><span class="seg"><button data-startab="videos" class="${S.starTab !== 'ideas' ? 'on' : ''}">⭐ Videa (${Object.keys(STARS).length})</button><button data-startab="ideas" class="${S.starTab === 'ideas' ? 'on' : ''}">💡 Nápady (${nIdeas})</button></span></div>`;
+  if (S.starTab === 'ideas') {
+    $('#main').innerHTML = tabs + `<div class="summary"><h3>💡 Uložené nápady – ${nIdeas}</h3>
+      <div class="row ch">Kombinace z 🎲 Míchače (v Nápadech & trendech) i s tvou poznámkou. Poznámku můžeš kdykoli upravit, ukládá se rovnou.</div></div>
+      ${savedIdeasHtml() || '<div class="empty">Zatím nic. V 💡 Nápady & trendy → 🎲 Míchač zamíchej videa a ulož nápad.</div>'}`;
+    return;
+  }
+  const list = Object.values(STARS).sort((a, b) => b.at - a.at).map(s => enrich(s, C(s.cid)))
+    .filter(it => S.type === 'all' || (S.type === 'short' ? it.short : !it.short)).filter(matchQ);
+  $('#main').innerHTML = tabs + `<div class="summary"><h3>⭐ Uložená videa – ${list.length}</h3>
+    <div class="row ch">Naposledy uložené jsou vždy první. Hvězdičkou ☆ v rohu miniatury video uložíš, ★ ho zase odebereš. Uložená videa nemizí ani když vypadnou z Novinek a Týdne.</div>
+    <div class="row ch">🖼️ U uložených videí se každých 30 min hlídá miniatura – když ji youtuber změní (třeba po A/B testu), uloží se nová verze do sdílené složky. Hlídá ten, komu zrovna stránka běží, a verze vidí všichni. Varianty, které YouTube během testu ukazuje jen části diváků, veřejně dostupné nejsou.
+      <button id="btnThumbsNow">Zkontrolovat miniatury teď</button></div></div>
+    ${list.length ? `<div class="grid">${list.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Zatím nic. Klikni na ☆ v rohu miniatury u videa, které se ti líbí.</div>'}`;
+  autoTranslate();
+  refreshStars();
+  fillVersions();
+}
+// Stažení miniatury v nejvyšší dostupné kvalitě (maxres 1280×720 → sd → hq)
+async function downloadThumb(it, b) {
+  b.textContent = '…';
+  for (const size of ['maxresdefault', 'sddefault', 'hqdefault']) {
+    try {
+      const r = await fetch(`https://i.ytimg.com/vi/${it.id}/${size}.jpg`);
+      if (!r.ok) continue;
+      const url = URL.createObjectURL(await r.blob());
+      const a = Object.assign(document.createElement('a'), {href:url, download:`${it.t.replace(/[\\/:*?"<>|]+/g, '').slice(0, 80).trim() || it.id}.jpg`});
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      b.textContent = '✔'; return;
+    } catch {}
+  }
+  b.textContent = '🖼️'; status('Miniaturu se nepodařilo stáhnout.', true);
+}
+function card(it, i, showCountry) {
+  CARD_ITEMS.set(it.id, it);
+  const tags = [];
+  if (showCountry) tags.push(`<span class="tag blue">${flag(it.c)}${esc(it.c.name)}</span>`);
+  if (it.outlier != null && it.outlier >= 3) tags.push(`<span class="tag hot">🚀 ${it.outlier.toFixed(1)}× víc views než odběrů</span>`);
+  if (showCountry && it.short) tags.push('<span class="tag">📱 Shorts</span>');
+  if (it.src === 'ch') tags.push('<span class="tag blue" title="Našlo se přes sledovaný kanál, ne přes hledání">📡 sledovaný kanál</span>');
+  it.formats.forEach(f => tags.push(`<span class="tag ok">${esc(f[0])}</span>`));
+  it.brawlers.slice(0, 3).forEach(b => tags.push(`<span class="tag">${esc(b)}</span>`));
+  if (it.cand) {
+    const hits = termHits(it);
+    tags.push(hits.length
+      ? `<span class="tag ok" title="V názvu není Brawl Stars, ale má slova, která teď používají Brawl kanály">🧩 slova sezóny: ${esc(hits.slice(0, 2).join(', '))}</span>`
+      : it.weak && it.src !== 'ch' ? '<span class="tag" title="Brawl Stars je jen v popisu videa">📝 Brawl jen v popisu</span>'
+      : '<span class="tag ok" title="V názvu není Brawl Stars – poznala ho AI podle miniatury">🤖 poznala AI</span>');
+  }
+  const ai = aiBadge(it); if (ai) tags.unshift(ai);
+  return `<article class="card" data-id="${esc(it.id)}">
+    <a class="thumb" href="${ytUrl(it.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(thumb(it))}" alt=""><span class="rank">#${i + 1}</span><span class="dur">${dur(it.dur)}</span><button class="star ${STARS[it.id] ? 'on' : ''}" data-star title="${STARS[it.id] ? 'Odebrat z uložených' : 'Uložit do ⭐ Uložené'}">${STARS[it.id] ? '★' : '☆'}</button></a>
+    <div class="body">
+      <a class="title" href="${ytUrl(it.id)}" target="_blank" rel="noopener" title="${esc(it.t)}" data-orig="${esc(it.t)}" data-lang="${langOk(it, it.c) ? it.c.lang : 'auto'}">${esc(S.trAuto && TR[it.t] ? TR[it.t] : it.t)}</a>
+      <div class="ch"><a class="chlink" href="https://www.youtube.com/channel/${esc(it.chId)}/videos" target="_blank" rel="noopener" title="Otevřít kanál na YouTube">${esc(it.ch)}</a> · ${n(it.subs)} odběr.</div>
+      <div class="stats"><span><b>${n(it.views)}</b> zhlédnutí</span><span>${n(it.vph)}/h</span><span>${ago(it.ageH)}</span></div>
+      <div class="tags">${tags.join('')}</div>
+      <div class="idea">💡 ${esc(ideaFor(it))}</div>
+      <div class="actions"><button data-tr>🌐 ${S.trAuto && TR[it.t] ? 'Originál' : 'Přeložit'}</button><button data-copy>📋 Kopírovat</button><button data-thumb title="Stáhnout miniaturu v plné kvalitě">🖼️</button><a href="${trUrl(it.t)}" target="_blank" rel="noopener" title="Otevřít v Google Překladači">↗</a><button class="blockbtn" data-block title="Nemá to nic s Brawlem – zablokovat">✖</button></div>
+      <div class="blockmenu" hidden>
+        <b>Zablokovat:</b>
+        <button data-blockkind="video">Jen toto video</button>
+        <button data-blockkind="channel">Celý kanál</button>
+        <button data-blockkind="strict" title="Ukáže z kanálu jen videa s Brawl Stars v názvu, nebo v tazích + Brawl miniaturou">Kanál – jen ověřená Brawl videa</button>
+        <button data-blockcancel>Zrušit</button>
+      </div>
+    </div></article>`;
+}
+
+// ---------- AI kontrola miniatur (model CLIP běží přímo v prohlížeči, zdarma) ----------
+// Porovná miniaturu s popisy různých her. Brawl od Minecraftu/Robloxu/vlogů pozná dobře, od Clash Royale hůř
+// (stejný styl Supercellu) – proto je jen pomocník ke „slovům sezóny“, ne hlavní rozhodčí.
+const AI = {ready:null, pending:new Set(), running:false};
+const AI_CACHE = ls('bt_aicache', {});
+const AI_YES = ['a screenshot of the mobile game Brawl Stars', 'colorful cartoon characters from the game Brawl Stars', 'a YouTube thumbnail of a Brawl Stars video'];
+const AI_NO = ['a screenshot of Minecraft', 'a screenshot of Roblox', 'a screenshot of Fortnite', 'a screenshot of Clash Royale', 'a screenshot of Clash of Clans',
+  'a screenshot of Stumble Guys', 'a screenshot of Free Fire or PUBG Mobile', 'a screenshot of Squad Busters', 'a screenshot of Geometry Dash', 'a photo of real people', 'a football video game'];
+const AI_WEAK = 0.35; // video se slovem sezóny musí mít aspoň tolik (vyřadí jasný Minecraft/Roblox/vlog)
+const AI_SURE = 0.9;  // video úplně bez slov sezóny projde jen při takové jistotě
+function rows(t) {
+  const [nr, d] = t.dims, out = [];
+  for (let i = 0; i < nr; i++) {
+    const v = t.data.slice(i * d, i * d + d);
+    let s = 0; for (const x of v) s += x * x; s = Math.sqrt(s);
+    out.push(v.map(x => x / s));
+  }
+  return out;
+}
+const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+function aiInit() {
+  if (AI.ready) return AI.ready;
+  AI.ready = (async () => {
+    status('🤖 Stahuju AI model (poprvé asi 150 MB, pak je uložený v prohlížeči)…');
+    const T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
+    const M = 'Xenova/clip-vit-base-patch32';
+    const [proc, vis, tok, txt] = await Promise.all([
+      T.AutoProcessor.from_pretrained(M), T.CLIPVisionModelWithProjection.from_pretrained(M, {dtype:'q8'}),
+      T.AutoTokenizer.from_pretrained(M), T.CLIPTextModelWithProjection.from_pretrained(M, {dtype:'q8'})]);
+    Object.assign(AI, {T, proc, vis});
+    AI.text = rows((await txt(tok([...AI_YES, ...AI_NO], {padding:true, truncation:true}))).text_embeds);
+    status('');
+  })();
+  AI.ready.catch(e => { AI.ready = null; status('AI model se nepodařilo načíst: ' + e.message, true); });
+  return AI.ready;
+}
+async function embed(url) {
+  const img = await AI.T.RawImage.read(url);
+  return rows((await AI.vis(await AI.proc(img))).image_embeds)[0];
+}
+function aiScore(e) {
+  const logits = AI.text.map(t => dot(e, t) * 100), mx = Math.max(...logits);
+  const ex = logits.map(l => Math.exp(l - mx)), sum = ex.reduce((a, b) => a + b, 0);
+  return {s:+(ex.slice(0, AI_YES.length).reduce((a, b) => a + b, 0) / sum).toFixed(2)};
+}
+const aiOf = it => AI_CACHE[it.id];
+function aiBadge(it) {
+  const a = aiOf(it);
+  if (!S.ai || !a || !it.cand) return '';
+  return `<span class="tag ${a.s >= 0.5 ? 'ok' : 'hot'}" data-ai title="Jak moc miniatura vypadá jako Brawl Stars (podle AI)">🤖 Brawl ${Math.round(a.s * 100)} %</span>`;
+}
+// Projde miniatury sporných videí (bez „Brawl Stars“ v textu), které ještě nemají verdikt
+async function aiCheck(items) {
+  if (!S.ai) return;
+  items.filter(it => (it.cand || strictCh(it)) && !aiOf(it)).forEach(it => AI.pending.add(it));
+  if (AI.running || !AI.pending.size) return;
+  AI.running = true;
+  let newCand = false, done = 0;
+  try {
+    await aiInit();
+    while (AI.pending.size && S.ai) {
+      const it = AI.pending.values().next().value; AI.pending.delete(it);
+      if (aiOf(it)) continue;
+      status(`🤖 Kontroluju miniatury… (${++done}, zbývá ${AI.pending.size})`);
+      try { AI_CACHE[it.id] = aiScore(await embed(thumb(it))); } catch { continue; }
+      if (it.cand || strictCh(it)) newCand = true;
+      document.querySelectorAll(`.card[data-id="${it.id}"] .tags`).forEach(el => {
+        el.querySelector('[data-ai]')?.remove(); el.insertAdjacentHTML('afterbegin', aiBadge(it));
+      });
+      if (done % 10 === 0) saveAi();
+    }
+    status('');
+  } catch {} finally { AI.running = false; saveAi(); }
+  if (newCand) { TERMS = null; rerender(); }
+}
+function saveAi() {
+  const keys = Object.keys(AI_CACHE);
+  if (keys.length > 5000) keys.slice(0, keys.length - 5000).forEach(k => delete AI_CACHE[k]);
+  ss('bt_aicache', AI_CACHE);
+}
+
+// ---------- Překlad názvů do češtiny (Google Překladač, zdarma, bez klíče) ----------
+const TR = ls('bt_tr', {});
+async function trOne(text, sl = 'auto', tl = 'cs') {
+  const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=` + encodeURIComponent(text));
+  const j = await r.json();
+  return j[0].map(s => s[0]).join('');
+}
+// Názvy hry a brawlerů Google jinak překládá („Mortis“ → „smrt“), proto je schováme do {0}, {1}… a po překladu vrátíme
+const PROTECT_RX = new RegExp('(?<!\\p{L})(brawl ?stars|бравл ?старс|brawlers?|бравлер\\p{L}*|' +
+  BRAWLERS.map(b => b.replace(/\./g, '\\.')).join('|') + ')(?!\\p{L})', 'giu');
+function protect(t) {
+  const terms = [];
+  const text = t.replace(PROTECT_RX, m => {
+    const l = m.toLowerCase();
+    terms.push(/^(brawl ?stars|бравл ?старс)$/.test(l) ? 'Brawl Stars' : /^(brawlers|бравлер(ы|ов|ам|ами))$/.test(l) ? 'brawleři' : /^(brawler|бравлер)/.test(l) ? 'brawler' : m);
+    return '{' + (terms.length - 1) + '}';
+  });
+  return {text, terms};
+}
+const unprotect = (t, terms) => t.replace(/\{\s*(\d+)\s*\}/g, (m, i) => terms[+i] ?? m);
+async function translate(texts, sl = 'auto') {
+  const need = [...new Set(texts.filter(t => !(t in TR)))];
+  for (const part of chunks(need, 15)) {
+    const prot = part.map(protect);
+    // víc názvů v jednom dotazu (oddělené řádkem); když se řádky nesejdou, přeložíme po jednom
+    let out = (await trOne(prot.map(p => p.text).join('\n'), sl)).split('\n');
+    if (out.length !== part.length) out = await Promise.all(prot.map(p => trOne(p.text, sl)));
+    part.forEach((t, i) => TR[t] = unprotect((out[i] || '').trim(), prot[i].terms) || t);
+  }
+  const keys = Object.keys(TR);
+  if (keys.length > 3000) keys.slice(0, keys.length - 3000).forEach(k => delete TR[k]);
+  ss('bt_tr', TR);
+}
+async function autoTranslate() {
+  if (!S.trAuto) return;
+  const els = [...document.querySelectorAll('.title[data-orig]')];
+  const langs = [...new Set(els.map(el => el.dataset.lang))];
+  try { for (const l of langs) await translate(els.filter(el => el.dataset.lang === l).map(el => el.dataset.orig), l); }
+  catch { status('Překlad se nepovedl (Google Překladač neodpovídá) – zkus to později.', true); return; }
+  for (const el of els) {
+    if (!TR[el.dataset.orig]) continue;
+    el.textContent = TR[el.dataset.orig];
+    el.closest('.card').querySelector('[data-tr]').textContent = '🌐 Originál';
+  }
+}
+async function toggleTranslate(b) {
+  const el = b.closest('.card').querySelector('.title'), orig = el.dataset.orig;
+  if (el.textContent !== orig) { el.textContent = orig; b.textContent = '🌐 Přeložit'; return; }
+  b.textContent = '…';
+  try { await translate([orig], el.dataset.lang); el.textContent = TR[orig]; b.textContent = '🌐 Originál'; }
+  catch { b.textContent = '🌐 Přeložit'; status('Překlad se nepovedl – zkus to později.', true); }
+}
+
+// ---------- Vyhledávání (česky → přeloží se do jazyka státu, toleruje překlepy a tvary slov) ----------
+const QTR = ls('bt_qtr', {}); // překlady hledaných výrazů: "lang|výraz" → překlad
+const norm = s => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+const words = s => norm(s).match(/[\p{L}\p{N}]+/gu) || [];
+function lev1(a, b) { // vzdálenost nejvýš 1 (překlep / chybějící písmeno)?
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, diff = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++diff > 1) return false;
+    if (a.length === b.length && a[i] === b[j + 1] && a[i + 1] === b[j]) { i += 2; j += 2; continue; } // přehozená písmena
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+  }
+  return diff + (a.length - i) + (b.length - j) <= 1;
+}
+// slovo dotazu sedí na slovo názvu: začátek slova (tvary: box → boxy, boxen), nebo překlep u delších slov
+const wordHit = (w, tok) => tok.startsWith(w) || (w.length >= 4 && tok.startsWith(w.slice(0, -1))) || (w.length >= 5 && (lev1(w, tok) || lev1(w, tok.slice(0, w.length))));
+async function queryVariants(q, langs) {
+  const need = langs.filter(l => l !== 'cs' && !((l + '|' + q) in QTR));
+  await Promise.all(need.map(async l => {
+    try { const p = protect(q); QTR[l + '|' + q] = unprotect(await trOne(p.text, 'cs', l), p.terms); } catch {}
+  }));
+  ss('bt_qtr', QTR);
+}
+function matchQ(it) {
+  const q = S.q.trim(); if (!q) return true;
+  const text = words(it.t + ' ' + (TR[it.t] || ''));
+  const variants = [q, QTR[it.c.lang + '|' + q]].filter(Boolean);
+  // stačí, když sedí aspoň polovina významových slov (překlad nikdy nesedí slovo od slova)
+  return variants.some(v => {
+    const ws = words(v).filter(w => w.length >= 3 && !STOP.has(w));
+    const list = ws.length ? ws : words(v);
+    return list.filter(w => text.some(tok => wordHit(w, tok))).length >= Math.ceil(list.length / 2);
+  });
+}
+let qTimer = null;
+function onSearchInput(v) {
+  S.q = v; clearTimeout(qTimer);
+  qTimer = setTimeout(async () => {
+    const langs = S.qScope === 'all' || S.period === 'ideas' ? [...new Set(COUNTRIES.map(c => c.lang))] : [C(S.country).lang];
+    if (S.q.trim()) { status('🔎 Překládám hledaný výraz…'); await queryVariants(S.q.trim(), langs); status(''); }
+    renderMain();
+  }, 450);
+}
+// Hledání ve všech uložených videích všech států (Novinky, Týden, Celá doba, Archiv)
+function renderSearchAll() {
+  const seen = new Set(), list = [];
+  for (const c of COUNTRIES) {
+    const raw = [...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])];
+    for (const it of prepare(raw, c)) if (!seen.has(it.id) && matchQ(it)) { seen.add(it.id); list.push(it); }
+  }
+  list.sort(SORTS[S.sort]);
+  const q = S.q.trim();
+  const tr = [...new Set(COUNTRIES.map(c => QTR[c.lang + '|' + q]).filter(t => t && norm(t) !== norm(q)))];
+  $('#main').innerHTML = `<div class="summary"><h3>🔎 „${esc(q)}“ ve všech uložených videích – ${list.length} výsledků</h3>
+    ${tr.length ? `<div class="row ch">Hledáno i jako: ${tr.slice(0, 14).map(t => `<span class="tag blue">${esc(t)}</span>`).join('')}</div>` : ''}</div>
+    ${list.length ? `<div class="grid">${list.slice(0, 200).map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Nic nenalezeno. Zkus jiné slovo nebo načti víc dat.</div>'}`;
+  autoTranslate();
+}
+
+// ---------- Hlavička ----------
+function renderHeader() {
+  const nb = Object.keys(BLOCK.videos).length + Object.keys(BLOCK.channels).length;
+  $('#btnBlocked').textContent = '🚫 Zablokované' + (nb ? ` (${nb})` : '');
+  for (const sel of ['#tabs', '.search', '#btnBlocked', '#btnSettings', '#driveSlot']) $(sel).style.display = '';
+  // ☁️ stav Google Disku: připojeno / tlačítko pro (znovu)připojení – přihlášení jde spustit jen kliknutím
+  $('#driveSlot').innerHTML = REMOTE === DRIVE_BACKEND ? '<span class="chip" title="Data se sdílejí přes Google Disk">☁️ Disk</span>'
+    : gClientId() && (ls('bt_gdrive', false) || DRIVE.state === 'expired') ? '<button class="costly" id="btnDrive" title="Přihlášení Googlem – sdílení dat přes Disk">☁️ Připojit Disk</button>' : '';
+  const nStar = Object.keys(STARS).length;
+  // bílé tlačítko = ještě nenačtené, kliknutí stojí kvótu (období se počítá pro aktuální stát)
+  const tab = k => `<button data-period="${k}" class="${S.period === k ? 'on' : costAttr(openCost(C(S.country), k))}">${PERIODS[k].label}${k === 'star' && nStar ? ` (${nStar})` : ''}</button>`;
+  $('#tabs').innerHTML = `<span class="seg periods">${TIME_PERIODS.map(tab).join('')}</span>` +
+    Object.keys(PERIODS).filter(k => !TIME_PERIODS.includes(k)).map(tab).join('');
+  $('#countries').style.display = S.period === 'ideas' || S.period === 'star' ? 'none' : 'flex';
+  $('#countries').innerHTML = COUNTRIES.map(c => `<button data-country="${c.id}" class="${S.country === c.id ? 'on' : costAttr(openCost(c, S.period))}">${flag(c)}${esc(c.name)}</button>`).join('');
+  const opt = (v, cur, l) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
+  const seg = (v, l) => `<button data-type="${v}" class="${S.type === v ? 'on' : ''}">${l}</button>`;
+  // ostatní volby jsou v ⚙️ Nastavení
+  const common = `<span class="seg">${seg('all', 'Obojí')}${seg('long', '🎬 Videa')}${seg('short', '📱 Shorts')}</span>`;
+  const sortSel = `<label>Řadit <select data-set="sort">${opt('views', S.sort, 'Nejvíc zhlédnutí')}${opt('vph', S.sort, 'Nejrychleji rostoucí (views/h)')}${opt('outlier', S.sort, 'Virál nad odběry (views/odběry)')}${opt('eng', S.sort, 'Engagement (lajky+komenty)')}${opt('new', S.sort, 'Nejnovější')}</select></label>`;
+  if (S.period === 'ideas') {
+    $('#controls').innerHTML = common + '<span>Nápady berou data ze všech států (načti je tlačítky níže).</span>';
+  } else if (S.period === 'star') {
+    $('#controls').innerHTML = common + '<span>Uložená videa ze všech států.</span>';
+  } else if (S.period === 'arch') {
+    $('#controls').innerHTML = sortSel + common + '<span>Archiv je jen z uložených dat – nic nestahuje a kvótu nebere.</span>';
+  } else {
+    $('#controls').innerHTML = `
+      ${sortSel}
+      ${common}
+      <span id="updated"></span>`;
+  }
+}
+
+// ---------- Pohled: seznam pro stát ----------
+async function showCountry(force) {
+  const token = ++S.loadToken, c = C(S.country), p = S.period;
+  if (p === 'arch' || p === 'star') { renderMain(); return; }
+  let set = getSet(c.id, p);
+  // Při zapnuté auto-aktualizaci jsou novinky/týden zastaralé po uplynutí intervalu (i když stránka byla mezitím zavřená)
+  const maxAge = (S.auto && p !== 'all' ? S.interval : PERIODS[p].ttl) * 60e3;
+  let failed = false;
+  if (force || !set || Date.now() - set.ts >= maxAge) {
+    status(`Načítám ${c.name} – ${PERIODS[p].label}…`);
+    try { set = await ensureSet(c, p, true, !force, true); status(''); }
+    catch (e) { status(e.message, true); failed = true; }
+  }
+  if (token !== S.loadToken) return;
+  S.nextAuto = (set && !failed ? set.ts : Date.now()) + S.interval * 60e3;
+  renderMain();
+}
+function renderCountry(set, c, p) {
+  if (!set) { $('#main').innerHTML = `<div class="empty">${p === 'arch' ? 'Archiv je zatím prázdný – plní se sám z Novinek, Týdne a Celé doby.' : 'Zatím žádná data.'}</div>`; return; }
+  const list = prepare(set.items, c).filter(matchQ).sort(SORTS[S.sort]);
+  const q = S.q.trim(), qTr = q && QTR[c.lang + '|' + q];
+  const fm = countBy(list, it => it.formats.map(f => f[0]), it => it.views);
+  const br = countBy(list, it => it.brawlers, it => it.views);
+  const wd = countBy(list, it => tokens(it.t), it => Math.log10(it.vph + 10)).filter(e => e.n >= 2);
+  const pill = (e, cls = '') => `<span class="tag ${cls}" title="${e.n} videí · ${n(e.views)} zhlédnutí">${esc(e.k)} · ${e.n}</span>`;
+  const head = p === 'arch' ? `🗄️ Archiv uložených videí – ${esc(c.name)} (max ${MAX_ARCH} nejsledovanějších)` : p === 'all' ? `🏆 Co funguje dlouhodobě – ${esc(c.name)}` : p === 'week' ? `📅 Tento týden – ${esc(c.name)}` : p === 'month' ? `📆 Posledních 30 dní – ${esc(c.name)}` : `🔥 Posledních 24 h – ${esc(c.name)}`;
+  const hLang = S.strict ? set.items.filter(it => !langOk(it, c)).length : 0;
+  const hCand = set.items.filter(it => (!S.strict || langOk(it, c)) && it.cand && !candOk(it)).length;
+  const hidden = [hLang && `${hLang} z jiné země/jazyka`, hCand && `${hCand} bez zmínky Brawl Stars`].filter(Boolean).join(', ');
+  const longs = list.filter(it => !it.short), shorts = list.filter(it => it.short);
+  const fromCh = list.filter(it => it.src === 'ch').length;
+  const tracked = trackedChannels(c);
+  const sections = [];
+  if (S.type !== 'short') sections.push(['🎬 Videa', longs]);
+  if (S.type !== 'long') sections.push(['📱 Shorts', shorts]);
+  $('#main').innerHTML = `
+    <div class="summary">
+      <h3>${head}</h3>
+      ${q ? `<div class="row"><span class="lbl">🔎 Hledám</span><span class="tag hot">${esc(q)}</span>${qTr && norm(qTr) !== norm(q) ? `<span class="ch">i jako</span><span class="tag blue">${esc(qTr)}</span>` : ''}</div>` : ''}
+      <div class="row"><span class="lbl">Formáty</span>${fm.slice(0, 8).map(e => pill(e, 'ok')).join('') || '<span class="ch">–</span>'}</div>
+      <div class="row"><span class="lbl">Brawleři</span>${br.slice(0, 10).map(e => pill(e)).join('') || '<span class="ch">–</span>'}</div>
+      <div class="row"><span class="lbl">Časté slova</span>${wd.slice(0, 14).map(e => pill(e, 'blue')).join('') || '<span class="ch">–</span>'}</div>
+      <div class="row" title="Slova, která teď používají aspoň 3 čistě Brawl kanály (ze všech států). Podle nich se poznají i videa bez „Brawl Stars“ v názvu."><span class="lbl">Slova sezóny</span>${termPills(15)}</div>
+      <div class="row ch">${longs.length} videí · ${shorts.length} shorts${hidden ? ` · skryto: ${hidden}` : ''} · celkem ${n(list.reduce((a, b) => a + b.views, 0))} zhlédnutí${fromCh ? ` · ${fromCh} nalezeno jen přes sledované kanály` : ''}</div>
+      <details class="row ch" ${tracked.length ? '' : 'open'}><summary>📡 Sledované Brawl kanály: ${tracked.length}${tracked.length ? '' : ' (naučí se z výsledků, nebo si je přidej ručně)'}</summary>
+        <div class="tags" style="margin-top:6px">${tracked.map(ch => `<span class="tag ${ch.manual ? 'ok' : ''}"><a href="https://www.youtube.com/channel/${esc(ch.id)}" target="_blank" rel="noopener" style="text-decoration:none">${ch.manual ? '📌 ' : ''}${esc(ch.name)}${ch.ids.length ? ' · ' + ch.ids.length + ' videí' : ''}</a>${ch.manual ? ` <button class="x" data-unch="${esc(ch.id)}" title="Přestat sledovat">✖</button>` : ''}</span>`).join('')}</div>
+        <div class="addch"><input id="chInput" placeholder="@LukasBrawlStars nebo odkaz na kanál"><button id="btnAddCh">➕ Přidat kanál do ${esc(c.name)}</button></div></details>
+    </div>
+    ${list.length ? sections.map(([h, l]) => `<div class="sec"><h2>${h} <span class="ch">(${l.length})</span></h2>${l.length ? `<div class="grid">${l.map((it, i) => card(it, i)).join('')}</div>` : '<div class="empty">Nic.</div>'}</div>`).join('') : '<div class="empty">Nic nenalezeno. Zkus jiný stát, nebo v ⚙️ Nastavení vypnout „Jen videa z daného státu“.</div>'}
+    ${set.next ? `<button class="more" id="btnMore">Načíst dalších 50 (≈${COST_SET} jednotek kvóty)</button>` : ''}`;
+  updateUpdated();
+  autoTranslate();
+  aiCheck(set.items.filter(it => !S.strict || langOk(it, c)));
+}
+async function loadMore() {
+  const c = C(S.country), p = S.period, set = getSet(c.id, p);
+  if (!set?.next) return;
+  status('Načítám další…');
+  try {
+    const r = await fetchSet(c, p, set.next);
+    const seen = new Set(set.items.map(i => i.id));
+    set.items.push(...r.items.filter(i => !seen.has(i.id)));
+    set.next = r.next; putSet(c.id, p, set); archive(c.id, r.items); status('');
+  } catch (e) { status(e.message, true); }
+  renderCountry(set, c, p);
+}
+
+// ---------- Pohled: nápady ----------
+async function loadAll(p) {
+  if (S.busy) return; S.busy = true;
+  let i = 0;
+  for (const c of COUNTRIES) {
+    i++;
+    if (isFresh(getSet(c.id, p), p)) continue;
+    status(`Načítám ${PERIODS[p].label}: ${c.name} (${i}/${COUNTRIES.length})…`);
+    try { await ensureSet(c, p, true, true); }
+    catch (e) { status(e.message, true); S.busy = false; renderIdeas(); return; }
+  }
+  status(''); S.busy = false; renderIdeas();
+}
+function gather(p) {
+  let out = [], loaded = 0, oldest = Infinity;
+  for (const c of COUNTRIES) {
+    if (c.id === 'cz') continue; // konkurenci do nápadů nemícháme
+    const set = getSet(c.id, p);
+    if (!set) continue;
+    loaded++; oldest = Math.min(oldest, set.ts);
+    out.push(...prepare(set.items, c));
+  }
+  const seen = new Set(); // stejné video může vrátit víc států
+  out = out.filter(it => !seen.has(it.id) && seen.add(it.id));
+  return {list:out, loaded, oldest};
+}
+// ---------- 🎲 Míchač nápadů: moje videa (+ zahraniční trendy) náhodně vedle sebe ----------
+const MIX = {a:null, b:null, mode:ls('bt_mixmode', 'mine')};
+// načte všechna moje videa za poslední 2 roky (≈1 jednotka za 50 videí; nahrávky jdou od nejnovějších)
+const MY_YEARS = 2;
+async function loadMyChannel(input) {
+  const s = input.trim();
+  const id = (s.match(/(UC[\w-]{22})/) || [])[1];
+  const handle = id ? null : (s.match(/@([\w.\-·]+)/) || [null, s.replace(/^https?:\/\/(www\.)?youtube\.com\//, '')])[1];
+  if (!id && !handle) throw new Error('Zadej @jméno svého kanálu nebo odkaz na něj.');
+  const r = await api('channels', id ? {part:'snippet,contentDetails', id} : {part:'snippet,contentDetails', forHandle:'@' + handle.replace(/^@/, '')}, 1);
+  const ch = r.items?.[0];
+  if (!ch) throw new Error(`Kanál „${s}“ jsem na YouTube nenašel.`);
+  const since = Date.now() - MY_YEARS * 365 * 864e5;
+  const videos = []; let page = null;
+  for (let i = 0; i < 60; i++) { // pojistka max 3 000 videí
+    status(`📺 Načítám tvoje videa… (${videos.length})`);
+    const p = await api('playlistItems', {part:'snippet', playlistId:ch.contentDetails.relatedPlaylists.uploads, maxResults:50, ...(page ? {pageToken:page} : {})}, 1);
+    const batch = p.items.map(x => ({id:x.snippet.resourceId.videoId, t:x.snippet.title, pub:x.snippet.publishedAt}));
+    videos.push(...batch.filter(v => new Date(v.pub) >= since && v.t !== 'Private video' && v.t !== 'Deleted video'));
+    if (!(page = p.nextPageToken) || batch.some(v => new Date(v.pub) < since)) break;
+  }
+  ss('bt_my', {chId:ch.id, name:ch.snippet.title, input:s, uploads:ch.contentDetails.relatedPlaylists.uploads, videos, ts:Date.now(), full:MY_YEARS});
+  status(`📺 Kontroluju délky a streamy u ${videos.length} videí…`);
+  await enrichMine();
+}
+// Seznam nahrávek neříká délku ani jestli šlo o stream → doplníme přes videos.list (1 jednotka za 50 videí, jen jednou)
+async function enrichMine() {
+  const my = ls('bt_my', null);
+  const todo = (my?.videos || []).filter(v => v.dur === undefined);
+  if (!todo.length) return;
+  const info = {};
+  for (const part of chunks(todo.map(v => v.id), 50)) {
+    const r = await api('videos', {part:'contentDetails,liveStreamingDetails', id:part.join(',')}, 1);
+    r.items.forEach(x => info[x.id] = {dur:parseDur(x.contentDetails.duration), live:!!x.liveStreamingDetails});
+  }
+  ss('bt_my', {...my, videos:my.videos.map(v => v.dur !== undefined ? v : {...v, ...(info[v.id] || {dur:0})})});
+}
+const myUsable = v => !(v.dur > 0 && v.dur <= 180) && !(S.noLive && isStream(v)); // bez shortů a streamů
+// „Načíst znovu“: kanál už známe, stáhne se jen první stránka nahrávek a přidají se nová videa (1 jednotka)
+async function refreshMyChannel() {
+  const my = ls('bt_my', null);
+  if (!my?.uploads) return loadMyChannel(my.input);
+  const p = await api('playlistItems', {part:'snippet', playlistId:my.uploads, maxResults:50}, 1);
+  const have = new Set(my.videos.map(v => v.id));
+  const fresh = p.items.map(x => ({id:x.snippet.resourceId.videoId, t:x.snippet.title, pub:x.snippet.publishedAt}))
+    .filter(v => !have.has(v.id) && v.t !== 'Private video' && v.t !== 'Deleted video');
+  ss('bt_my', {...my, videos:[...fresh, ...my.videos], ts:Date.now()});
+  await enrichMine();
+  return fresh.length;
+}
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+function trendPool() {
+  const seen = new Set(), out = [];
+  // jen dlouhá videa – shorty od ostatních do míchače nepatří
+  for (const c of COUNTRIES) if (c.id !== 'cz') for (const p of ['day', 'week']) for (const it of prepare(getSet(c.id, p)?.items || [], c))
+    if (!it.short && !seen.has(it.id)) { seen.add(it.id); out.push(it); }
+  return out.sort((a, b) => b.vph - a.vph).slice(0, 150);
+}
+function reroll() {
+  const mine = (ls('bt_my', null)?.videos || []).filter(myUsable);
+  if (!mine.length) return;
+  MIX.a = pick(mine);
+  if (MIX.mode === 'trend') { const pool = trendPool(); MIX.b = pool.length ? pick(pool) : null; }
+  else { do { MIX.b = pick(mine); } while (mine.length > 1 && MIX.b.id === MIX.a.id); }
+}
+const mixCard = (v, lbl) => v ? `<a class="mixcard" href="${ytUrl(v.id)}" target="_blank" rel="noopener">
+    <img src="https://i.ytimg.com/vi/${esc(v.id)}/mqdefault.jpg" alt=""><span class="ch">${lbl}${v.c ? ' · ' + flag(v.c) + esc(v.c.name) : ''}</span><b>${esc(v.t)}</b></a>` : '<div class="empty">Pro trendy načti nejdřív Novinky nebo Týden (bere jen dlouhá videa, ne shorty).</div>';
+function mixSection() {
+  const my = ls('bt_my', null), saved = ls('bt_mixsaved', []);
+  if (!my) return `<div class="addch"><input id="myInput" placeholder="@tvujkanal nebo odkaz na tvůj YouTube kanál"><button class="primary" id="btnMyLoad">Načíst moje videa za 2 roky (≈1 jednotka za 25 videí)</button></div>`;
+  // starší uložený kanál ještě nemá délky videí → jednorázově doplnit (pak se vyřadí shorty a streamy)
+  if (my.videos.some(v => v.dur === undefined) && !MIX.enriching && !MIX.enrichFailed) {
+    MIX.enriching = true;
+    enrichMine().then(() => { MIX.a = null; renderMain(); })
+      .catch(e => { MIX.enrichFailed = true; status(e.message, true); }) // znovu to nezkoušet dokola
+      .finally(() => MIX.enriching = false);
+  }
+  if (!MIX.a) reroll();
+  const usable = my.videos.filter(myUsable).length;
+  return `<div class="row ch" style="margin-bottom:8px">📺 <b>${esc(my.name)}</b> · ${usable} videí do míchání${usable < my.videos.length ? ` (${my.videos.length - usable} shortů/streamů vynecháno)` : ''} · načteno ${ago((Date.now() - my.ts) / 3600e3)}
+      · uloženo v prohlížeči, míchání kvótu nebere <button id="btnMyLoad" data-reload title="Stáhne jen nová videa (1 jednotka)">⟳ Přidat nová videa</button>
+      ${my.full ? '' : `<button id="btnMyFull" title="Teď máš jen posledních ${my.videos.length} videí">📅 Načíst všechna videa za ${MY_YEARS} roky</button>`}</div>
+    <div class="mixbar">
+      <span class="seg"><button data-mixmode="mine" class="${MIX.mode === 'mine' ? 'on' : ''}">Moje + moje</button><button data-mixmode="trend" class="${MIX.mode === 'trend' ? 'on' : ''}">Moje + trend ze zahraničí</button></span>
+      <button class="primary" id="btnMix">🎲 Zamíchat</button>
+    </div>
+    <div class="mix">${mixCard(MIX.a, 'Moje video')}<div class="plus">+</div>${mixCard(MIX.b, MIX.mode === 'trend' ? 'Trend' : 'Moje video')}</div>
+    <div class="addch"><input id="mixNote" placeholder="Můj nápad z téhle kombinace… (např. Hraju za svého mainu na účtu v jedné barvě)"><button id="btnMixSave">📌 Uložit nápad</button></div>
+    ${saved.length ? `<div class="row ch">📌 Uložených nápadů: ${saved.length} – najdeš je v <button data-period="star" data-startab="ideas">⭐ Uložené → 💡 Nápady</button></div>` : ''}`;
+}
+// seznam uložených nápadů (zobrazuje se v ⭐ Uložené → 💡 Nápady)
+function savedIdeasHtml() {
+  const saved = ls('bt_mixsaved', []);
+  return saved.length ? `<div class="blist">${saved.map((s, i) => `<div class="brow">
+      <a href="${ytUrl(s.a.id)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${esc(s.a.id)}/default.jpg" width="64" alt=""></a><span class="plus">+</span><a href="${ytUrl(s.b.id)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${esc(s.b.id)}/default.jpg" width="64" alt=""></a>
+      <div class="grow"><div class="ch">${esc(s.a.t)} <b>+</b> ${esc(s.b.t)} · ${fmtDate(s.at)}</div>
+        <input class="mixnote" data-mixnote="${i}" value="${esc(s.note)}" placeholder="Můj nápad…"></div>
+      <button data-mixdel="${i}" title="Smazat">✖</button></div>`).join('')}</div>` : '';
+}
+async function myLoadUI(b) {
+  status('📺 Načítám tvoje videa…');
+  try {
+    if (b.dataset.reload !== undefined) { const n = await refreshMyChannel(); status(n ? `📺 Přibylo ${n} nových videí.` : '📺 Žádná nová videa.'); }
+    else { const val = $('#myInput')?.value || ''; if (!val.trim()) return status(''); await loadMyChannel(val); MIX.a = null; status(''); }
+  } catch (e) { status(e.message, true); }
+  renderMain();
+}
+const slim = v => v && {id:v.id, t:v.t};
+
+function staleCost(p) { return COUNTRIES.filter(c => !isFresh(getSet(c.id, p), p)).reduce((a, c) => a + costFor(c, p), 0); }
+function renderIdeas() {
+  const day = gather('day'), week = gather('week'), all = gather('all');
+  const total = COUNTRIES.length - 1;
+  const info = g => g.loaded ? `${g.loaded}/${total} států · nejstarší data ${ago((Date.now() - g.oldest) / 3600e3)}` : 'zatím nenačteno';
+  const btn = (p, l) => { const cost = staleCost(p);
+    return cost ? `<button class="costly" data-loadall="${p}" title="⚡ Stojí kvótu">${l} (≈${cost.toLocaleString('cs')} jednotek)</button>` : `<button data-loadall="${p}" disabled>✔ Načteno – nic se nestahuje</button>`; };
+
+  // 1) Co letí teď
+  const byVph = [...day.list].sort((a, b) => b.vph - a.vph);
+  const hotLong = byVph.filter(it => !it.short).slice(0, 12), hotShort = byVph.filter(it => it.short).slice(0, 12);
+  const hotGrid = (h, l) => `<h3>${h}</h3>${l.length ? `<div class="grid">${l.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Nic.</div>'}`;
+  // 2) Formáty: novinky vs. celá doba – zvlášť videa a shorts (shorts mají řádově víc views/h a přehlušily by videa)
+  const share = (list, name) => list.length ? list.filter(it => it.formats.some(f => f[0] === name)).length / list.length : 0;
+  const fmtRows = (dayList, allList) => FORMATS.map(f => {
+    const inDay = dayList.filter(it => it.formats.includes(f));
+    return {name:f[0], tip:f[2], n:inDay.length, vph:inDay.reduce((a, b) => a + b.vph, 0), sd:share(dayList, f[0]), sa:share(allList, f[0]),
+      items:inDay.sort((a, b) => b.vph - a.vph), hasAll:allList.length > 0};
+  }).filter(r => r.n).sort((a, b) => b.vph - a.vph);
+  const fmtBlock = (h, rows) => {
+    const maxV = Math.max(1, ...rows.map(r => r.vph));
+    return `<h3>${h}</h3><div class="fmts">${rows.map(r => `<details class="fmt">
+        <summary><b>${esc(r.name)}</b><span class="ch">${r.n} videí</span><span class="fbar"><span class="bar" style="width:${Math.max(4, r.vph / maxV * 100)}%"></span></span><span>${n(r.vph)}/h</span>${r.hasAll && r.sd > r.sa * 1.5 ? '<span class="tag hot">ROSTE</span>' : ''}</summary>
+        <div class="idea">💡 ${esc(r.tip)}</div>
+        <div class="grid">${r.items.slice(0, 12).map((it, i) => card(it, i, true)).join('')}</div>
+      </details>`).join('') || '<div class="empty">Nic.</div>'}</div>`;
+  };
+  const fLong = fmtRows(day.list.filter(it => !it.short), all.list.filter(it => !it.short));
+  const fShort = fmtRows(day.list.filter(it => it.short), all.list.filter(it => it.short));
+  // zavírací kategorie; co máš otevřené, si stránka pamatuje
+  const OPEN = ls('bt_open', {});
+  const sec = (id, title, count, hint, body) => `<details class="isec" data-sec="${id}" ${OPEN[id] ? 'open' : ''}>
+      <summary><h2>${title}</h2>${count ? `<span class="tag">${count}</span>` : ''}</summary>
+      <p class="hint">${hint}</p>${body}</details>`;
+  // 3) Nová slova dne (nejsou v týdnu ani celé době = čerstvé téma / nový brawler / event)
+  const oldWords = new Set([...week.list.filter(it => it.ageH > 48), ...all.list].flatMap(it => tokens(it.t)));
+  const words = countBy(day.list, it => tokens(it.t), it => Math.log10(it.vph + 10)).filter(e => e.n >= 2).slice(0, 40);
+  // 4) Brawleři v novinkách
+  const br = countBy(day.list, it => it.brawlers, it => it.vph).slice(0, 15);
+  // 5) Virály nad odběry za týden
+  const outl = week.list.filter(it => it.outlier && it.outlier >= 3 && it.views >= 5000).sort((a, b) => b.outlier - a.outlier).slice(0, 12);
+  // 6) Evergreen
+  const ever = FORMATS.map(f => ({name:f[0], tip:f[2], s:share(all.list, f[0]), views:all.list.filter(it => it.formats.includes(f)).reduce((a, b) => a + b.views, 0)})).filter(r => r.s > 0).sort((a, b) => b.views - a.views);
+  const everBr = countBy(all.list, it => it.brawlers, it => it.views).slice(0, 12);
+
+  $('#main').innerHTML = `
+    <div class="summary">
+      <h3>💡 Nápady z celého světa (bez Česka)</h3>
+      <div class="row"><span class="lbl">Novinky 24 h</span><span class="ch">${info(day)}</span>${btn('day', '⟳ Načíst novinky ze všech států')}</div>
+      <div class="row"><span class="lbl">Týden</span><span class="ch">${info(week)}</span>${btn('week', 'Načíst týden')}</div>
+      <div class="row"><span class="lbl">Celá doba</span><span class="ch">${info(all)}</span>${btn('all', 'Načíst celou dobu')}</div>
+      <div class="row ch">Denní limit je 10 000 jednotek. Novinky ze všech států ≈ 1 500 (když jsou všechna data stará), takže je klidně obnovuj několikrát denně. Data se ukládají, takže když je čerstvá, nic se nestahuje znovu.</div>
+    </div>
+
+    ${sec('mix', '🎲 Míchač nápadů z mých videí', ls('bt_mixsaved', []).length ? ls('bt_mixsaved', []).length + ' uložených' : '',
+      'Dvě náhodná videa vedle sebe – zkus z nich spojit nový nápad (např. „účet v jedné barvě“ + „co o tobě říká tvůj main“ → hraju za mainu na účtu v jedné barvě). Dobrou kombinaci si ulož i s poznámkou.',
+      mixSection())}
+
+    ${sec('formats', '🧩 Formáty, které dnes táhnou', fLong.length + fShort.length,
+      'Klikni na formát a uvidíš videa, která ho právě používají. Videa a shorts zvlášť. „ROSTE“ = dnes se točí častěji než obvykle (po načtení „Celá doba“).',
+      day.list.length ? `<div class="two">${S.type !== 'short' ? `<div>${fmtBlock('🎬 Videa', fLong)}</div>` : ''}${S.type !== 'long' ? `<div>${fmtBlock('📱 Shorts', fShort)}</div>` : ''}</div>` : '<div class="empty">Načti novinky tlačítkem nahoře.</div>')}
+
+    ${sec('hot', '🔥 Co letí právě teď', hotLong.length + hotShort.length,
+      'Nejrychleji rostoucí za 24 h (zhlédnutí za hodinu) – nejčerstvější nápady na video.',
+      byVph.length ? (S.type !== 'short' ? hotGrid('🎬 Videa', hotLong) : '') + (S.type !== 'long' ? hotGrid('📱 Shorts', hotShort) : '') : '<div class="empty">Načti novinky tlačítkem nahoře.</div>')}
+
+    ${sec('words', '🆕 Slova dne', words.length,
+      'Slova, která se dnes opakují v názvech – klikni a uvidíš videa s tím slovem. <span class="tag hot">NOVÉ</span> = v týdnu/celé době skoro nebyla → nový brawler, event, skin nebo leak.',
+      `<div class="tags">${words.map(e => `<button class="tag ${oldWords.size && !oldWords.has(e.k) ? 'hot' : 'blue'}" data-q="${esc(e.k)}" title="${e.n} videí · ${n(e.views)} zhlédnutí">${esc(e.k)} · ${e.n}</button>`).join('') || '<span class="ch">Zatím žádná data.</span>'}</div>`)}
+
+    ${sec('season', '🧩 Slova sezóny z Brawl kanálů', brawlTerms().size,
+      'Názvy, které teď opakují kanály točící jen Brawl (nové boxy, skiny, event). Podle nich stránka pozná i videa bez „Brawl Stars“ v názvu.',
+      `<div class="tags">${termPills(30)}</div>`)}
+
+    ${sec('brawlers', '🦸 Brawleři v novinkách', br.length,
+      'Klikni na brawlera a uvidíš videa o něm.',
+      `<div class="tags">${br.map(e => `<button class="tag ok" data-q="${esc(e.k)}" title="${n(e.views)} zhlédnutí">${esc(e.k)} · ${e.n} videí</button>`).join('') || '<span class="ch">Zatím žádná data.</span>'}</div>`)}
+
+    ${sec('viral', '🚀 Virály nad odběry (týden)', outl.length,
+      'Malé kanály, které dostaly 3× a víc zhlédnutí než mají odběratelů. Tady nevyhrál kanál, ale NÁPAD – nejlepší věci ke zkopírování.',
+      outl.length ? `<div class="grid">${outl.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Načti „Týden“ tlačítkem nahoře.</div>')}
+
+    ${sec('ever', '🏛️ Evergreen – co funguje za celou dobu', ever.length,
+      'Formáty a brawleři z nejsledovanějších videí všech dob. Dobré na videa, která nabírají views dlouho.',
+      ever.length ? `<table><tr><th>Formát</th><th>Podíl v top videích</th><th>Zhlédnutí celkem</th></tr>${ever.map(r => `<tr><td><b>${esc(r.name)}</b><div class="ch">${esc(r.tip)}</div></td><td>${Math.round(r.s * 100)} %</td><td>${n(r.views)}</td></tr>`).join('')}</table>
+      <div class="tags" style="margin-top:10px">${everBr.map(e => `<span class="tag ok">${esc(e.k)} · ${n(e.views)}</span>`).join('')}</div>` : '<div class="empty">Načti „Celá doba“ tlačítkem nahoře.</div>')}`;
+  autoTranslate();
+  aiCheck(COUNTRIES.flatMap(c => ['day', 'week'].flatMap(p => getSet(c.id, p)?.items || [])));
+}
+
+// ---------- Nastavení klíče ----------
+function renderSetup() {
+  $('#tabs').innerHTML = ''; $('#countries').innerHTML = ''; $('#controls').innerHTML = '';
+  $('#main').innerHTML = `<div class="setup">
+    <h2>🔑 Potřebuju YouTube API klíč (zdarma, 5 minut)</h2>
+    <ol>
+      <li>Otevři <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">console.cloud.google.com</a> a přihlas se Google účtem.</li>
+      <li>Vytvoř nový projekt (třeba „Brawl Trendy“).</li>
+      <li>Jdi na <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3</a> a klikni <b>Povolit (Enable)</b>.</li>
+      <li>Jdi do <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials</a> → <b>Create credentials</b> → <b>API key</b>.
+        U klíče nastav <b>API restrictions: YouTube Data API v3</b> a <b>Websites: <code>${esc(location.origin)}/*</code></b> (adresa téhle stránky).</li>
+      <li>Klíč (začíná <code>AIza…</code>) zkopíruj a vlož sem:</li>
+    </ol>
+    <input id="keyInput" placeholder="AIza..." value="${esc(S.key)}">
+    <button class="primary" id="btnSaveKey">Uložit a spustit</button>
+    <p class="ch">Klíč se ukládá jen v tomhle prohlížeči na tvém PC. Zdarma máš 10 000 jednotek denně – jedno načtení státu stojí ≈${COST_SET}.</p>
+  </div>`;
+}
+
+// ---------- Řízení ----------
+function show(force = false) {
+  quota();
+  if (!S.key) { renderSetup(); return; }
+  renderHeader();
+  if (S.period === 'ideas') renderIdeas(); else showCountry(force);
+}
+function rerender() {
+  if (!S.view) renderHeader();
+  renderMain();
+}
+// jen obsah stránky (hlavičku s polem hledání nepřekreslujeme, ať se nepřeruší psaní)
+function renderMain() {
+  if (S.view === 'blocked') return renderBlocked();
+  if (S.view === 'settings') return renderSettings();
+  if (S.q.trim() && (S.qScope === 'all' || S.period === 'ideas')) return renderSearchAll();
+  if (S.period === 'ideas') renderIdeas();
+  else if (S.period === 'star') renderStars();
+  else renderCountry(S.period === 'arch' ? getArchive(S.country) : getSet(S.country, S.period), C(S.country), S.period);
+}
+function updateUpdated() {
+  const el = $('#updated'); if (!el) return;
+  const set = getSet(S.country, S.period);
+  let t = set ? `Aktualizováno ${ago((Date.now() - set.ts) / 3600e3)}` : '';
+  if (S.auto) { const s = Math.max(0, Math.round((S.nextAuto - Date.now()) / 1000)); t += ` · další za ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+  el.textContent = t;
+}
+setInterval(() => {
+  updateUpdated();
+  if (!document.hidden) checkAllThumbs(); // sama si hlídá interval 30 min
+  if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || !S.nextAuto) return;
+  if (Date.now() >= S.nextAuto) { S.nextAuto = Date.now() + S.interval * 60e3; showCountry(false); }
+}, 1000);
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.startab) S.starTab = b.dataset.startab; // ⭐ Uložené: Videa / Nápady (i z odkazu v míchači)
+  if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); show(); }
+  else if (b.dataset.startab) renderMain();
+  else if (b.id === 'btnDrive') driveConnect(false);
+  else if (b.id === 'btnDriveCreate') driveConnect(true);
+  else if (b.id === 'btnDriveOff') { REMOTE = null; DRIVE.token = null; DRIVE.state = 'off'; ss('bt_gdrive', false); SYNC.ok = false; pullShared(); rerender(); }
+  else if (b.dataset.country) { S.view = null; S.country = b.dataset.country; ss('bt_country', S.country); show(); }
+  else if (b.dataset.loadall) loadAll(b.dataset.loadall);
+  else if (b.dataset.type) { S.type = b.dataset.type; ss('bt_type', S.type); rerender(); }
+  else if (b.dataset.tr !== undefined) toggleTranslate(b);
+  else if (b.dataset.copy !== undefined) { const t = b.closest('.card').querySelector('.title').textContent; navigator.clipboard?.writeText(t).then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
+  else if (b.id === 'btnRefresh') { S.view = null; renderHeader(); showCountry(true); }
+  else if (b.id === 'btnMore') loadMore();
+  else if (b.id === 'btnKey') renderSetup();
+  else if (b.dataset.q) { $('#q').value = b.dataset.q; $('#qScope').value = S.qScope = 'all'; onSearchInput(b.dataset.q); window.scrollTo(0, 0); }
+  else if (b.dataset.star !== undefined) { e.preventDefault(); toggleStar(CARD_ITEMS.get(b.closest('.card').dataset.id), b); }
+  else if (b.id === 'btnMyLoad') myLoadUI(b);
+  else if (b.id === 'btnMyFull') (async () => {
+    try { await loadMyChannel(ls('bt_my', {}).input); MIX.a = null; status(`📺 Hotovo – ${ls('bt_my', {videos:[]}).videos.length} videí za ${MY_YEARS} roky.`); }
+    catch (e) { status(e.message, true); }
+    renderMain();
+  })();
+  else if (b.id === 'btnMix') { reroll(); renderMain(); }
+  else if (b.dataset.mixmode) { MIX.mode = b.dataset.mixmode; ss('bt_mixmode', MIX.mode); reroll(); renderMain(); }
+  else if (b.id === 'btnMixSave') {
+    if (!MIX.a || !MIX.b) return;
+    ss('bt_mixsaved', [{a:slim(MIX.a), b:slim(MIX.b), note:$('#mixNote').value.trim(), at:Date.now()}, ...ls('bt_mixsaved', [])]);
+    reroll(); renderMain();
+  }
+  else if (b.dataset.mixdel !== undefined) { const s = ls('bt_mixsaved', []); s.splice(+b.dataset.mixdel, 1); ss('bt_mixsaved', s); renderMain(); }
+  else if (b.dataset.tver !== undefined) showVersions(b);
+  else if (b.dataset.vdl !== undefined) downloadVersion(b);
+  else if (b.id === 'btnThumbsNow') { b.textContent = 'Kontroluju…'; checkAllThumbs(true).then(() => { b.textContent = '✔ Hotovo'; fillVersions(); }); }
+  else if (b.dataset.thumb !== undefined) downloadThumb(CARD_ITEMS.get(b.closest('.card').dataset.id), b);
+  else if (b.dataset.block !== undefined) { const m = b.closest('.card').querySelector('.blockmenu'); m.hidden = !m.hidden; }
+  else if (b.dataset.blockcancel !== undefined) b.closest('.blockmenu').hidden = true;
+  else if (b.dataset.blockkind) {
+    const it = CARD_ITEMS.get(b.closest('.card').dataset.id);
+    block(it, b.dataset.blockkind);
+    status(b.dataset.blockkind === 'video' ? '🚫 Video zablokováno – vrátit ho jde v „Zablokované“.' : `🚫 Kanál ${it.ch} zablokován${b.dataset.blockkind === 'strict' ? ' (ukážou se jen ověřená Brawl videa)' : ''} – vrátit ho jde v „Zablokované“.`);
+    rerender();
+  }
+  else if (b.id === 'btnBlocked') { S.view = 'blocked'; renderBlocked(); }
+  else if (b.id === 'btnSettings') { S.view = 'settings'; renderSettings(); }
+  else if (b.id === 'btnClose') { S.view = null; rerender(); window.scrollTo(0, 0); }
+  else if (b.dataset.unblockch) { delete BLOCK.channels[b.dataset.unblockch]; saveBlock(); renderBlocked(); }
+  else if (b.dataset.unblockv) { delete BLOCK.videos[b.dataset.unblockv]; saveBlock(); renderBlocked(); }
+  else if (b.id === 'btnAddCh') addChannelUI();
+  else if (b.dataset.unch) { removeChannel(C(S.country), b.dataset.unch); rerender(); }
+  else if (b.id === 'btnSaveKey') { S.key = $('#keyInput').value.trim(); ss('bt_key', S.key); S.view = null; show(); }
+});
+// zapamatovat, které kategorie v Nápadech máš otevřené
+document.addEventListener('toggle', e => {
+  const id = e.target.dataset?.sec; if (!id) return;
+  ss('bt_open', {...ls('bt_open', {}), [id]:e.target.open});
+}, true);
+document.addEventListener('input', e => {
+  if (e.target.id === 'q') onSearchInput(e.target.value);
+  // poznámka u uloženého nápadu se ukládá rovnou při psaní (bez překreslení)
+  if (e.target.dataset.mixnote !== undefined) { const s = ls('bt_mixsaved', []); s[+e.target.dataset.mixnote].note = e.target.value; ss('bt_mixsaved', s); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'mixNote') $('#btnMixSave').click(); if (e.key === 'Enter' && e.target.id === 'myInput') $('#btnMyLoad').click(); });
+document.addEventListener('change', e => {
+  if (e.target.id === 'qScope') { S.qScope = e.target.value; onSearchInput(S.q); return; }
+  if (e.target.id === 'gcidInput') { ss('bt_gcid', e.target.value.trim()); renderMain(); return; }
+  if (e.target.dataset.chmode) { BLOCK.channels[e.target.dataset.chmode].mode = e.target.value; saveBlock(); return; }
+  const k = e.target.dataset.set; if (!k) return;
+  S[k] = e.target.type === 'checkbox' ? e.target.checked : (k === 'interval' ? +e.target.value : k === 'qlimit' ? Math.min(10000, Math.max(100, +e.target.value || 10000)) : e.target.value);
+  if (k === 'qlimit') quota();
+  ss('bt_' + k, S[k]);
+  if (k === 'interval' || k === 'auto') S.nextAuto = Math.max(Date.now() + 5e3, (getSet(S.country, S.period)?.ts || 0) + S.interval * 60e3);
+  rerender();
+});
+// Když je stránka schovaná (jiná karta / minimalizováno), nic se nestahuje; po návratu se hned aktualizuje, pokud už uplynul interval
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && S.key && S.auto && S.period !== 'ideas' && !PERIODS[S.period].local && S.nextAuto && Date.now() >= S.nextAuto) {
+    S.nextAuto = Date.now() + S.interval * 60e3;
+    showCountry(false);
+  }
+});
+// Jednorázová oprava: kanály naučené ve státě jen kvůli přeloženému názvu z AI dabingu přestaneme sledovat
+// (necháme ruční a ty, které mají v tom státě aspoň jedno video, které tam opravdu patří)
+if (!ls('bt_mig_dub', false)) {
+  for (const c of COUNTRIES) {
+    const db = ls(chKey(c.id), {});
+    const items = [...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])];
+    for (const [id, e] of Object.entries(db)) {
+      const mine = items.filter(it => it.chId === id);
+      if (!e.manual && mine.length && !mine.some(it => langOk(it, c))) delete db[id];
+    }
+    ss(chKey(c.id), db);
+  }
+  ss('bt_mig_dub', true);
+}
+// uložená data odebraných států (Indonésie, Vietnam, arabské země) jen zabírají místo
+try { for (const k of Object.keys(localStorage)) if (/^bt_(c|ch|arch)_(id|vn|sa)(_|$)/.test(k)) localStorage.removeItem(k); } catch {}
+// po stažení sdílených dat od ostatních obnovit to, co je načtené v paměti
+function reloadMemory() {
+  const swap = (obj, val) => { for (const k of Object.keys(obj)) delete obj[k]; Object.assign(obj, val); };
+  swap(STARS, ls('bt_star', {})); swap(BLOCK, ls('bt_block', {videos:{}, channels:{}}));
+  swap(AI_CACHE, ls('bt_aicache', {})); swap(TR, ls('bt_tr', {})); swap(QTR, ls('bt_qtr', {}));
+  for (const k of Object.keys(CHCACHE)) delete CHCACHE[k];
+  TERMS = null;
+}
+async function pullShared() {
+  if (!await syncPull()) return;
+  reloadMemory();
+  // nepřekreslovat, když zrovna něco píšeš do pole na stránce
+  if (S.key && !(document.activeElement?.closest?.('#main') && document.activeElement.matches('input, textarea'))) rerender();
+}
+show();
+pullShared();
+// co minutu (když je stránka vidět) se podívat, jestli ostatní nenačetli něco nového – nic to nestojí
+setInterval(() => { if (!document.hidden && SYNC.ok) pullShared(); }, 60e3);
+</script>
+</body>
+</html>
