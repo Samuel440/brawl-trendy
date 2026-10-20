@@ -137,6 +137,13 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .pagehead #btnClose{margin-left:auto;width:38px;height:38px;border-radius:50%;font-size:16px;padding:0}
 .pagehead #btnClose:hover{border-color:var(--hot);color:var(--hot)}
 .settings{max-width:760px}
+.setnav{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:8px}
+.setnav button{font-size:12.5px;padding:5px 10px}
+.loglist{display:flex;flex-direction:column;gap:2px;max-height:520px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.logrow{display:grid;grid-template-columns:auto auto 1fr;gap:10px;font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)}
+.logrow:last-child{border-bottom:0}
+.logrow .ch{white-space:nowrap}
+.logrow > span:last-child{min-width:0;overflow-wrap:anywhere}
 .setrow{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px}
 .setrow input[type=checkbox]{margin-top:3px;width:18px;height:18px;accent-color:var(--accent)}
 .setrow > span{display:flex;flex-direction:column;gap:2px}
@@ -241,7 +248,8 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
-const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$)/;
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$)/;
+const APP_VERSION = '2026-10-20.4'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -322,7 +330,8 @@ const $ = s => document.querySelector(s);
 // ---------- 👥 Sdílení dat mezi lidmi ----------
 // Sdílí se videa, kanály, archiv, uložené, blokace, nápady a překlady. Nesdílí se API klíč, kvóta ani nastavení.
 // Úložiště (REMOTE): ☁️ Google Disk (po přihlášení – funguje i na mobilu bez PC), jinak server.py na PC, jinak nic.
-var SHARED_RX = KV_RX; // sdílí se právě ta velká data
+var SHARED_RX = KV_RX;
+const MERGE_RX = /^bt_(c_|ch_|arch_|tr$|qtr$|aicache$)/; // sdílí se právě ta velká data
 var SYNC = {meta:null, dirty:{}, timer:null, ok:null, last:0};
 var REMOTE = null;
 function syncMeta() { return SYNC.meta ??= (() => { try { return JSON.parse(localStorage.getItem('bt_meta')) || {}; } catch { return {}; } })(); }
@@ -505,7 +514,14 @@ async function syncPull() {
   SYNC.pulling = true;
   for (const [k, e] of Object.entries(remote)) {
     if (!SHARED_RX.test(k) || (meta[k] || 0) >= e.t) continue;
-    kvSetRaw(k, JSON.stringify(e.v)); meta[k] = e.t; changed = true;
+    // společná data (videa, kanály, archiv, překlady) se SLUČUJÍ – když dva lidi mění totéž naráz, nic se neztratí;
+    // osobní věci (⭐, nápady, protokol) a blokace má vždycky jen jeden zapisovatel, tam stačí vzít novější
+    const mine = MERGE_RX.test(k) ? ls(k, null) : null;
+    const v = mine == null ? e.v : mergeKey(k, mine, e.v);
+    const raw = JSON.stringify(v);
+    if (raw === JSON.stringify(e.v)) { kvSetRaw(k, raw); meta[k] = e.t; }
+    else { kvSetRaw(k, raw); meta[k] = Date.now(); SYNC.dirty[k] = true; } // sloučená verze má i naše změny → poslat dál
+    changed = true;
   }
   SYNC.pulling = false; saveMeta();
   for (const k of kvKeys()) if (SHARED_RX.test(k) && (!remote[k] || (meta[k] || 0) > remote[k].t)) { meta[k] ??= Date.now(); SYNC.dirty[k] = true; }
@@ -670,8 +686,9 @@ async function addChannel(c, input) {
   const ch = r.items?.[0];
   if (!ch) throw new Error(`Kanál „${s}“ jsem na YouTube nenašel.`);
   const db = ls(chKey(c.id), {});
-  db[ch.id] = {...(db[ch.id] || {ids:[], views:0}), name:ch.snippet.title, manual:true};
+  db[ch.id] = {...(db[ch.id] || {ids:[], views:0}), name:ch.snippet.title, manual:true, mAt:Date.now()};
   ss(chKey(c.id), db); TERMS = null;
+  logEvent(`📌 začal sledovat kanál ${ch.snippet.title} (${c.name})`);
   return ch.snippet.title;
 }
 async function addChannelUI() {
@@ -689,7 +706,8 @@ async function addChannelUI() {
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'chInput') addChannelUI(); });
 function removeChannel(c, id) {
   const db = ls(chKey(c.id), {});
-  if (db[id]) { delete db[id].manual; if (!db[id].ids.length) delete db[id]; }
+  // záznam zůstane s manual:false a časem – při sloučení s ostatními se kanál nevrátí zpátky
+  if (db[id]) { db[id].manual = false; db[id].mAt = Date.now(); logEvent(`✖ přestal sledovat kanál ${db[id].name || id} (${c.name})`); }
   ss(chKey(c.id), db); TERMS = null;
 }
 async function fetchChannelVideos(c, p, have) {
@@ -751,6 +769,7 @@ async function ensureSet(c, p, force, light, extra) {
     const found = new Set(r.items.map(i => i.id));
     const kept = (set?.items || []).filter(i => !found.has(i.id) && new Date(i.pub) >= since);
     set = {ts:Date.now(), searchTs:Date.now(), items:capItems([...r.items, ...kept]), next:r.next};
+    logEvent(`🔎 načetl ${c.name} – ${PERIODS[p].label} (${r.items.length} videí z hledání)`);
   }
   putSet(c.id, p, set);
   // novinky se rovnou přesunou i do Týdne (z něj pak po 7 dnech zůstanou v Archivu)
@@ -890,7 +909,9 @@ function mergeKey(k, mine, theirs) {
   if (/^bt_mixsaved/.test(k)) { const seen = new Set(mine.map(s => s.at)); return [...mine, ...theirs.filter(s => !seen.has(s.at))].sort((a, b) => b.at - a.at); }
   if (k === 'bt_my') return (theirs.videos?.length || 0) > (mine.videos?.length || 0) ? theirs : mine;
   if (k === 'bt_block') return {videos:{...theirs.videos, ...mine.videos}, channels:{...theirs.channels, ...mine.channels}};
-  if (/^bt_ch_/.test(k)) { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) out[id] = out[id] ? {...out[id], ...e, ids:[...new Set([...(out[id].ids || []), ...(e.ids || [])])].slice(-40), manual:e.manual || out[id].manual, home:e.home || out[id].home} : e; return out; }
+  if (/^bt_ch_/.test(k)) { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) out[id] = out[id] ? {...out[id], ...e, ids:[...new Set([...(out[id].ids || []), ...(e.ids || [])])].slice(-40), home:e.home || out[id].home,
+    // ručně přidaný/odebraný kanál: platí novější rozhodnutí (mAt), starší data bez mAt sjednotit jako dřív
+    ...((e.mAt || out[id].mAt) ? ((e.mAt || 0) >= (out[id].mAt || 0) ? {manual:e.manual, mAt:e.mAt} : {manual:out[id].manual, mAt:out[id].mAt}) : {manual:e.manual || out[id].manual})} : e; return out; }
   if (typeof mine === 'object' && !Array.isArray(mine)) return {...theirs, ...mine}; // ⭐, archiv, překlady, AI…
   return mine;
 }
@@ -904,6 +925,7 @@ async function importData(file) {
     if (JSON.stringify(merged) !== kvRaw(k)) { ss(k, merged); n++; } // ss → uloží čas změny a pošle na Disk
   }
   reloadMemory(); TERMS = null;
+  if (n) logEvent(`⬆ naimportoval zálohu (${n} částí dat)`);
   return n;
 }
 
@@ -913,28 +935,32 @@ function renderSettings() {
   const chk = (k, title, desc) => `<label class="setrow"><input type="checkbox" data-set="${k}" ${S[k] ? 'checked' : ''}><span><b>${title}</b><span class="ch">${desc}</span></span></label>`;
   const opt = (v, l) => `<option value="${v}" ${S.interval === v ? 'selected' : ''}>${l}</option>`;
   const q = ls('bt_quota', {used:0});
+  // tlačítka nahoře v liště: skok rovnou na danou část Nastavení
+  const NAV = [['set-show', '🔎 Hledání'], ['set-upd', '⟳ Aktualizace'], ['set-api', '🔑 API'], ['set-backup', '💾 Záloha'], ['set-share', '👥 Sdílení'], ['set-log', '📜 Protokol']];
+  $('#controls').insertAdjacentHTML('beforeend', `<div class="setnav">${NAV.map(([id, l]) => `<button data-jump="${id}">${l}</button>`).join('')}</div>`);
+  const logs = allLogs();
   $('#main').innerHTML = `<div class="settings">
-    <div class="sec"><h2>🔎 Co se hledá a ukazuje</h2>
+    <div class="sec" id="set-show"><h2>🔎 Co se hledá a ukazuje</h2>
       ${chk('strict', 'Jen videa z daného státu', 'Bere kanál podle země, původního jazyka a překladů názvu. Když vypneš, uvidíš i cizí (hlavně anglická) videa, která YouTube k hledání přimíchá.')}
       ${chk('ai', '🤖 AI kontrola miniatur', 'U sporných videí (bez „Brawl Stars“ v názvu) se podívá na miniaturu – vyřadí Minecraft, Roblox, IRL. Poprvé stáhne model (~15 s), kvótu YouTube nebere.')}
       ${chk('noLive', '🔴 Skrýt streamy', 'Živé přenosy a záznamy streamů se nikde neukážou – ani v seznamech, ani v Nápadech a míchači.')}
       ${chk('trAuto', '🌐 Překládat názvy do češtiny', 'Všechny názvy se rovnou přeloží (Google Překladač, zdarma). Jinak jde přeložit jednotlivě tlačítkem u videa.')}
     </div>
-    <div class="sec"><h2>⟳ Aktualizace</h2>
+    <div class="sec" id="set-upd"><h2>⟳ Aktualizace</h2>
       ${chk('auto', 'Automaticky aktualizovat', 'Jen když máš stránku otevřenou a vidíš ji. Plné hledání nejvýš jednou za 2 h, mezitím levná aktualizace zhlédnutí a nových videí ze sledovaných kanálů.')}
       <label class="setrow"><select data-set="interval">${[15, 30, 60, 120].map(m => opt(m, 'každých ' + m + ' min')).join('')}</select><span><b>Jak často</b><span class="ch">Automatická obnova hledání skoro nestojí: plné hledání proběhne nejvýš jednou za 6 hodin, mezitím jen obnova zhlédnutí a nových videí ze sledovaných kanálů.</span></span></label>
       ${TIME_PERIODS.includes(S.period) ? `<div class="setrow"><button id="btnRefresh">⟳ Aktualizovat teď</button><span><b>${esc(C(S.country).name)} – ${PERIODS[S.period].label}</b><span class="ch">Plné hledání hned teď (1–2 hledání ze 100 denních), bez čekání na časomíru. Pak se vrátíš na seznam.</span></span></div>` : ''}
     </div>
-    <div class="sec"><h2>🔑 YouTube API</h2>
+    <div class="sec" id="set-api"><h2>🔑 YouTube API</h2>
       <div class="setrow"><span><b>Hledání dnes: ${q.s || 0} / ${S.slimit}${searchBlocked() ? ' – došla' : ''} · ostatní dotazy: ${(q.q || 0).toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}</b><span class="ch">Google dává na jeden API klíč 100 hledání a 10 000 ostatních dotazů denně, obnoví se kolem 9:00. Hledání je to vzácné: plné načtení státu stojí 1–2 hledání; obnova zhlédnutí a nová videa ze sledovaných kanálů hledání nestojí. Číslo tady je jen za tohle zařízení – Google sčítá všechna zařízení s tvým klíčem.</span></span></div>
       <label class="setrow"><input type="number" min="1" max="100" step="1" data-set="slimit" value="${S.slimit}" style="width:70px"><span><b>Můj denní limit hledání</b><span class="ch">Nad tenhle počet hledání denně stránka už nehledá (ostatní jede dál). Grafikovi s vlastním klíčem klidně nech 100, jinak třeba 20.</span></span></label>
       <div class="setrow"><button id="btnKey">Změnit API klíč</button><span class="ch">Každý člověk má mít svůj vlastní klíč – pak si navzájem kvótu neberete.</span></div>
     </div>
-    <div class="sec"><h2>💾 Záloha dat</h2>
+    <div class="sec" id="set-backup"><h2>💾 Záloha dat</h2>
       <div class="setrow"><button id="btnExport">⬇ Exportovat data</button><span class="ch">Stáhne soubor se všemi videi, kanály, archivem, ⭐, nápady a blokacemi. Hodí se na přenos mezi verzemi stránky (soubor z disku / localhost / web) nebo jako záloha.</span></div>
       <label class="setrow"><input type="file" id="importInput" accept=".json,application/json"><span><b>⬆ Importovat data</b><span class="ch">Vyber soubor zálohy – data se přidají k tomu, co už tu je (nic se nesmaže). S připojeným Diskem se rovnou nahrají i tam.</span></span></label>
     </div>
-    <div class="sec"><h2>👥 Sdílení s ostatními</h2>
+    <div class="sec" id="set-share"><h2>👥 Sdílení s ostatními</h2>
       <div class="setrow"><span><b>${REMOTE === DRIVE_BACKEND ? `☁️ Google Disk připojen – ${esc(DRIVE.email)}` : SYNC.ok ? '🟢 Sdílení přes složku data (server na PC)' : '⚪ Sdílení neběží – data jsou jen v tomhle prohlížeči'}</b>
         <span class="ch">Videa, kanály, archiv, ⭐ uložené, blokace, nápady, překlady i verze miniatur se ukládají na Google Disk do složky „${DRIVE_FOLDER}“. Kdo ji má nasdílenou a připojí se, vidí totéž – na PC, Macu i mobilu, i když ostatní mají vypnuté počítače.${SYNC.last ? ` Poslední synchronizace ${ago((Date.now() - SYNC.last) / 3600e3)}.` : ''}</span></span></div>
       ${REMOTE === DRIVE_BACKEND
@@ -942,6 +968,10 @@ function renderSettings() {
         : gClientId() ? `<div class="setrow"><button class="primary" id="btnDrive">☁️ Připojit Google Disk</button><span class="ch">Přihlášení Googlem. Platí hodinu, pak stačí kliknout znovu (nahoře se ukáže tlačítko).</span></div>
           ${DRIVE.state === 'nofolder' ? `<div class="setrow"><button id="btnDriveCreate">Založit složku „${DRIVE_FOLDER}“</button><span class="ch">Jen pro toho, kdo sdílení zakládá (ty). Grafik ji nezakládá – počká, až mu ji nasdílíš, jinak by měl vlastní, oddělenou.</span></div>` : ''}` : ''}
       <label class="setrow"><input id="gcidInput" value="${esc(gClientId())}" placeholder="…apps.googleusercontent.com" style="flex:1;min-width:0"><span><b>Client ID pro přihlášení Googlem</b><span class="ch">Z Google Cloud (OAuth klient typu Webová aplikace). Stačí vyplnit jednou; když je doplněný přímo ve stránce, nemusíš nic.</span></span></label>
+    </div>
+    <div class="sec" id="set-log"><h2>📜 Protokol</h2>
+      <p class="hint">Kdo co udělal a kdy – ⭐ uložení, nápady, blokace, sledované kanály, načtení států, importy. Se sdílením přes Disk tu vidíš i akce ostatních (obnovuje se samo každých 30 s).</p>
+      ${logs.length ? `<div class="loglist">${logs.map(e => `<div class="logrow"><span class="ch">${fmtDate(e.t)}</span><b>${esc(whoLabel(e.w))}</b><span>${esc(e.x)}</span></div>`).join('')}</div>` : '<div class="ch">Zatím nic – zapíše se, jakmile někdo něco uloží, zablokuje nebo načte.</div>'}
     </div></div>`;
 }
 function block(it, kind) {
@@ -949,6 +979,7 @@ function block(it, kind) {
   if (kind === 'video') BLOCK.videos[it.id] = {t:it.t, ch:it.ch, chId:it.chId, at:Date.now()};
   else BLOCK.channels[it.chId] = {name:it.ch, mode:kind === 'channel' ? 'all' : 'strict', at:Date.now()};
   saveBlock();
+  logEvent(kind === 'video' ? `🚫 zablokoval video ${shortT(it.t)}` : `🚫 zablokoval kanál ${it.ch}${kind === 'channel' ? '' : ' (jen neověřená videa)'}`);
 }
 
 // ---------- Analýza ----------
@@ -1029,11 +1060,19 @@ function collections(base) {
   return [...out];
 }
 const whoLabel = who => who === meWho() ? 'Moje' : who === '' ? 'Majitel' : who.slice(2).split('_')[0];
+// 📜 Protokol: každý člověk si zapisuje svoje akce do vlastního klíče (sdílí se přes Disk), v Nastavení se spojí
+const logKey = (who = meWho()) => 'bt_log' + (who ? '_' + who : '');
+function logEvent(text) { const l = ls(logKey(), []); l.unshift({t:Date.now(), x:text}); ss(logKey(), l.slice(0, 300)); }
+function allLogs(max = 150) {
+  return collections('bt_log').flatMap(w => ls(logKey(w), []).map(e => ({...e, w}))).sort((a, b) => b.t - a.t).slice(0, max);
+}
+const shortT = t => `„${String(t).slice(0, 60)}${String(t).length > 60 ? '…' : ''}“`;
 // miniatury se hlídají u videí ze všech kolekcí – hlídá ten, komu zrovna stránka běží
 const allStarIds = () => [...new Set(collections('bt_star').flatMap(w => Object.keys(w === meWho() ? STARS : ls(starKey(w), {}))))];
 const STARS = ls(starKey(), {});
 const RAW_KEYS = ['id', 't', 'ch', 'chId', 'pub', 'views', 'likes', 'com', 'dur', 'subs', 'cc', 'lang', 'chL', 'homeL', 'bs', 'bsT', 'bsN', 'bsTag', 'live', 'src', 'cand', 'weak'];
 function toggleStar(it, b) {
+  logEvent(`${STARS[it.id] ? '☆ odebral z uložených' : '⭐ uložil'} video ${shortT(it.t)}`);
   if (STARS[it.id]) {
     delete STARS[it.id];
     if (!allStarIds().includes(it.id)) delVers(it.id).catch(() => {}); // verze mazat, jen když video nemá uložené nikdo jiný
@@ -1884,9 +1923,10 @@ document.addEventListener('click', e => {
   else if (b.id === 'btnMixSave') {
     if (!MIX.a || !MIX.b) return;
     ss(mixKey(), [{a:slim(MIX.a), b:slim(MIX.b), note:$('#mixNote').value.trim(), at:Date.now()}, ...ls(mixKey(), [])]);
+    logEvent(`💡 uložil nápad: ${shortT(MIX.a.t)} + ${shortT(MIX.b.t)}`);
     reroll(); renderMain();
   }
-  else if (b.dataset.mixdel !== undefined) { const s = ls(mixKey(), []); s.splice(+b.dataset.mixdel, 1); ss(mixKey(), s); renderMain(); }
+  else if (b.dataset.mixdel !== undefined) { const s = ls(mixKey(), []); const [d] = s.splice(+b.dataset.mixdel, 1); ss(mixKey(), s); if (d) logEvent(`✖ smazal nápad: ${shortT(d.a?.t || '')}`); renderMain(); }
   else if (b.dataset.tver !== undefined) showVersions(b);
   else if (b.dataset.vdl !== undefined) downloadVersion(b);
   else if (b.id === 'btnThumbsNow') { b.textContent = 'Kontroluju…'; checkAllThumbs(true).then(() => { b.textContent = '✔ Hotovo'; fillVersions(); }); }
@@ -1902,8 +1942,9 @@ document.addEventListener('click', e => {
   else if (b.id === 'btnBlocked') { S.view = 'blocked'; renderBlocked(); }
   else if (b.id === 'btnSettings') { S.view = 'settings'; renderSettings(); }
   else if (b.id === 'btnClose') { S.view = null; rerender(); window.scrollTo(0, 0); }
-  else if (b.dataset.unblockch) { delete BLOCK.channels[b.dataset.unblockch]; saveBlock(); renderBlocked(); }
-  else if (b.dataset.unblockv) { delete BLOCK.videos[b.dataset.unblockv]; saveBlock(); renderBlocked(); }
+  else if (b.dataset.unblockch) { logEvent(`↩ odblokoval kanál ${BLOCK.channels[b.dataset.unblockch]?.name || ''}`); delete BLOCK.channels[b.dataset.unblockch]; saveBlock(); renderBlocked(); }
+  else if (b.dataset.unblockv) { logEvent(`↩ odblokoval video ${shortT(BLOCK.videos[b.dataset.unblockv]?.t || '')}`); delete BLOCK.videos[b.dataset.unblockv]; saveBlock(); renderBlocked(); }
+  else if (b.dataset.jump) { const el = document.getElementById(b.dataset.jump); if (el) scrollTo({top:el.getBoundingClientRect().top + scrollY - (getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0) - 10, behavior:'smooth'}); }
   else if (b.id === 'btnAddCh') addChannelUI();
   else if (b.dataset.unch) { removeChannel(C(S.country), b.dataset.unch); rerender(); }
   else if (b.id === 'btnSaveKey') { S.key = $('#keyInput').value.trim(); ss('bt_key', S.key); S.view = null; show(); }
@@ -1983,7 +2024,23 @@ async function pullShared() {
   pullShared();
 })();
 // co minutu (když je stránka vidět) se podívat, jestli ostatní nenačetli něco nového – nic to nestojí
-setInterval(() => { if (!document.hidden && SYNC.ok) pullShared(); }, 60e3);
+setInterval(() => { if (!document.hidden && SYNC.ok) pullShared(); }, 30e3);
+// Nová verze stránky: co 5 minut se podívat, jestli na webu není novější APP_VERSION. Pokud ano, stránka se sama
+// obnoví (data zůstanou) – jen ne, když zrovna píšeš; pak ukáže tlačítko.
+async function checkNewVersion() {
+  if (location.protocol === 'file:') return;
+  try {
+    const html = await (await fetch(location.pathname + '?v=' + Date.now(), {cache:'no-store'})).text();
+    const v = (html.match(/APP_VERSION = '([^']+)'/) || [])[1];
+    if (!v || v === APP_VERSION) return;
+    const typing = document.activeElement?.matches?.('input, textarea, select');
+    if (!typing && !S.busy) { await kvFlush(); location.reload(); return; }
+    status('🆕 Je tu nová verze stránky. ');
+    $('#status').insertAdjacentHTML('beforeend', '<button onclick="location.reload()">Obnovit</button>');
+  } catch {}
+}
+setInterval(() => { if (!document.hidden) checkNewVersion(); }, 5 * 60e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNewVersion(); });
 </script>
 </body>
 </html>
