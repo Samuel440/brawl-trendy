@@ -249,7 +249,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$)/;
-const APP_VERSION = '2026-10-20.6'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-20.7'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -948,7 +948,6 @@ function renderSettings() {
   // tlačítka nahoře v liště: skok rovnou na danou část Nastavení
   const NAV = [['set-show', '🔎 Hledání'], ['set-upd', '⟳ Aktualizace'], ['set-api', '🔑 API'], ['set-backup', '💾 Záloha'], ['set-share', '👥 Sdílení'], ['set-log', '📜 Protokol']];
   $('#controls').insertAdjacentHTML('beforeend', `<div class="setnav">${NAV.map(([id, l]) => `<button data-jump="${id}">${l}</button>`).join('')}</div>`);
-  const logs = allLogs();
   $('#main').innerHTML = `<div class="settings">
     <div class="sec" id="set-show"><h2>🔎 Co se hledá a ukazuje</h2>
       ${chk('strict', 'Jen videa z daného státu', 'Bere kanál podle země, původního jazyka a překladů názvu. Když vypneš, uvidíš i cizí (hlavně anglická) videa, která YouTube k hledání přimíchá.')}
@@ -982,8 +981,10 @@ function renderSettings() {
       <label class="setrow"><input id="gcidInput" value="${esc(gClientId())}" placeholder="…apps.googleusercontent.com" style="flex:1;min-width:0"><span><b>Client ID pro přihlášení Googlem</b><span class="ch">Z Google Cloud (OAuth klient typu Webová aplikace). Stačí vyplnit jednou; když je doplněný přímo ve stránce, nemusíš nic.</span></span></label>
     </div>
     <div class="sec" id="set-log"><h2>📜 Protokol</h2>
-      <p class="hint">Kdo co udělal a kdy – ⭐ uložení, nápady, blokace, sledované kanály, načtení států, importy. Se sdílením přes Disk tu vidíš i akce ostatních (obnovuje se samo každých 30 s).</p>
-      ${logs.length ? `<div class="loglist">${logs.map(e => `<div class="logrow"><span class="ch">${fmtDate(e.t)}</span><b>${esc(whoLabel(e.w))}</b><span>${esc(e.x)}</span></div>`).join('')}</div>` : '<div class="ch">Zatím nic – zapíše se, jakmile někdo něco uloží, zablokuje nebo načte.</div>'}
+      <p class="hint">Kdo co udělal a kdy za posledních ${LOG_DAYS} dní – ⭐ uložení, nápady, blokace, sledované kanály, načtení států, importy. Se sdílením přes Disk tu vidíš i akce ostatních (obnovuje se samo každých 30 s).</p>
+      <div class="search" style="margin:0 0 8px"><input id="logQ" value="${esc(LOGF.q)}" placeholder="Hledat v protokolu… (např. zablokoval, LukasBS, Německo, 20. 10.)">
+        <select id="logWho"><option value="*">Všichni</option>${collections('bt_log').filter(w => ls(logKey(w), []).length).map(w => `<option value="${w}" ${LOGF.who === w ? 'selected' : ''}>${esc(whoLabel(w))}</option>`).join('')}</select></div>
+      <div id="logOut">${logListHtml()}</div>
     </div></div>`;
 }
 function block(it, kind) {
@@ -1074,10 +1075,27 @@ function collections(base) {
 const whoLabel = who => who === meWho() ? 'Moje' : who === '' ? 'Majitel' : who.slice(2).split('_')[0];
 // 📜 Protokol: každý člověk si zapisuje svoje akce do vlastního klíče (sdílí se přes Disk), v Nastavení se spojí
 const logKey = (who = meWho()) => 'bt_log' + (who ? '_' + who : '');
-function logEvent(text) { const l = ls(logKey(), []); l.unshift({t:Date.now(), x:text}); ss(logKey(), l.slice(0, 300)); }
-function allLogs(max = 150) {
-  return collections('bt_log').flatMap(w => ls(logKey(w), []).map(e => ({...e, w}))).sort((a, b) => b.t - a.t).slice(0, max);
+const LOG_DAYS = 30;
+const logSince = () => Date.now() - LOG_DAYS * 864e5;
+function logEvent(text) { const l = ls(logKey(), []).filter(e => e.t > logSince()); l.unshift({t:Date.now(), x:text}); ss(logKey(), l.slice(0, 5000)); }
+function allLogs() {
+  return collections('bt_log').flatMap(w => ls(logKey(w), []).filter(e => e.t > logSince()).map(e => ({...e, w}))).sort((a, b) => b.t - a.t);
 }
+// vyhledávání v protokolu: text (bez diakritiky) + kdo; překreslí jen seznam, ne celé Nastavení
+const fold = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const LOG_SHOW = 500, LOGF = {q:'', who:'*'}; // filtr přežije automatické překreslení
+function logListHtml() {
+  const q = fold(LOGF.q), who = LOGF.who;
+  const all = allLogs(), hits = all.filter(e => (who === '*' || e.w === who) && (!q || fold(e.x + ' ' + fmtDate(e.t) + ' ' + whoLabel(e.w)).includes(q)));
+  if (!all.length) return '<div class="ch">Zatím nic – zapíše se, jakmile někdo něco uloží, zablokuje nebo načte.</div>';
+  return `<div class="ch">${hits.length === all.length ? `${all.length} záznamů za ${LOG_DAYS} dní` : `Nalezeno ${hits.length} z ${all.length}`}${hits.length > LOG_SHOW ? ` – ukazuju nejnovějších ${LOG_SHOW}` : ''}</div>
+    ${hits.length ? `<div class="loglist">${hits.slice(0, LOG_SHOW).map(e => `<div class="logrow"><span class="ch">${fmtDate(e.t)}</span><b>${esc(whoLabel(e.w))}</b><span>${esc(e.x)}</span></div>`).join('')}</div>` : ''}`;
+}
+for (const ev of ['input', 'change']) document.addEventListener(ev, e => {
+  if (e.target.id !== 'logQ' && e.target.id !== 'logWho') return;
+  LOGF[e.target.id === 'logQ' ? 'q' : 'who'] = e.target.value;
+  $('#logOut').innerHTML = logListHtml();
+});
 const shortT = t => `„${String(t).slice(0, 60)}${String(t).length > 60 ? '…' : ''}“`;
 // miniatury se hlídají u videí ze všech kolekcí – hlídá ten, komu zrovna stránka běží
 const allStarIds = () => [...new Set(collections('bt_star').flatMap(w => Object.keys(w === meWho() ? STARS : ls(starKey(w), {}))))];
