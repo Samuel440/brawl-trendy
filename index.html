@@ -272,7 +272,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$)/;
-const APP_VERSION = '2026-10-21.26'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.27'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1659,8 +1659,12 @@ function recordHistory(items) {
     ss(k, db);
   }
 }
+// body grafu: zveřejnění (0) + uložená měření. Číslo z karty se přidá jen když je NOVĚJŠÍ než poslední měření
+// (it.st = kdy se stáhlo) – jinak by staré číslo z jiného zařízení vypadalo jako pokles zhlédnutí.
 const histOf = it => { const p = histDb(histKey(it.id))[it.id] || []; const pub = +new Date(it.pub);
-  const pts = [[pub, 0], ...p.filter(x => x[0] > pub)]; if (!p.length || p[p.length - 1][1] !== it.views) pts.push([Math.max(Date.now() - 1, pts[pts.length - 1][0] + 1), it.views]); return pts; };
+  const pts = [[pub, 0], ...p.filter(x => x[0] > pub)], last = pts[pts.length - 1], t = it.st || 0;
+  if (p.length ? t > last[0] + 60e3 && it.views !== last[1] : true) pts.push([p.length ? t : Math.max(t, Date.now() - 1), it.views]);
+  return pts; };
 // SVG graf: x = čas od zveřejnění, y = zhlédnutí
 function histSvg(pts, w, h, big) {
   const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]));
