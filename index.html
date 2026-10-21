@@ -355,6 +355,15 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 .telebar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 16px;background:#111}
 .telebar button{margin-left:6px}
 .teletext{flex:1;overflow:auto;padding:4vh 6vw 40vh;white-space:pre-wrap;line-height:1.45;font-weight:600}
+/* ☑️ fajfkování řádků scénáře (stejné jako v samostatném okně) */
+.teletext.chk{white-space:normal}
+.teletext .ln{display:flex;gap:.5em;align-items:flex-start;cursor:pointer;padding:.1em .2em;border-radius:6px;user-select:none}
+.teletext .ln>span:last-child{white-space:pre-wrap;flex:1;min-width:0}
+.teletext .bx{flex:none;width:.95em;height:.95em;margin-top:.22em;border:2px solid #ffcc00;border-radius:.2em;display:inline-flex;align-items:center;justify-content:center;font-size:.75em;line-height:1;color:#111}
+.teletext .ln.ok .bx{background:#ffcc00}
+.teletext .ln.ok>span:last-child{opacity:.4;text-decoration:line-through}
+.teletext .gap{height:.6em}
+.chkopt{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 6px;font-size:13px;cursor:pointer}
 .ordbtns button{padding:2px 7px;font-size:12px;min-width:0}
 .setnav button{font-size:12.5px;padding:5px 10px}
 .loglist{display:flex;flex-direction:column;gap:2px;max-height:520px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
@@ -478,7 +487,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$)/;
-const APP_VERSION = '2026-10-21.55'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.56'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2054,6 +2063,7 @@ function calEditor(id, date, focusScript, edit = true) {
     <h4>🖼️ Co chci na miniatuře <span class="ch">(pro grafika)</span></h4>
     ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea>` : `<div class="caltxt">${esc(e.thumb) || '<span class="ch">Zatím nic.</span>'}</div>`}
     <h4>📝 Scénář <button data-calfull title="Samostatné okno – posuneš si ho kamkoli, i na druhý monitor">🪟 Otevřít v okně</button>${own ? ' <button data-caltext>📥 Vložit z uložených</button>' : ''}</h4>
+    ${own ? `<label class="chkopt"><input type="checkbox" data-f="checks" ${e.checks ? 'checked' : ''}> ☑️ Fajfkování řádků v okně scénáře <span class="ch">(každý řádek si při natáčení odškrtneš)</span>${(e.done || []).length ? ` <button type="button" data-calundone>↺ Zrušit fajfky (${e.done.length})</button>` : ''}</label>` : ''}
     ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt script">${esc(e.script) || '<span class="ch">Zatím nic.</span>'}</div>`}
     <h4>🎨 Poznámky (grafik a ostatní)</h4>
     <div class="calnotes">${notes()}</div>
@@ -2061,10 +2071,14 @@ function calEditor(id, date, focusScript, edit = true) {
     ${own ? '<div class="ch">Ukládá se samo při psaní.</div>' : ''}</div>`;
   let timer = null;
   const save = () => { clearTimeout(timer); timer = setTimeout(() => { calSave(e); renderMain(); }, 600); };
+  // ☑️ fajfky v okně scénáře: ukládají se k videu (jen majitel; grafik si je odškrtá jen u sebe na chvíli)
+  const sOpts = {get checks() { return !!e.checks; }, done:new Set(e.done || []),
+    toggle() { e.done = [...sOpts.done]; if (admin) { calSave(e); if (!own) renderMain(); } }};
   ov.addEventListener('input', ev => {
     const f = ev.target.dataset?.f; if (!f || !own) return;
-    e[f] = ev.target.value; if (f === 'inspo') ov.querySelector('.calinspo').innerHTML = inspoHtml(e.inspo);
-    if (f === 'script' || f === 'title') scriptWindowSync(e.script, e.title);
+    e[f] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
+    if (f === 'inspo') ov.querySelector('.calinspo').innerHTML = inspoHtml(e.inspo);
+    if (f === 'script' || f === 'title' || f === 'checks') { if (SCRIPT_OPTS === sOpts) scriptWindowSync(e.script, e.title); }
     save();
   });
   // přidat / odebrat video z inspirace (z lišty uložených, z výběru, křížkem)
@@ -2097,7 +2111,8 @@ function calEditor(id, date, focusScript, edit = true) {
     }
     else if (b.matches('[data-caledit2]')) { ov.remove(); calEditor(e.id); }
     else if (b.matches('[data-calview]')) { clearTimeout(timer); if (e.title || e.script || e.thumb || e.inspo) calSave(e); ov.remove(); renderMain(); calEditor(e.id, null, false, false); }
-    else if (b.matches('[data-calfull]')) scriptWindow(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title);
+    else if (b.matches('[data-calfull]')) scriptWindow(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title, sOpts);
+    else if (b.matches('[data-calundone]')) { sOpts.done.clear(); e.done = []; b.remove(); calSave(e); if (SCRIPT_OPTS === sOpts) scriptWindowSync(e.script, e.title); }
     else if (b.matches('[data-calnoteadd]')) {
       const inp = ov.querySelector('[data-calnote]'), text = inp.value.trim(); if (!text) return;
       const g = ls(calgKey(), {}); (g[e.id] ||= []).push({at:Date.now(), text}); ss(calgKey(), g);
@@ -2114,7 +2129,26 @@ function calEditor(id, date, focusScript, edit = true) {
 // 🪟 Scénář v samostatném okně (PC/Mac) – okno jde posunout kamkoli, i na druhý monitor, a měnit velikost.
 // Při psaní ve scénáři se text v okně rovnou aktualizuje. Na mobilu (nebo když prohlížeč okno zablokuje) celá obrazovka.
 let SCRIPT_WIN = null;
-function scriptWindow(text, title) {
+// ☑️ fajfkování řádků scénáře – zapíná se v ✏️ úpravách videa v kalendáři. Odfajfkované řádky se ukládají k videu
+// (e.done = texty řádků), takže zůstanou i po zavření okna a uvidí je i druhé zařízení.
+let SCRIPT_OPTS = null; // {checks, done:Set, toggle(řádek, zapnuto)}
+const SCRIPT_CHK_CSS = `.chk{white-space:normal}.ln{display:flex;gap:.5em;align-items:flex-start;cursor:pointer;padding:.1em .2em;border-radius:6px;user-select:none}
+  .ln:hover{background:rgba(255,255,255,.06)}.ln>span:last-child{white-space:pre-wrap;flex:1;min-width:0}
+  .bx{flex:none;width:.95em;height:.95em;margin-top:.22em;border:2px solid #ffcc00;border-radius:.2em;display:inline-flex;align-items:center;justify-content:center;font-size:.75em;line-height:1;color:#111}
+  .ln.ok .bx{background:#ffcc00}.ln.ok>span:last-child{opacity:.4;text-decoration:line-through}.gap{height:.6em}`;
+function scriptBody(el, text, o) {
+  if (!o?.checks) { el.classList.remove('chk'); el.textContent = text || '(scénář je prázdný)'; return; }
+  el.classList.add('chk');
+  el.innerHTML = String(text || '').split('\n').map(l => { const k = l.trim(); return k ? `<div class="ln${o.done.has(k) ? ' ok' : ''}" data-ln="${esc(k)}"><span class="bx">${o.done.has(k) ? '✔' : ''}</span><span>${esc(l)}</span></div>` : '<div class="gap"></div>'; }).join('') || '(scénář je prázdný)';
+}
+function scriptClick(ev) {
+  const d = ev.target.closest('.ln'), o = SCRIPT_OPTS; if (!d || !o?.checks) return;
+  const k = d.dataset.ln, on = !o.done.has(k); on ? o.done.add(k) : o.done.delete(k);
+  d.classList.toggle('ok', on); d.querySelector('.bx').textContent = on ? '✔' : '';
+  o.toggle?.(k, on);
+}
+function scriptWindow(text, title, opts) {
+  SCRIPT_OPTS = opts || null;
   if (matchMedia('(pointer:coarse)').matches) return teleprompter(text, title);
   const w = window.open('', 'btscript', 'popup,width=560,height=760');
   if (!w) return teleprompter(text, title);
@@ -2129,11 +2163,13 @@ function scriptWindow(text, title) {
     button{background:#232834;color:#f2f2f2;border:1px solid #2a2f3a;border-radius:8px;padding:5px 10px;font:inherit;font-size:13px;cursor:pointer}
     button:hover{border-color:#ffcc00}
     #t{flex:1;overflow:auto;padding:16px 20px 30vh;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;font-weight:600;font-size:${fs}px}
+    ${SCRIPT_CHK_CSS}
   </style></head><body><div class="bar"><b id="h"></b><button id="m">A−</button><button id="p">A+</button><button id="f" title="Celá obrazovka (Esc = zpět)">⛶</button></div><div id="t"></div></body></html>`);
   w.document.close();
   const d = w.document, t = d.getElementById('t');
   d.getElementById('h').textContent = title || 'Scénář';
-  t.textContent = text || '(scénář je prázdný)';
+  scriptBody(t, text, SCRIPT_OPTS);
+  t.onclick = scriptClick;
   const size = k => { const v = Math.max(14, Math.min(90, parseInt(t.style.fontSize || fs) + k)); t.style.fontSize = v + 'px'; ss('bt_winfs', v); };
   d.getElementById('m').onclick = () => size(-3);
   d.getElementById('p').onclick = () => size(3);
@@ -2143,7 +2179,7 @@ function scriptWindow(text, title) {
 // při psaní ve scénáři poslat nový text do otevřeného okna
 function scriptWindowSync(text, title) {
   try { if (!SCRIPT_WIN || SCRIPT_WIN.closed) return;
-    SCRIPT_WIN.document.getElementById('t').textContent = text || '(scénář je prázdný)';
+    scriptBody(SCRIPT_WIN.document.getElementById('t'), text, SCRIPT_OPTS);
     if (title != null) { SCRIPT_WIN.document.getElementById('h').textContent = title || 'Scénář'; SCRIPT_WIN.document.title = '📝 ' + (title || 'Scénář'); }
   } catch {}
 }
@@ -2152,9 +2188,11 @@ function teleprompter(text, title) {
   const ov = document.createElement('div'); ov.className = 'tele';
   let fs = +ls('bt_telefs', 44);
   ov.innerHTML = `<div class="telebar"><b>${esc(title || 'Scénář')}</b><span><button data-fs="-">A−</button><button data-fs="+">A+</button><button data-tclose>✖ Zavřít</button></span></div>
-    <div class="teletext" style="font-size:${fs}px">${esc(text || '(scénář je prázdný)')}</div>`;
+    <div class="teletext" style="font-size:${fs}px"></div>`;
+  scriptBody(ov.querySelector('.teletext'), text, SCRIPT_OPTS); // ☑️ i tady jde fajfkovat (mobil)
   const close = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); ov.remove(); };
   ov.addEventListener('click', ev => {
+    scriptClick(ev);
     const b = ev.target.closest('button'); if (!b) return;
     if (b.dataset.fs) { fs = Math.max(18, Math.min(120, fs + (b.dataset.fs === '+' ? 6 : -6))); ov.querySelector('.teletext').style.fontSize = fs + 'px'; ss('bt_telefs', fs); }
     if (b.hasAttribute('data-tclose')) close();
