@@ -509,7 +509,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$)/;
-const APP_VERSION = '2026-10-21.62'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.63'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2937,7 +2937,7 @@ function renderHeader() {
   const seg = (v, l) => `<button data-type="${v}" class="${S.type === v ? 'on' : ''}">${l}</button>`;
   // ostatní volby jsou v ⚙️ Nastavení
   const common = `<span class="seg">${seg('all', 'Obojí')}${seg('long', '🎬 Videa')}${seg('short', '📱 Shorts')}</span>`;
-  const sortSel = `<label>Řadit <select data-set="sort">${opt('views', S.sort, 'Nejvíc zhlédnutí')}${opt('vph', S.sort, 'Nejrychleji rostoucí (views/h)')}${opt('outlier', S.sort, '💥 Bangery (views / odběry)')}${opt('eng', S.sort, 'Engagement (lajky+komenty)')}${opt('new', S.sort, 'Nejnovější')}</select></label>`;
+  const sortSel = `<label>Řadit <select data-set="sort">${opt('views', S.sort, 'Nejvíc zhlédnutí')}${opt('vph', S.sort, 'Nejrychleji rostoucí (views/h)')}${opt('outlier', S.sort, '💥 Bangery malých kanálů')}${opt('eng', S.sort, 'Engagement (lajky+komenty)')}${opt('new', S.sort, 'Nejnovější')}</select></label>`;
   if (S.period === 'cal') {
     $('#controls').innerHTML = '';
   } else if (S.period === 'ideas') {
@@ -3017,7 +3017,8 @@ function renderCountry(set, c, p) {
       : 'Zatím žádná data.';
     $('#main').innerHTML = (p !== 'arch' && driveGate() ? driveGateHtml() : '') + `<div class="empty">${why}</div>`; return;
   }
-  const list = prepare(set.items, c).filter(matchQ).sort(SORTS[S.sort]);
+  let list = prepare(set.items, c).filter(matchQ).sort(SORTS[S.sort]);
+  if (S.sort === 'outlier') list = spreadChannels(list);
   const q = S.q.trim(), qTr = q && QTR[c.lang + '|' + q];
   const fm = countBy(list, it => it.formats.map(f => f[0]), it => it.views);
   const br = countBy(list, it => it.brawlers, it => it.views);
@@ -3251,8 +3252,21 @@ function chMedians() {
 }
 const chMedian = it => chMedians()[it.chId + ((it.short ?? (it.dur > 0 && it.dur <= 180)) ? 's' : 'l')];
 const bangerX = it => { const m = chMedian(it); return m ? it.views / Math.max(m, 100) : null; };
-// pro řazení: násobek nad průměrem kanálu; kde ho neznáme (málo videí), aspoň zhlédnutí/odběry (slabší signál)
-const bangerScore = it => bangerX(it) ?? (it.outlier != null ? it.outlier / 3 : -1);
+// 💥 řazení „Bangery malých kanálů“: kolikrát víc zhlédnutí než odběratelů NEBO než kanál obvykle má (bere se víc);
+// pod 1 000 zhlédnutí poměrně méně (obří poměr z pár zhlédnutí nic neznamená), kanály nad 100 tis. odběratelů dozadu
+const bangerScore = it => {
+  const subs = it.subs || 0;
+  let s = Math.max(subs ? it.views / Math.max(subs, 300) : 0, bangerX(it) ?? 0);
+  if (it.views < 1000) s *= it.views / 1000;
+  if (subs > 1e5) s *= 1e5 / subs;
+  return s;
+};
+// ať nahoře není jeden kanál pořád dokola: od každého nejdřív nejvýš 2 videa, zbytek až za nimi
+function spreadChannels(list) {
+  const n = {}, first = [], rest = [];
+  for (const it of list) ((n[it.chId] = (n[it.chId] || 0) + 1) <= 2 ? first : rest).push(it);
+  return [...first, ...rest];
+}
 
 // 🌊 Vlna ze zahraničí: témata (brawler, formát, šablona, slovo sezóny), která se točí ve víc státech –
 // a kolik videí na ně už je v Česku. Nic v Česku = mezera, kterou můžeš obsadit první.
