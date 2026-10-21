@@ -155,7 +155,7 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .histov{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}
 .histbox{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;width:min(720px,100%);max-height:90vh;overflow:auto;color:var(--text)}
 .histbox h3{margin:0 30px 4px 0;font-size:16px}
-.histbox svg{margin:12px 0;display:block}
+.histbox svg{margin:12px 0;display:block;touch-action:none;cursor:crosshair}
 .histx{position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:50%;padding:0}
 .histtab{width:100%;font-size:12.5px;border-collapse:collapse}
 .histtab td,.histtab th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
@@ -271,7 +271,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$)/;
-const APP_VERSION = '2026-10-21.21'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.23'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -487,7 +487,19 @@ async function driveInit(create) {
   DRIVE.folder = found[0]?.id || await dFolder(DRIVE_FOLDER);
   DRIVE.thumbs = (await dList(`name='thumbs' and '${DRIVE.folder}' in parents and ${mime}`))[0]?.id || await dFolder('thumbs', DRIVE.folder);
   DRIVE.state = 'on';
+  if (DRIVE.owner) prepareRobotFiles().catch(e => console.warn('robot soubory', e));
   return true;
+}
+// 🤖 GitHub robot (sbírá body grafů, i když jsou všechna zařízení vypnutá) běží pod servisním účtem Googlu.
+// Ten na běžném Disku nesmí zakládat soubory (nemá vlastní místo) – smí jen přepisovat nasdílené.
+// Proto mu majitel jednou předpřipraví 16 prázdných souborů s_bt_h_0…f__github-action.json, které pak robot plní.
+const ROBOT = 'github-action';
+async function prepareRobotFiles() {
+  const have = new Set((await dList(`'${DRIVE.folder}' in parents and name contains '__${ROBOT}' and trashed=false`)).map(f => f.name));
+  for (let i = 0; i < 16; i++) {
+    const k = 'bt_h_' + i.toString(16), name = `s_${k}__${ROBOT}.json`;
+    if (!have.has(name)) await dUpload(name, DRIVE.folder, new Blob([JSON.stringify({k, v:{}, t:0})], {type:'application/json'}));
+  }
 }
 const DRIVE_BACKEND = {
   name:'drive', ready:false,
@@ -503,7 +515,9 @@ const DRIVE_BACKEND = {
     DRIVE.mine = {};
     for (const [id, c] of Object.entries(DRIVE.cache)) {
       const {k, v, t} = c.e;
-      if (!out[k] || t > out[k].t) out[k] = {v, t};
+      // historie grafů se skládá ze VŠECH souborů (každé zařízení i GitHub robot přidává své body), ostatní: novější vyhrává
+      if (out[k] && /^bt_h_/.test(k)) out[k] = {v:mergeKey(k, out[k].v, v || {}), t:Math.max(t, out[k].t)};
+      else if (!out[k] || t > out[k].t) out[k] = {v, t};
       if (c.name.endsWith(suffix)) DRIVE.mine[k] = id;
     }
     this.ready = true;
@@ -1640,6 +1654,33 @@ function showHistory(it) {
     <table class="histtab"><tr><th>Kdy</th><th>Od zveřejnění</th><th>Zhlédnutí</th><th>Přírůstek</th><th>Rychlost</th></tr>${rows.join('')}</table></div>`;
   ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.histx')) ov.remove(); });
   document.body.append(ov);
+  // najetí myší (nebo prstem) na graf: svislá čára + přesný počet zhlédnutí v tu chvíli (mezi měřeními dopočítaný)
+  const svg = ov.querySelector('svg.hist'), W = 640, Hh = 260, pad = 46;
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]));
+  const X = t => pad + (t - t0) / Math.max(1, t1 - t0) * (W - pad - 10), Y = v => Hh - 24 - v / v1 * (Hh - 34);
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g'); g.style.display = 'none'; g.style.pointerEvents = 'none';
+  g.innerHTML = `<line y1="6" y2="${Hh - 24}" stroke="currentColor" opacity=".35" stroke-dasharray="3 3"/><circle r="5" fill="var(--accent)" stroke="var(--panel)" stroke-width="2"/>
+    <rect rx="6" height="38" fill="var(--bg)" stroke="var(--line)"/><text font-size="12" fill="currentColor"><tspan class="a" font-weight="700"/><tspan class="b" opacity=".7"/></text>`;
+  svg.append(g);
+  const move = e => {
+    const r = svg.getBoundingClientRect(), x = Math.min(W - 10, Math.max(pad, (e.clientX - r.left) / r.width * W));
+    const t = t0 + (x - pad) / (W - pad - 10) * (t1 - t0);
+    let i = pts.findIndex(p => p[0] >= t); if (i <= 0) i = 1;
+    const [a, b] = [pts[i - 1], pts[i] || pts[i - 1]], f = b[0] === a[0] ? 1 : (t - a[0]) / (b[0] - a[0]);
+    const v = Math.round(a[1] + (b[1] - a[1]) * Math.min(1, Math.max(0, f))), exact = pts.find(p => Math.abs(X(p[0]) - x) < 6);
+    const vv = exact ? exact[1] : v, tt = exact ? exact[0] : t, y = Y(vv);
+    g.style.display = '';
+    g.querySelector('line').setAttribute('x1', X(tt)); g.querySelector('line').setAttribute('x2', X(tt));
+    g.querySelector('circle').setAttribute('cx', X(tt)); g.querySelector('circle').setAttribute('cy', y);
+    const label = `${vv.toLocaleString('cs')} zhlédnutí${exact ? '' : ' (odhad)'}`, sub = `${fmtDate(tt)} · ${ago((tt - t0) / 3600e3).replace('před ', '+')} od zveřejnění`;
+    const w = Math.max(label.length, sub.length) * 6.4 + 16, bx = X(tt) + w + 12 > W ? X(tt) - w - 10 : X(tt) + 10, by = Math.max(4, Math.min(Hh - 66, y - 46));
+    const rect = g.querySelector('rect'); rect.setAttribute('x', bx); rect.setAttribute('y', by); rect.setAttribute('width', w);
+    const txt = g.querySelector('text'); txt.setAttribute('x', bx + 8); txt.setAttribute('y', by + 16);
+    const ta = g.querySelector('.a'), tb = g.querySelector('.b'); ta.textContent = label; tb.textContent = sub;
+    tb.setAttribute('x', bx + 8); tb.setAttribute('dy', 15);
+  };
+  svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move);
+  svg.addEventListener('pointerleave', () => { g.style.display = 'none'; });
 }
 function card(it, i, showCountry) {
   CARD_ITEMS.set(it.id, it);
