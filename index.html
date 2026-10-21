@@ -271,7 +271,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$)/;
-const APP_VERSION = '2026-10-21.19'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.20'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -322,6 +322,7 @@ const S = {
   ai: ls('bt_ai', !matchMedia('(pointer:coarse)').matches),
   slimit: ls('bt_slimit', 100),
   severy: ls('bt_severy', 24),
+  oldEvery: ls('bt_oldEvery', 120), // počty u videí starších 24 h obnovovat jednou za tolik minut
   discover: ls('bt_discover', true), // 🔭 objevování malých kanálů
   discDays: ls('bt_discDays', 20), // jak často (dní) – pak důkladně, všemi výrazy // plné hledání nejvýš jednou za tolik hodin (na stát a období) // můj denní limit hledání (Google dává 100; grafikovi třeba 20)
   starTab: 'videos',
@@ -845,7 +846,8 @@ async function fetchChannelVideos(c, p, have) {
     .filter(x => new Date(x.contentDetails.videoPublishedAt || 0) >= since && !have.has(x.contentDetails.videoId))
     .map(x => x.contentDetails.videoId))];
   if (!ids.length) return [];
-  return (await details(ids)).map(it => classify(it, 'ch'));
+  const now = Date.now();
+  return (await details(ids)).map(it => ({...classify(it, 'ch'), st:now}));
 }
 // ---------- 🔭 Objevování malých kanálů ----------
 // Hledání podle zhlédnutí najde jen velké kanály. Malé se objevují dvěma cestami:
@@ -1049,11 +1051,19 @@ function archive(cid, items) {
 }
 const getArchive = cid => { const items = Object.values(ls(akey(cid), {})).map(fixItem); return items.length ? {ts:Date.now(), items, next:null} : null; };
 // Lehká aktualizace: nové počty zhlédnutí u známých videí + nová videa ze sledovaných kanálů
+// Počty zhlédnutí se obnovují odstupňovaně: videa mladší 24 h při každé obnově (S.interval, výchozí 30 min),
+// starší jen jednou za S.oldEvery minut (výchozí 2 h) – mění se pomalu a je jich nejvíc, šetří to dotazy.
+// it.st = kdy se počty u videa naposled stáhly.
 async function refreshLight(c, p, set) {
-  const since = Date.now() - PERIODS[p].hours * 3600e3;
+  const now = Date.now(), since = now - PERIODS[p].hours * 3600e3;
   const old = new Map(set.items.map(i => [i.id, i]));
-  const items = (await details([...old.keys()]))
-    .map(it => classify(it, old.get(it.id).src))
+  const keep = [...old.values()].filter(it => new Date(it.pub) >= since);
+  const due = keep.filter(it => {
+    const last = it.st || set.ts || 0, young = now - new Date(it.pub) < 24 * 3600e3;
+    return now - last >= (young ? S.interval : S.oldEvery) * 60e3 - 60e3; // minuta tolerance, ať to nevypadne o vteřinu
+  });
+  const fresh = new Map((await details(due.map(it => it.id))).map(it => [it.id, {...classify(it, old.get(it.id).src), st:now}]));
+  const items = keep.map(it => fresh.get(it.id) || it)
     .filter(it => new Date(it.pub) >= since);
   const have = new Set(items.map(i => i.id));
   items.push(...await fetchChannelVideos(c, p, have));
@@ -1206,7 +1216,8 @@ function renderSettings() {
     </div>
     <div class="sec" id="set-upd"><h2>⟳ Aktualizace</h2>
       ${chk('auto', 'Automaticky aktualizovat', 'Jen když máš stránku otevřenou a vidíš ji. Obnovují se zhlédnutí a nová videa ze sledovaných kanálů – to hledání nestojí.')}
-      <label class="setrow"><select data-set="interval">${[15, 30, 60, 120].map(m => opt(m, 'každých ' + m + ' min')).join('')}</select><span><b>Jak často obnovovat</b><span class="ch">Levná obnova (zhlédnutí + sledované kanály) – hledání nestojí, jen pár jednotek z 10 000 ostatních dotazů.</span></span></label>
+      <label class="setrow"><select data-set="interval">${[15, 30, 60, 120].map(m => opt(m, 'každých ' + m + ' min')).join('')}</select><span><b>Jak často obnovovat (nová videa do 24 h)</b><span class="ch">Levná obnova: zhlédnutí nových videí + nová videa sledovaných kanálů. Hledání nestojí, jen dotazy z 10 000 denních.</span></span></label>
+      <label class="setrow"><select data-set="oldEvery">${[60, 120, 240].map(m => `<option value="${m}" ${S.oldEvery === m ? 'selected' : ''}>každé ${m / 60} h</option>`).join('')}</select><span><b>Starší videa (nad 24 h)</b><span class="ch">Jejich zhlédnutí se mění pomalu a je jich nejvíc – obnovují se méně často, ať to šetří dotazy.</span></span></label>
       ${chk('discover', '🔭 Objevovat malé kanály', 'U státu, který otevřeš, jednou za čas důkladně prohledá nejnovější videa i kanály v místním jazyce (4–8 hledání) a projde doporučené kanály sledovaných youtuberů (bez hledání). Nové kanály s Brawl videi v jazyce státu (a aspoň 200 odběrateli) se začnou sledovat samy.')}
       <label class="setrow"><select data-set="discDays">${DISC_EVERY_OPTS.map(d => `<option value="${d}" ${S.discDays === d ? 'selected' : ''}>jednou za ${d} ${d === 1 ? 'den' : 'dní'}</option>`).join('')}</select><span><b>Jak často objevovat</b><span class="ch">Za každý stát zvlášť, když ho otevřeš. Mezitím jde kdykoli ručně tlačítkem 🔭 u státu (1 hledání).</span></span></label>
       <label class="setrow"><select data-set="severy">${SEARCH_EVERY_OPTS.map(h => `<option value="${h}" ${S.severy === h ? 'selected' : ''}>jednou za ${h} h</option>`).join('')}</select><span><b>Plné hledání nových videí</b><span class="ch">Hledání jsou to vzácné (100 denně pro všechna zařízení). Každý stát a období se plně prohledá nejvýš takhle často – a když už to mezitím udělal někdo jiný (mobil, grafik), nehledá se znova. Mezitím jen levná obnova.</span></span></label>
@@ -2489,7 +2500,7 @@ document.addEventListener('change', e => {
   if (e.target.id === 'gcidInput') { ss('bt_gcid', e.target.value.trim()); renderMain(); return; }
   if (e.target.dataset.chmode) { BLOCK.channels[e.target.dataset.chmode].mode = e.target.value; saveBlock(); return; }
   const k = e.target.dataset.set; if (!k) return;
-  S[k] = e.target.type === 'checkbox' ? e.target.checked : (k === 'interval' || k === 'severy' || k === 'discDays' ? +e.target.value : k === 'slimit' ? Math.min(SEARCH_MAX, Math.max(1, +e.target.value || SEARCH_MAX)) : e.target.value);
+  S[k] = e.target.type === 'checkbox' ? e.target.checked : (k === 'interval' || k === 'severy' || k === 'discDays' || k === 'oldEvery' ? +e.target.value : k === 'slimit' ? Math.min(SEARCH_MAX, Math.max(1, +e.target.value || SEARCH_MAX)) : e.target.value);
   if (k === 'slimit') quota();
   if (k === 'severy') SEARCH_EVERY = S.severy * 60;
   ss('bt_' + k, S[k]);
