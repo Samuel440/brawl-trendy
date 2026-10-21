@@ -23,10 +23,9 @@ header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.96);backdrop-fi
 #status.err{color:var(--hot)}
 .right{display:flex;gap:8px;align-items:center}
 #quota{color:var(--muted);font-size:12px}
-#quotaBar{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:12px;color:var(--muted)}
-#quotaBar:empty{display:none}
-#quotaBar b{color:var(--text);font-weight:600}
-#quotaBar .hot{color:var(--hot)}
+#quota{display:inline-flex;flex-wrap:wrap;gap:2px 10px;justify-content:flex-end}
+#quota b{color:var(--text);font-weight:600}
+#quota .hot{color:var(--hot)}
 nav{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
 nav button{border-radius:999px;padding:7px 14px;font-weight:600}
 nav button.on{background:var(--accent);color:#111;border-color:var(--accent)}
@@ -185,7 +184,6 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
     <input id="q" type="search" placeholder="🔎 Hledat v názvech videí – piš česky, přeloží se do jazyka státu (např. opening, nový brawler, glitch)">
     <select id="qScope"><option value="view">v tomto výběru</option><option value="all">ve všech uložených videích</option></select>
   </div>
-  <div id="quotaBar"></div>
 </header>
 <main id="main"></main>
 
@@ -254,7 +252,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$)/;
-const APP_VERSION = '2026-10-21.5'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.6'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -595,17 +593,13 @@ function quota(search = 0, query = 0) {
     ss('bt_qs', qs);
   }
   renderQuotaBar();
-  const el = $('#quota');
-  el.textContent = `Hledání dnes: ${q.s} / ${S.slimit}${searchBlocked() ? ' (došla)' : ''}`;
-  el.title = `Ostatní dotazy: ${q.q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}. Počítá se jen tohle zařízení – přesné číslo za všechna je v Google Cloud.`;
-  el.style.color = q.s >= S.slimit * .85 || searchBlocked() ? 'var(--hot)' : '';
   return q;
 }
 // ID tohohle zařízení (jen pro sdílené počítadlo kvóty)
 const DEV_ID = ls('bt_dev', '') || (() => { const id = Math.random().toString(36).slice(2, 10); ss('bt_dev', id); return id; })();
-// 🔑 lišta pod hledáním: dnešní spotřeba po lidech (každý má svůj API klíč = svůj limit), rozpad po zařízeních
+// 🔑 vpravo nahoře: dnešní spotřeba po lidech (každý má svůj API klíč = svůj limit), rozpad po zařízeních
 function renderQuotaBar() {
-  const el = $('#quotaBar'); if (!el) return;
+  const el = $('#quota'); if (!el) return;
   const today = ptDate(), by = {};
   for (const e of Object.values(ls('bt_qs', {}))) if (e.d === today) (by[e.who || ''] ||= []).push(e);
   const me = typeof meWho === 'function' ? meWho() : '';
@@ -614,9 +608,9 @@ function renderQuotaBar() {
     const s = list.reduce((a, e) => a + e.s, 0), q = list.reduce((a, e) => a + e.q, 0);
     const lim = who === me ? S.slimit : SEARCH_MAX, hot = s >= lim * .85 || (who === me && searchBlocked());
     const devs = list.length > 1 ? ` <span>(${list.map(e => e.dev + ' ' + e.s).join(' · ')})</span>` : list.length ? ' ' + list[0].dev : '';
-    return `<span class="${hot ? 'hot' : ''}">🔑 <b>${esc(typeof whoLabel === 'function' ? whoLabel(who) : 'Moje')}</b>: hledání ${s} / ${lim}${who === me && searchBlocked() ? ' – došla' : ''}${devs} · dotazy ${q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}</span>`;
+    return `<span class="${hot ? 'hot' : ''}" title="Dotazy (levné): ${q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}. Obnoví se v 9:00."><b>${esc(typeof whoLabel === 'function' ? whoLabel(who) : 'Moje')}</b> hledání ${s}/${lim}${who === me && searchBlocked() ? ' – došla' : ''}${devs} · dotazy ${q >= 1000 ? (q / 1000).toFixed(1).replace('.', ',') + ' tis.' : q}</span>`;
   });
-  el.innerHTML = parts.join('') + '<span>· obnoví se v 9:00</span>';
+  el.innerHTML = '🔑 ' + parts.join('');
 }
 // když Google řekne, že hledání došla (i z jiného zařízení), do resetu už hledat nezkoušíme
 const searchBlocked = () => ls('bt_sq_block', '') === ptDate();
@@ -2172,6 +2166,11 @@ async function pullShared() {
   // požádat prohlížeč, ať data stránky nikdy sám nemaže (při nedostatku místa apod.)
   navigator.storage?.persist?.().catch(() => {});
   cleanupRemovedCountries();
+  // jednorázově: sledované kanály znovu naučit z uložených videí (po smazaném úložišti jich spousta chyběla) – kvótu nestojí
+  if (!ls('bt_mig_relearn', false) && KV_OK) {
+    for (const c of COUNTRIES) learnChannels(c, [...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])].filter(it => !it.cand));
+    ss('bt_mig_relearn', true);
+  }
   reloadMemory();
   // po obnově stránky (aktualizace) se přihlášení k Disku vezme z téhle karty – nemusíš se znovu připojovat
   let tok = null;
