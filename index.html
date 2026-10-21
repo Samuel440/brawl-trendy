@@ -399,7 +399,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.39'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.40'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1750,9 +1750,11 @@ const calgKey = (who = meWho()) => 'bt_calg' + (who ? '_' + who : '');
 const isoDay = d => d.toLocaleDateString('en-CA'); // místní datum YYYY-MM-DD
 const DOW = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 const ytIds = s => [...new Set([...String(s || '').matchAll(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/g)].map(m => m[1]))];
+// pořadí videí v jednom dni = kdy bylo video založené (ne kdy se naposled upravilo – jinak by po úpravě skákalo dolů)
+const calCreated = e => e.created || parseInt(String(e.id).slice(1), 36) || e.at || 0;
 function calSave(e) {
   if (!isOwner()) return;
-  const all = ls(calKey(), {}); all[e.id] = {...e, at:Date.now()}; ss(calKey(), all);
+  const all = ls(calKey(), {}); all[e.id] = {...e, created:e.created || calCreated(e), at:Date.now()}; ss(calKey(), all);
 }
 function calDelete(id) {
   if (!isOwner()) return;
@@ -1772,7 +1774,7 @@ function renderCal() {
   const today = isoDay(t);
   const badge = e => [e.script ? '📝' : '', e.thumb ? '🖼️' : '', ytIds(e.inspo).length ? `💡${ytIds(e.inspo).length}` : '', calNotes(e.id).length ? `🎨${calNotes(e.id).length}` : ''].filter(Boolean).join(' ');
   // tabulka jako v Google Tabulkách: DEN | NÁZEV (největší) | INSPIRACE | POPIS K MINIATUŘE – každé video jeden řádek; scénář až po rozkliknutí
-  const day = d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => a.at - b.at);
+  const day = d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => calCreated(a) - calCreated(b));
     const cls = `${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''} ${d.getDay() % 6 === 0 ? 'weekend' : ''} ${d.getDay() === 1 && iso !== isoDay(days[0]) ? 'weekstart' : ''}`;
     const dayCell = (n) => `<div class="ct cday dfirst ${cls}"${n > 1 ? ` style="grid-row:span ${n}"` : ''}><b>${DOW[d.getDay()]}</b> ${d.getDate()}. ${d.getMonth() + 1}.${iso === today ? '<span class="tag hot">dnes</span>' : ''}</div>`;
     const rows = list.map((e, i) => { const ids = ytIds(e.inspo), f = i === 0 ? ' dfirst' : '';
