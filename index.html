@@ -260,7 +260,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$)/;
-const APP_VERSION = '2026-10-21.14'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.15'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1300,7 +1300,7 @@ function prepare(items, c) {
 const SORTS = {
   views: (a, b) => b.views - a.views,
   vph: (a, b) => b.vph - a.vph,
-  outlier: (a, b) => (b.outlier ?? -1) - (a.outlier ?? -1),
+  outlier: (a, b) => bangerScore(b) - bangerScore(a),
   eng: (a, b) => b.eng - a.eng,
   new: (a, b) => new Date(b.pub) - new Date(a.pub),
 };
@@ -1562,9 +1562,10 @@ function card(it, i, showCountry) {
   CARD_ITEMS.set(it.id, it);
   const tags = [];
   if (showCountry) tags.push(`<span class="tag blue">${flag(it.c)}${esc(it.c.name)}</span>`);
-  // 💥 banger malého kanálu: video má mnohem víc zhlédnutí než kanál odběratelů – nejlepší kandidát na „vypůjčení“
-  if (it.outlier != null && it.outlier >= 3 && it.subs < 100000 && it.views >= 3000) tags.push(`<span class="tag hot">💥 BANGER malého kanálu – ${it.outlier.toFixed(1)}× víc views než odběrů</span>`);
-  else if (it.outlier != null && it.outlier >= 3) tags.push(`<span class="tag hot">🚀 ${it.outlier.toFixed(1)}× víc views než odběrů</span>`);
+  // 💥 banger: video má mnohem víc zhlédnutí než ten kanál obvykle (medián jeho videí) – vyhrál NÁPAD, ne youtuber
+  const bx = bangerX(it);
+  if (bx != null && bx >= 3 && it.views >= 3000) tags.push(`<span class="tag hot" title="Kanál má obvykle ${n(chMedian(it))} zhlédnutí na ${it.short ? 'short' : 'video'}">💥 BANGER – ${bx >= 10 ? Math.round(bx) : bx.toFixed(1)}× víc než obvykle u kanálu</span>`);
+  else if (bx == null && it.outlier != null && it.outlier >= 3) tags.push(`<span class="tag hot">🚀 ${it.outlier.toFixed(1)}× víc views než odběrů</span>`);
   if (showCountry && it.short) tags.push('<span class="tag">📱 Shorts</span>');
   if (it.src === 'ch') tags.push('<span class="tag blue" title="Našlo se přes sledovaný kanál, ne přes hledání">📡 sledovaný kanál</span>');
   it.formats.forEach(f => tags.push(`<span class="tag ok">${esc(f[0])}</span>`));
@@ -2053,6 +2054,109 @@ async function myLoadUI(b) {
 const slim = v => v && {id:v.id, t:v.t};
 
 function staleCost(p) { return COUNTRIES.filter(c => !isFresh(getSet(c.id, p), p)).reduce((a, c) => a + costFor(c, p), 0); }
+// ---------- 🧠 Pomocník nápadů ----------
+// 🧩 Šablony názvů: vzorce, které fungují napříč jazyky (+ české tvary, aby šlo spočítat, kolik jich už je v Česku).
+// [název, regex, česká šablona k doplnění]
+const TEMPLATES = [
+  ['N × brawler VS N × brawler', /\b\d+\s*x?\s*[^\d|#]{2,25}?\s+(vs\.?|versus|против|contro|contre|contra|gegen|karşı|proti)\s+\d+/i, '10× {brawler} VS 10× {brawler}!'],
+  ['Brawler VS všichni', /\b(vs\.?|versus|против|contro|contre|contra|gegen|proti)\s+(every|all|each|tutti|alle[n]?|tous|todos|всех|каждого|wszystkich|her|tüm|všem|všichni|všechny)\b/i, '{brawler} VS VŠICHNI brawleři – kdo vyhraje?'],
+  ['Ball race / závod', /ball ?race|marble|\brace\b|гонк|corrida|carrera|\bgara\b|wyścig|yarış|závod/i, 'BALL RACE se všemi brawlery! Kdo dojede první?'],
+  ['Kdo vyhraje?', /\b(who|which|chi|wer|qui|quién|quem|kto|кто|kim|kdo|který)\b.{0,40}\b(wins?|vince|gewinnt|gagne|gana|ganha|wygra|победит|kazan|vyhraje)/i, 'Který brawler VYHRAJE? {situace}'],
+  ['Získal jsem … zdarma', /\b(got|get|getting|ottenuto|bekommen|ganhei|consegu\w*|obtenu|dostałem|получил\w*|aldım|získal\w*|dostal\w*)\b.{0,40}\b(free|gratis|kostenlos|gratuit|grátis|darmo|бесплатн\w*|bedava|zdarma)/i, 'Získal jsem {věc} ZDARMA! (a ty taky můžeš)'],
+  ['Otevřel jsem N …', /\b(open(ed|ing)?|apr[oi]\w*|öffne\w*|ouvr\w*|abr[oi]\w*|otwier\w*|открыл\w*|açt\w*|otevř\w*|otevír\w*)\b.{0,15}\d+|\d+\s.{0,20}\b(opening|apertur\w*|öffnung|ouverture|otwieranie|открыти\w*|açılım)/i, 'Otevřel jsem {N} {boxů} a TOHLE padlo!'],
+  ['N dní / hodin s …', /\b\d+\s*(days?|hours?|giorni|ore|tage[n]?|stunden|jours|heures|d[ií]as|horas|dni|godzin\w*|дн\w+|час\w*|gün|saat|dní|dnů|hodin)\b/i, '{N} dní hraju JEN za {brawlera}'],
+  ['…, ale … (twist)', /\bbut\b|\baber\b|\bmais\b|\bpero\b|\bale\b|\bно\b|\bama\b/i, 'Brawl Stars, ALE {twist}'],
+  ['POV:', /\bpov\b/i, 'POV: {situace ze hry}'],
+  ['V reálném životě', /real life|\birl\b|in real|vita reale|echten leben|en vrai|vida real|prawdziwym|реальной жизни|gerçek hayat|reáln\w* život/i, 'Brawl Stars v REÁLNÉM ŽIVOTĚ'],
+  ['Kdyby … byl …', /\b(if|se|wenn|si|если|eğer|gdyby|kdyby)\b.{0,30}\b(was|were|fosse|wäre|était|fuera|был\w*|była|olsaydı|byl\w*)\b/i, 'Kdyby {brawler} byl {něco}…'],
+  ['Testuju všechny …', /\b(every|all|tutti|alle|tous|todos|все[хм]?|wszystkie|tüm|bütün|všechny|každý)\b.{0,12}(brawlers?|skins?|hypercharge\w*|gadgets?|star powers?|скин\w*|бойц\w*|personaggi|skiny)/i, 'Testuju VŠECHNY {skiny / hypercharge} – který je nejlepší?'],
+  ['Noob vs Pro', /noob|нуб/i, 'NOOB vs PRO vs HACKER s {brawlerem}'],
+];
+const tplOf = t => TEMPLATES.filter(x => x[1].test(t));
+// zahraniční videa za týden + měsíc bez duplicit
+function weekMonth() { const seen = new Set(); return [...gather('week').list, ...gather('month').list].filter(it => !seen.has(it.id) && seen.add(it.id)); }
+
+// 💥 Medián zhlédnutí kanálu (zvlášť shorts a videa) ze všech uložených dat – „kolik má ten kanál obvykle“
+let CHMED = null, CHMED_T = 0;
+function chMedians() {
+  if (CHMED && Date.now() - CHMED_T < 60e3) return CHMED;
+  const by = {};
+  for (const c of COUNTRIES) for (const it of [...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])]) {
+    const k = it.chId + (it.dur > 0 && it.dur <= 180 ? 's' : 'l');
+    (by[k] ||= new Map()).set(it.id, it.views);
+  }
+  CHMED = {};
+  for (const [k, m] of Object.entries(by)) { const v = [...m.values()].sort((a, b) => a - b); if (v.length >= 4) CHMED[k] = v[Math.floor(v.length / 2)]; }
+  CHMED_T = Date.now();
+  return CHMED;
+}
+const chMedian = it => chMedians()[it.chId + ((it.short ?? (it.dur > 0 && it.dur <= 180)) ? 's' : 'l')];
+const bangerX = it => { const m = chMedian(it); return m ? it.views / Math.max(m, 100) : null; };
+// pro řazení: násobek nad průměrem kanálu; kde ho neznáme (málo videí), aspoň zhlédnutí/odběry (slabší signál)
+const bangerScore = it => bangerX(it) ?? (it.outlier != null ? it.outlier / 3 : -1);
+
+// 🌊 Vlna ze zahraničí: témata (brawler, formát, šablona, slovo sezóny), která se točí ve víc státech –
+// a kolik videí na ně už je v Česku. Nic v Česku = mezera, kterou můžeš obsadit první.
+function topicsOf(it, terms) {
+  const t = it.t;
+  const out = [...(it.brawlers || BRAWLER_RX.filter(b => b[1].test(t)).map(b => b[0])).map(b => '🦸 ' + b),
+    ...(it.formats || FORMATS.filter(f => f[1].test(t))).map(f => '🎬 ' + f[0]),
+    ...tplOf(t).map(x => '🧩 ' + x[0])];
+  if (terms) for (const w of tokens(t)) if (terms.has(w) && w.length >= 4 && !GENERIC.has(w) && !/^brawlers?$/.test(w)) out.push('🔥 ' + w);
+  return [...new Set(out)];
+}
+function waveTopics() {
+  const terms = brawlTerms();
+  const foreign = weekMonth();
+  const cz = C('cz'), czList = ['week', 'month'].flatMap(p => getSet('cz', p)?.items || []).filter(it => langOk(it, cz));
+  const mine = (ls('bt_my', null)?.videos || []);
+  const T = {};
+  for (const it of foreign) for (const k of topicsOf(it, terms)) {
+    const e = T[k] ||= {k, items:[], countries:new Set(), vph:0, recent:0, cz:0, mine:0};
+    e.items.push(it); e.countries.add(it.c.id); e.vph += it.vph; if (it.ageH <= 72) e.recent++;
+  }
+  const czSeen = new Set();
+  for (const it of czList) if (!czSeen.has(it.id) && czSeen.add(it.id)) for (const k of topicsOf(it, terms)) if (T[k]) T[k].cz++;
+  for (const v of mine) for (const k of topicsOf(v, terms)) if (T[k]) T[k].mine++;
+  // slovo musí být aspoň ve 3 státech (jinak je to jen běžné slovo jednoho jazyka, třeba „день“ v RU a UA)
+  return Object.values(T).filter(e => e.countries.size >= (e.k.startsWith('🔥') ? 3 : 2) && e.items.length >= 3)
+    .map(e => ({...e, score:Math.log10(e.vph + 10) * e.countries.size * (1 + e.recent / e.items.length) / (1 + e.cz / 2) * (e.mine ? .6 : 1)}))
+    .sort((a, b) => b.score - a.score);
+}
+function waveHtml() {
+  const rows = waveTopics().slice(0, 20);
+  if (!rows.length) return '<div class="empty">Načti Týden (nebo Měsíc) u víc států – vlna se pozná, až se téma objeví aspoň ve dvou.</div>';
+  const tipOf = k => { const name = k.slice(3); return (TEMPLATES.find(x => x[0] === name) || [])[2] || (FORMATS.find(f => f[0] === name) || [])[2]
+    || (k.startsWith('🦸') ? `Brawler ${name} je teď v kurzu venku – natoč s ním CZ video (build, tier, challenge, noob vs pro).` : `„${name}“ – nové téma/event, které venku letí. Natoč CZ verzi, dokud je čerstvé.`); };
+  return `<div class="fmts">${rows.map(r => {
+    const best = [...r.items].sort((a, b) => b.vph - a.vph);
+    const perC = [...r.countries].map(id => C(id));
+    const gap = r.cz === 0 ? '<span class="tag hot">🟢 MEZERA – v Česku nikdo</span>' : `<span class="tag">🇨🇿 ${r.cz} ${r.cz === 1 ? 'video' : r.cz < 5 ? 'videa' : 'videí'} v Česku</span>`;
+    return `<details class="fmt"><summary><b>${esc(r.k)}</b><span class="ch">${perC.map(c => flag(c)).join('')} ${r.countries.size} státy · ${r.items.length} videí · ${n(r.vph)}/h${r.recent ? ` · ${r.recent} za 3 dny` : ''}</span>${gap}${r.mine ? `<span class="tag ok">✅ už jsi točil (${r.mine})</span>` : ''}</summary>
+      <div class="idea">💡 ${esc(tipOf(r.k))}</div>
+      <div class="grid">${best.slice(0, 8).map((it, i) => card(it, i, true)).join('')}</div></details>`; }).join('')}</div>`;
+}
+function bangersHtml() {
+  const list = weekMonth()
+    .filter(it => (bangerX(it) ?? 0) >= 4 && it.views >= 3000).sort((a, b) => bangerX(b) - bangerX(a))
+    .filter(function (it) { const k = it.chId; this[k] = (this[k] || 0) + 1; return this[k] <= 2; }, {}).slice(0, 16); // max 2 od jednoho kanálu
+  return list.length ? `<div class="grid">${list.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Zatím málo dat – kanál potřebuje aspoň 4 známá videa. Načti Týden a Měsíc u víc států.</div>';
+}
+function templatesHtml() {
+  const foreign = weekMonth();
+  const cz = C('cz'), czList = ['week', 'month'].flatMap(p => getSet('cz', p)?.items || []).filter(it => langOk(it, cz));
+  const rows = TEMPLATES.map(([name, rx, czT]) => {
+    const items = foreign.filter(it => rx.test(it.t)), v = items.map(it => it.views).sort((a, b) => a - b);
+    return {name, czT, items:items.sort((a, b) => b.views - a.views), med:v.length ? v[Math.floor(v.length / 2)] : 0,
+      countries:new Set(items.map(it => it.c.id)), cz:new Set(czList.filter(it => rx.test(it.t)).map(it => it.id)).size};
+  }).filter(r => r.items.length >= 2).sort((a, b) => b.med * b.countries.size - a.med * a.countries.size);
+  if (!rows.length) return '<div class="empty">Načti Týden / Měsíc u víc států.</div>';
+  return `<div class="fmts">${rows.map(r => `<details class="fmt"><summary><b>${esc(r.name)}</b><span class="ch">${r.items.length} videí · ${r.countries.size} států · medián ${n(r.med)} zhlédnutí</span>${r.cz ? `<span class="tag">🇨🇿 ${r.cz}</span>` : '<span class="tag hot">🟢 v Česku nikdo</span>'}</summary>
+      <div class="idea">✍️ Česky: <b>${esc(r.czT)}</b> <button data-copytxt="${esc(r.czT)}">📋 Kopírovat</button></div>
+      <div class="ch" style="margin:4px 0 8px">Nejlepší příklad: „${esc(r.items[0].t)}“ – ${n(r.items[0].views)} zhlédnutí (${esc(r.items[0].c.name)})</div>
+      <div class="grid">${r.items.slice(0, 8).map((it, i) => card(it, i, true)).join('')}</div></details>`).join('')}</div>`;
+}
+
 function renderIdeas() {
   const day = gather('day'), week = gather('week'), all = gather('all');
   const total = COUNTRIES.length - 1;
@@ -2085,9 +2189,10 @@ function renderIdeas() {
   const fShort = fmtRows(day.list.filter(it => it.short), all.list.filter(it => it.short));
   // zavírací kategorie; co máš otevřené, si stránka pamatuje
   const OPEN = ls('bt_open', {});
+  // obsah zavřených sekcí se počítá až po rozkliknutí (šetří čas – stovky karet)
   const sec = (id, title, count, hint, body) => `<details class="isec" data-sec="${id}" ${OPEN[id] ? 'open' : ''}>
       <summary><h2>${title}</h2>${count ? `<span class="tag">${count}</span>` : ''}</summary>
-      <p class="hint">${hint}</p>${body}</details>`;
+      <p class="hint">${hint}</p>${typeof body !== 'function' ? body : OPEN[id] ? body() : '<div class="lazy ch">Počítám…</div>'}</details>`;
   // 3) Nová slova dne (nejsou v týdnu ani celé době = čerstvé téma / nový brawler / event)
   const oldWords = new Set([...week.list.filter(it => it.ageH > 48), ...all.list].flatMap(it => tokens(it.t)));
   const words = countBy(day.list, it => tokens(it.t), it => Math.log10(it.vph + 10)).filter(e => e.n >= 2).slice(0, 40);
@@ -2112,6 +2217,18 @@ function renderIdeas() {
       'Dvě náhodná videa vedle sebe – zkus z nich spojit nový nápad (např. „účet v jedné barvě“ + „co o tobě říká tvůj main“ → hraju za mainu na účtu v jedné barvě). Dobrou kombinaci si ulož i s poznámkou.',
       mixSection())}
 
+    ${sec('wave', '🌊 Vlna ze zahraničí – mezery v Česku', '',
+      'Témata (brawler, formát, šablona názvu, nové slovo), která se teď točí aspoň ve dvou státech. Nahoře ta, co nejvíc rostou a v Česku na ně skoro nikdo nemá video. <span class="tag hot">🟢 MEZERA</span> = můžeš být v Česku první. <span class="tag ok">✅ už jsi točil</span> = máš na to video na ULTRA SAMI (dle 📺 Míchače).',
+      waveHtml)}
+
+    ${sec('bangers', '💥 Bangery – víc než obvykle u kanálu', '',
+      'Videa, která mají 4× a víc zhlédnutí než ten kanál běžně dělá (medián jeho videí, shorts a videa zvlášť). Tady nevyhrál youtuber, ale NÁPAD – nejlepší věci k vypůjčení.',
+      bangersHtml)}
+
+    ${sec('tpl', '🧩 Šablony názvů, které fungují', '',
+      'Vzorce názvů, které se opakují napříč státy, s mediánem zhlédnutí. Česká verze je připravená k doplnění.',
+      templatesHtml)}
+
     ${sec('formats', '🧩 Formáty, které dnes táhnou', fLong.length + fShort.length,
       'Klikni na formát a uvidíš videa, která ho právě používají. Videa a shorts zvlášť. „ROSTE“ = dnes se točí častěji než obvykle (po načtení „Celá doba“).',
       day.list.length ? `<div class="two">${S.type !== 'short' ? `<div>${fmtBlock('🎬 Videa', fLong)}</div>` : ''}${S.type !== 'long' ? `<div>${fmtBlock('📱 Shorts', fShort)}</div>` : ''}</div>` : '<div class="empty">Načti novinky tlačítkem nahoře.</div>')}
@@ -2131,10 +2248,6 @@ function renderIdeas() {
     ${sec('brawlers', '🦸 Brawleři v novinkách', br.length,
       'Klikni na brawlera a uvidíš videa o něm.',
       `<div class="tags">${br.map(e => `<button class="tag ok" data-q="${esc(e.k)}" title="${n(e.views)} zhlédnutí">${esc(e.k)} · ${e.n} videí</button>`).join('') || '<span class="ch">Zatím žádná data.</span>'}</div>`)}
-
-    ${sec('viral', '🚀 Virály nad odběry (týden)', outl.length,
-      'Malé kanály, které dostaly 3× a víc zhlédnutí než mají odběratelů. Tady nevyhrál kanál, ale NÁPAD – nejlepší věci ke zkopírování.',
-      outl.length ? `<div class="grid">${outl.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Načti „Týden“ tlačítkem nahoře.</div>')}
 
     ${sec('ever', '🏛️ Evergreen – co funguje za celou dobu', ever.length,
       'Formáty a brawleři z nejsledovanějších videí všech dob. Dobré na videa, která nabírají views dlouho.',
@@ -2255,6 +2368,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.unblockch) { logEvent(`↩ odblokoval kanál ${BLOCK.channels[b.dataset.unblockch]?.name || ''}`); delete BLOCK.channels[b.dataset.unblockch]; tomb('bt_block.c', b.dataset.unblockch); saveBlock(); renderBlocked(); }
   else if (b.dataset.unblockv) { logEvent(`↩ odblokoval video ${shortT(BLOCK.videos[b.dataset.unblockv]?.t || '')}`); delete BLOCK.videos[b.dataset.unblockv]; tomb('bt_block.v', b.dataset.unblockv); saveBlock(); renderBlocked(); }
   else if (b.dataset.discover) discover(C(b.dataset.discover), true);
+  else if (b.dataset.copytxt !== undefined) { navigator.clipboard?.writeText(b.dataset.copytxt).then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.dataset.jump) { const el = document.getElementById(b.dataset.jump); if (el) scrollTo({top:el.getBoundingClientRect().top + scrollY - (getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0) - 10, behavior:'smooth'}); }
   else if (b.id === 'btnAddCh') addChannelUI();
   else if (b.dataset.unch) { removeChannel(C(S.country), b.dataset.unch); rerender(); }
@@ -2264,6 +2378,8 @@ document.addEventListener('click', e => {
 document.addEventListener('toggle', e => {
   const id = e.target.dataset?.sec; if (!id) return;
   ss('bt_open', {...ls('bt_open', {}), [id]:e.target.open});
+  // rozkliknutá sekce s odloženým obsahem → teď ho spočítat
+  if (e.target.open && e.target.querySelector(':scope > .lazy')) { const y = scrollY; renderMain(); scrollTo(0, y); }
 }, true);
 document.addEventListener('input', e => {
   if (e.target.id === 'q') onSearchInput(e.target.value);
