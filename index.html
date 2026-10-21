@@ -271,8 +271,8 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
-const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$)/;
-const APP_VERSION = '2026-10-21.25'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$)/;
+const APP_VERSION = '2026-10-21.26'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1097,7 +1097,10 @@ async function refreshLight(c, p, set) {
 // Slovo, které píše víc takových kanálů a nevyskytuje se u videí z jiných her, bereme jako důkaz Brawl Stars.
 let TERMS = null;
 const GENERIC = new Set(('new free update season event skin skins box boxes challenge noob best live stream part games mobile epic insane funny rank ranked trophies trophy push legendary mythic rare hack glitch secret tips tricks broken account gems opening shop deal deals offer part1 part2 '+
-  'nuovo nuova nuovi gratis aggiornamento stagione evento sfida neue neuer neues kostenlos saison nouveau nouvelle gratuit saison nuevo nueva gratis temporada novo nova grátis temporada nowy nowa darmo sezon новый новая новые бесплатно сезон обновление yeni bedava sezon baru gratis').split(/\s+/));
+  'nuovo nuova nuovi gratis aggiornamento stagione evento sfida neue neuer neues kostenlos saison nouveau nouvelle gratuit saison nuevo nueva gratis temporada novo nova grátis temporada nowy nowa darmo sezon новый новая новые бесплатно сезон обновление yeni bedava sezon baru gratis '+
+  // obyčejná slova, která píšou i Brawl kanály u jiných her – nesmí se brát jako „slovo sezóny“ (Holdik: „топ 1 мира“ u CS:GO)
+  'мира мир мире топ игре игра игры лучший лучшие самый самая день дня часа против всех кто что если когда почему '+
+  'світу світі гра грі найкращий mondo mundo welt monde świata dünya world mundial record rekord').split(/\s+/));
 function brawlTerms() {
   if (TERMS) return TERMS;
   const brawlCh = new Map(), other = new Map();
@@ -1110,7 +1113,9 @@ function brawlTerms() {
       if (!notBlocked(it)) { words.forEach(w => add(other, w, it.chId)); continue; }
       // jako „jiná hra“ počítáme jen videa, u kterých AI jasně řekla, že to není Brawl
       if (it.cand && AI_CACHE[it.id]?.s < 0.2) words.forEach(w => add(other, w, it.chId));
-      else if (!it.cand && it.bs && dedicated.has(it.chId)) words.forEach(w => add(brawlCh, w, it.chId));
+      // slova sezóny jen z videí s Brawl přímo v NÁZVU (ne jen v tazích/popisu) a bez jiné hry v názvu
+      else if (!it.cand && (it.bsN ?? BRAWL_RX.test(it.t)) && !otherGame(it) && dedicated.has(it.chId)) words.forEach(w => add(brawlCh, w, it.chId));
+      else if (otherGame(it)) words.forEach(w => add(other, w, it.chId));
     }
   }
   // aspoň 3 Brawl kanály a u ostatních kanálů (jiné hry) nejvýš poloviční výskyt
@@ -1137,10 +1142,14 @@ const BLOCK = ls('bt_block', {videos:{}, channels:{}});
 const saveBlock = () => { ss('bt_block', BLOCK); TERMS = null; };
 const strictCh = it => BLOCK.channels[it.chId]?.mode === 'strict';
 // Ověřené video: Brawl Stars přímo v názvu, nebo v tazích a k tomu Brawl miniatura (AI), nebo AI úplná jistota
+// „Kanál – jen ověřená Brawl videa“: Brawl nebo brawler přímo v názvu; jinak tagy + hodně jistá AI (0.75);
+// jiná hra v názvu = nikdy (tagy s „brawl stars“ mívá takový kanál u všech videí)
 function verified(it) {
+  if (otherGame(it)) return false;
   const a = aiOf(it);
-  if (it.bsN ?? it.bsT) return true;
-  if ((it.bsTag ?? it.bsT) && a && a.s >= 0.5) return true;
+  if (it.bsN ?? BRAWL_RX.test(it.t)) return true;
+  if (hasBrawler(it)) return true;
+  if ((it.bsTag ?? it.bsT) && a && a.s >= 0.75) return true;
   return !!a && a.s >= AI_SURE;
 }
 function notBlocked(it) {
@@ -1201,6 +1210,7 @@ function mergeKey(k, mine, theirs) {
   return mergeKey0(k, mine, theirs);
 }
 function mergeKey0(k, mine, theirs) {
+  if (typeof mine === 'number') return Math.max(mine, +theirs || 0); // časy (bt_autoAt…) – platí pozdější
   if (/^bt_h_/.test(k)) { const out = {...theirs}; for (const [id, p] of Object.entries(mine)) out[id] = out[id] ? thinPts([...out[id], ...p]) : p; return out; }
   if (k === 'bt_qs' || k === 'bt_disc') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
@@ -1345,8 +1355,13 @@ function enrich(it, c) {
   return {...it, c, ageH, vph: it.views / ageH, outlier: it.subs ? it.views / it.subs : null,
     eng: it.views ? (it.likes + it.com) / it.views : 0, short: it.dur > 0 && it.dur <= 180, formats, brawlers};
 }
+// Jiná hra přímo v NÁZVU (a Brawl v názvu ne) = není to Brawl, ať tvrdí tagy nebo AI cokoli.
+// Kanály jako Holdik dávají „brawl stars“ do tagů u všech videí, i u CS:GO.
+const OTHER_GAME_RX = /cs ?: ?go|\bcs ?2\b|\bcsgo\b|counter[- ]?strike|(^|[^а-яё])(кс ?го|кс ?2|кс)([^а-яё]|$)|standoff|стандофф?|faceit|фейсит|калибровк|kalibrac|valorant|валорант|call of duty|\bcod\b|warzone|fortnite|фортнайт|minecraft|майнкрафт|roblox|роблокс|\bdoors\b|(^|[^а-яё])(дорс|дота|гта)([^а-яё]|$)|pubg|пабг|free ?fire|фри ?фаер|\bdota|\bgta\b|among us|амонг ас|brawlhalla|clash royale|клеш рояль|clash of clans|клеш оф кланс|squad busters|geometry dash|stumble guys|стамбл гайс|subway surf|genshin|tarkov|тарков|apex legends|overwatch|rocket league|fifa\b|фифа|ea fc|mobile legends|mlbb|grand theft|five nights|fnaf|poppy playtime|rainbow six|\bpvz\b|plants vs/i;
+const otherGame = it => OTHER_GAME_RX.test(it.t) && !BRAWL_RX.test(it.t);
 function prepare(items, c) {
   return items
+    .filter(it => !otherGame(it))
     .filter(it => !S.strict || langOk(it, c))
     .filter(it => !it.cand || candOk(it))
     .filter(notBlocked)
@@ -1744,7 +1759,10 @@ const AI = {ready:null, pending:new Set(), running:false};
 const AI_CACHE = ls('bt_aicache', {});
 const AI_YES = ['a screenshot of the mobile game Brawl Stars', 'colorful cartoon characters from the game Brawl Stars', 'a YouTube thumbnail of a Brawl Stars video'];
 const AI_NO = ['a screenshot of Minecraft', 'a screenshot of Roblox', 'a screenshot of Fortnite', 'a screenshot of Clash Royale', 'a screenshot of Clash of Clans',
-  'a screenshot of Stumble Guys', 'a screenshot of Free Fire or PUBG Mobile', 'a screenshot of Squad Busters', 'a screenshot of Geometry Dash', 'a photo of real people', 'a football video game'];
+  'a screenshot of Stumble Guys', 'a screenshot of Free Fire or PUBG Mobile', 'a screenshot of Squad Busters', 'a screenshot of Geometry Dash', 'a photo of real people', 'a football video game',
+  'a screenshot of Counter-Strike CS:GO or Standoff 2', 'a first-person shooter game with guns', 'a competitive rank leaderboard of a shooter game', 'a screenshot of Valorant or Call of Duty',
+  'a screenshot of GTA', 'a horror game like Doors or Poppy Playtime', 'a screenshot of Among Us'];
+const AI_VER = 2; // při změně popisů výš zvýšit – staré verdikty se pak spočítají znovu
 const AI_WEAK = 0.35; // video se slovem sezóny musí mít aspoň tolik (vyřadí jasný Minecraft/Roblox/vlog)
 const AI_SURE = 0.9;  // video úplně bez slov sezóny projde jen při takové jistotě
 function rows(t) {
@@ -1780,9 +1798,9 @@ async function embed(url) {
 function aiScore(e) {
   const logits = AI.text.map(t => dot(e, t) * 100), mx = Math.max(...logits);
   const ex = logits.map(l => Math.exp(l - mx)), sum = ex.reduce((a, b) => a + b, 0);
-  return {s:+(ex.slice(0, AI_YES.length).reduce((a, b) => a + b, 0) / sum).toFixed(2)};
+  return {s:+(ex.slice(0, AI_YES.length).reduce((a, b) => a + b, 0) / sum).toFixed(2), v:AI_VER};
 }
-const aiOf = it => AI_CACHE[it.id];
+const aiOf = it => { const a = AI_CACHE[it.id]; return a && (a.v || 1) >= AI_VER ? a : null; }; // staré verdikty (bez CS:GO apod.) neplatí
 function aiBadge(it) {
   const a = aiOf(it);
   if (!S.ai || !a || !it.cand) return '';
@@ -1988,13 +2006,17 @@ async function showCountry(force) {
   // (PC, mobil, grafik), vezmu jeho data a nestahuju nic. Malé náhodné zpoždění, ať dvě zařízení nezačnou v tu samou vteřinu.
   // uložená data ukázat HNED (kontrola Disku a obnova doběhnou na pozadí a pak se překreslí)
   if (set) renderMain();
-  if (!force && set && Date.now() - set.ts >= maxAge && REMOTE === DRIVE_BACKEND && Date.now() - (SYNC.last || 0) > 20e3) {
+  // Kdy obnovit: chybí data / ruční ⟳ / u automatiky jen když doběhl SPOLEČNÝ odpočet (otevření záložky samo nic nestahuje)
+  const due = Date.now() >= nextDue();
+  const needs = () => force || !set || (p === 'all' ? Date.now() - set.ts >= maxAge : S.auto ? due && Date.now() - set.ts >= 5 * 60e3 : Date.now() - set.ts >= maxAge);
+  if (!force && set && needs() && REMOTE === DRIVE_BACKEND && Date.now() - (SYNC.last || 0) > 20e3) {
     await new Promise(r => setTimeout(r, Math.random() * 1500));
     await pullShared().catch(() => {});
     set = getSet(c.id, p);
     if (token !== S.loadToken) return;
   }
-  if (force || !set || Date.now() - set.ts >= maxAge) {
+  if (S.auto && due && p !== 'all' && !force) ss('bt_autoAt', Date.now()); // odpočet jede znovu od teď – pro všechny záložky i zařízení
+  if (needs()) {
     status(`Načítám ${c.name} – ${PERIODS[p].label}…`);
     try { set = await ensureSet(c, p, true, !force, true); status(''); }
     catch (e) { status(e.message, true); failed = true; }
@@ -2454,13 +2476,16 @@ function renderMain() {
 }
 // Kdy je další obnova: počítá se VŽDY z času poslední obnovy uložené v datech (sdílí se přes Disk) –
 // takže odpočet pokračuje i po obnovení stránky, aktualizaci nebo na jiném zařízení. Po chybě se zkusí až za interval.
-const nextDue = () => Math.max((getSet(S.country, S.period)?.ts || 0) + S.interval * 60e3, S.retry?.k === S.country + S.period ? S.retry.at : 0);
+// JEDEN společný odpočet pro celou stránku (bt_autoAt = kdy proběhla poslední automatická obnova, sdílí se přes Disk):
+// otevření jiné záložky nic nespustí ani nevynuluje – obnoví se, až odpočet doběhne.
+const autoAt = () => ls('bt_autoAt', 0);
+const nextDue = () => Math.max(autoAt() + S.interval * 60e3, S.retry?.k === S.country + S.period ? S.retry.at : 0);
 let AUTO_BUSY = false;
 function updateUpdated() {
   const el = $('#updated'); if (!el) return;
   const set = getSet(S.country, S.period);
   let t = set ? `Aktualizováno ${ago((Date.now() - set.ts) / 3600e3)}` : '';
-  if (S.auto && set) { const s = Math.max(0, Math.round((nextDue() - Date.now()) / 1000)); t += ` · další za ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}${REMOTE === DRIVE_BACKEND ? ' (společná pro všechna zařízení)' : ''}`; }
+  if (S.auto) { const s = Math.max(0, Math.round((nextDue() - Date.now()) / 1000)); t += ` · další za ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}${REMOTE === DRIVE_BACKEND ? ' (společná pro všechna zařízení)' : ''}`; }
   el.textContent = t;
 }
 async function autoRefresh() {
@@ -2471,7 +2496,7 @@ async function autoRefresh() {
 setInterval(() => {
   updateUpdated();
   if (!document.hidden) checkAllThumbs(); // sama si hlídá interval 30 min
-  if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || driveGate() || !getSet(S.country, S.period)) return;
+  if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || driveGate()) return;
   if (Date.now() >= nextDue()) autoRefresh();
 }, 1000);
 
@@ -2570,7 +2595,7 @@ document.addEventListener('change', e => {
 });
 // Když je stránka schovaná (jiná karta / minimalizováno), nic se nestahuje; po návratu se hned aktualizuje, pokud už uplynul interval
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && S.key && S.auto && S.period !== 'ideas' && !PERIODS[S.period].local && !driveGate() && getSet(S.country, S.period) && Date.now() >= nextDue()) autoRefresh();
+  if (!document.hidden && S.key && S.auto && S.period !== 'ideas' && !PERIODS[S.period].local && !driveGate() && Date.now() >= nextDue()) autoRefresh();
 });
 // Jednorázová oprava: kanály naučené ve státě jen kvůli přeloženému názvu z AI dabingu přestaneme sledovat
 // (necháme ruční a ty, které mají v tom státě aspoň jedno video, které tam opravdu patří)
