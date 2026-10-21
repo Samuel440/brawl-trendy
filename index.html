@@ -260,7 +260,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$)/;
-const APP_VERSION = '2026-10-21.16'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.17'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1829,9 +1829,12 @@ function renderHeader() {
 }
 
 // ---------- Pohled: seznam pro stát ----------
-const driveGate = () => !!gClientId() && REMOTE !== DRIVE_BACKEND && !ls('bt_nodrive', false);
+// Bez připojeného Disku se z YouTube nic nestahuje (data jiných zařízení jsou na Disku zdarma).
+// „Bez Disku“ jde jen na zařízení, které se k Disku nikdy nepřipojilo – jinak by si každé stahovalo samo a pálilo kvótu.
+const driveUsedHere = () => !!ls('bt_gemail', '') || ls('bt_gdrive', false);
+const driveGate = () => !!gClientId() && REMOTE !== DRIVE_BACKEND && (!ls('bt_nodrive', false) || driveUsedHere());
 const driveGateHtml = () => `<div class="drivegate">☁️ <b>Nejdřív připoj Google Disk.</b> Co už načetla jiná zařízení, se stáhne zdarma a z YouTube se bude stahovat jen to, co chybí.
-  <button class="primary" id="btnDrive">Připojit Disk</button><button id="btnNoDrive">Používat bez Disku</button></div>`;
+  <button class="primary" id="btnDrive">Připojit Disk</button>${driveUsedHere() ? '' : '<button id="btnNoDrive" title="Každé zařízení si pak stahuje samo a bere kvótu – jen když Disk vůbec nechceš">Používat bez Disku (bere kvótu)</button>'}</div>`;
 async function showCountry(force) {
   const token = ++S.loadToken, c = C(S.country), p = S.period;
   if (p === 'arch' || p === 'star') { renderMain(); return; }
