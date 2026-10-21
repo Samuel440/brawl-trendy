@@ -400,7 +400,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.43'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.44'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1897,11 +1897,11 @@ function calPickScript(text) {
     if (b?.dataset.cpto) {
       const db = ls(calKey(), {}), e = db[b.dataset.cpto]; if (!e) return;
       e.script = [e.script, text].filter(Boolean).join('\n\n'); calSave(e);
-      ov.remove(); calEditor(e.id);
+      ov.remove(); calEditor(e.id, null, true);
     }
     if (b?.dataset.cpnew) {
       const e = {id:'v' + Date.now().toString(36), date:b.dataset.cpnew, title:'', script:text, thumb:'', inspo:''};
-      calSave(e); ov.remove(); calEditor(e.id);
+      calSave(e); ov.remove(); calEditor(e.id, null, true);
     }
   });
   document.body.append(ov);
@@ -1922,7 +1922,7 @@ function textPicker(insert) {
   });
   document.body.append(ov);
 }
-function calEditor(id, date) {
+function calEditor(id, date, focusScript) {
   const own = isOwner(), all = ls(calKey(), {});
   const e = all[id] || {id:'v' + Date.now().toString(36), date, title:'', script:'', thumb:'', inspo:''};
   const stars = Object.entries(STARS).sort((a, b) => byOrd(a[1], b[1]));
@@ -1989,7 +1989,10 @@ function calEditor(id, date) {
     }
   });
   document.body.append(ov);
-  if (own && !e.title) ov.querySelector('[data-f="title"]')?.focus();
+  // poslané z Přenosu / Nápadů → otevřít rovnou u scénáře, kurzor za vloženým textem
+  const sc = ov.querySelector('[data-f="script"]');
+  if (focusScript && sc) { sc.scrollIntoView({block:'center'}); sc.focus({preventScroll:true}); sc.setSelectionRange(sc.value.length, sc.value.length); sc.scrollTop = sc.scrollHeight; }
+  else if (own && !e.title) ov.querySelector('[data-f="title"]')?.focus();
 }
 // 🖥️ Scénář na celou obrazovku – velké písmo, tmavé pozadí, velikost písma A−/A+, šipky/kolečko posouvají, Esc zavře
 function teleprompter(text, title) {
