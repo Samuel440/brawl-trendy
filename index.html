@@ -252,7 +252,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$)/;
-const APP_VERSION = '2026-10-21.10'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.11'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -855,6 +855,8 @@ function saveDisc(cid, patch) {
   all[cid] = e; ss('bt_disc', all);
 }
 const trackedIds = c => new Set(Object.keys(ls(chKey(c.id), {})));
+// objevený kanál stojí za sledování, jen když není mrtvý (spousta dětských „Brawl Stars CZ“ kanálů má 5 odběratelů)
+const alive = it => (it.subs ?? 1000) >= 200 || it.views >= 1000;
 async function discoverSearch(c) {
   const qs = DISC_Q[c.id] || ['brawl stars'], d = discInfo(c.id), qi = (d.qi || 0) % qs.length, q = qs[qi];
   saveDisc(c.id, {qi:qi + 1});
@@ -873,7 +875,7 @@ async function discoverSearch(c) {
   const ids = s.items.map(i => i.id.videoId).filter(Boolean);
   const items = ids.length ? (await details(ids)).map(it => classify(it)) : [];
   const before = trackedIds(c);
-  learnChannels(c, items.filter(it => !it.cand));
+  learnChannels(c, items.filter(it => !it.cand && alive(it)));
   // nalezená videa jsou legitimní – rovnou do Novinek / Týdne / Měsíce
   for (const p of ['day', 'week', 'month']) { const since = Date.now() - PERIODS[p].hours * 3600e3; const add = items.filter(it => new Date(it.pub) >= since); if (add.length) mergeInto(c.id, p, add); }
   archive(c.id, items);
@@ -906,7 +908,7 @@ async function verifyCandidates(c, ids, checked) {
   }
   if (vidIds.length) {
     const items = (await details(vidIds)).map(it => classify(it)).filter(it => !it.cand);
-    learnChannels(c, items);
+    learnChannels(c, items.filter(alive));
     for (const p of ['day', 'week', 'month']) { const since = Date.now() - PERIODS[p].hours * 3600e3; const add = items.filter(it => langOk(it, c) && new Date(it.pub) >= since); if (add.length) mergeInto(c.id, p, add); }
   }
   return [...trackedIds(c)].filter(id => !before.has(id)).length;
