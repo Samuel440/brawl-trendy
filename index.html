@@ -400,7 +400,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.41'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.42'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1792,6 +1792,11 @@ function renderCal() {
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div></div>
     <div class="caltable" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
 }
+// Zavřít okno kliknutím vedle – jen když i STISK myši začal vedle. Když označuješ text v okně a pustíš myš venku,
+// prohlížeč to bere jako klik na pozadí a okno by se zavřelo uprostřed psaní.
+let MDOWN = null;
+document.addEventListener('mousedown', e => { MDOWN = e.target; }, true);
+const bgClick = (ev, ov) => ev.target === ov && MDOWN === ov;
 // název / počty videa podle ID (uložené, nebo cokoli, co bylo na stránce vidět)
 const vidInfo = id => STARS[id] || CARD_ITEMS.get(id) || null;
 // 🔍 hezký výběr videí: záložky ⭐ Uložené / 👀 Naposledy viděné / 🔥 Trendy týdne + hledání; klik = přidat/odebrat
@@ -1837,7 +1842,7 @@ function videoPicker(selected, toggle, startTab) {
   ov.addEventListener('change', ev => { const k = ev.target.dataset?.pf; if (k) { P[k] = ev.target.value; draw(); } });
   ov.addEventListener('click', ev => {
     const b = ev.target.closest('button');
-    if (ev.target === ov || b?.classList.contains('histx') || b?.hasAttribute('data-pdone')) return ov.remove();
+    if (bgClick(ev, ov) || b?.classList.contains('histx') || b?.hasAttribute('data-pdone')) return ov.remove();
     if (b?.dataset.ptab) { P.tab = b.dataset.ptab; draw(); }
     if (b?.dataset.pv) { toggle(b.dataset.pv); draw(); }
   });
@@ -1859,7 +1864,7 @@ function calPickDay(it) {
         <button class="primary" data-cpnew="${iso}">＋ nové video</button></div>`; }).join('')}</div></div>`;
   ov.addEventListener('click', ev => {
     const b = ev.target.closest('button');
-    if (ev.target === ov || b?.classList.contains('histx')) return ov.remove();
+    if (bgClick(ev, ov) || b?.classList.contains('histx')) return ov.remove();
     if (b?.dataset.cpto) {
       const db = ls(calKey(), {}), e = db[b.dataset.cpto]; if (!e) return;
       if (!ytIds(e.inspo).includes(it.id)) { e.inspo = [e.inspo, ytUrl(it.id)].filter(Boolean).join('\n'); calSave(e); }
@@ -1883,7 +1888,7 @@ function textPicker(insert) {
     <div class="picktexts">${items.map((x, i) => `<button class="picktext" data-pt="${i}"><span class="ch">${x.k}</span><span>${esc(x.text)}</span></button>`).join('') || '<div class="ch">Nemáš uložené žádné texty – ulož si je v ⭐ Uložené → 📤 Přenos nebo v míchači nápadů.</div>'}</div></div>`;
   ov.addEventListener('click', ev => {
     const b = ev.target.closest('button');
-    if (ev.target === ov || b?.classList.contains('histx')) return ov.remove();
+    if (bgClick(ev, ov) || b?.classList.contains('histx')) return ov.remove();
     if (b?.dataset.pt) { insert(items[+b.dataset.pt].text); ov.remove(); }
   });
   document.body.append(ov);
@@ -1945,7 +1950,7 @@ function calEditor(id, date) {
       ta.value = ta.value.slice(0, p) + (p && ta.value[p - 1] !== '\n' ? '\n' : '') + txt + '\n' + ta.value.slice(p);
       e.script = ta.value; save(); ta.focus();
     });
-    if (ev.target === ov || b?.classList.contains('histx')) { clearTimeout(timer); if (own && (e.title || e.script || e.thumb || e.inspo)) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || 'video')} na ${e.date}`); } ov.remove(); renderMain(); return; }
+    if (bgClick(ev, ov) || b?.classList.contains('histx')) { clearTimeout(timer); if (own && (e.title || e.script || e.thumb || e.inspo)) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || 'video')} na ${e.date}`); } ov.remove(); renderMain(); return; }
     if (!b) return;
     if (b.matches('[data-caldel]')) { calDelete(e.id); ov.remove(); renderMain(); }
     else if (b.matches('[data-calfull]')) teleprompter(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title);
@@ -2208,7 +2213,7 @@ function showHistory(it) {
     <h3>📈 ${esc(it.t)}</h3><div class="ch">${esc(it.ch)} · ${n(it.views)} zhlédnutí · ${pts.length - 1} ${pts.length - 1 === 1 ? 'měření' : 'měření'}${pts.length <= 3 ? ' – víc bodů přibude s každou obnovou (na všech zařízeních)' : ''}</div>
     ${histSvg(pts, 640, 260, true)}
     <table class="histtab"><tr><th>Kdy</th><th>Od zveřejnění</th><th>Zhlédnutí</th><th>Přírůstek</th><th>Rychlost</th></tr>${rows.join('')}</table></div>`;
-  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.histx')) ov.remove(); });
+  ov.addEventListener('click', e => { if (bgClick(e, ov) || e.target.closest('.histx')) ov.remove(); });
   document.body.append(ov);
   // najetí myší (nebo prstem) na graf: svislá čára + přesný počet zhlédnutí v tu chvíli (mezi měřeními dopočítaný)
   const svg = ov.querySelector('svg.hist'), W = 640, Hh = 260, pad = 46;
