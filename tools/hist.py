@@ -22,7 +22,8 @@ def log(*a): print(*a, flush=True)
 
 def drive_session():
     info = json.loads(os.environ['GDRIVE_SA_JSON'])
-    cred = service_account.Credentials.from_service_account_info(info, scopes=['https://www.googleapis.com/auth/drive'])
+    # jeden servisní účet na Disk i na YouTube (veřejné počty zhlédnutí) – samostatný API klíč není potřeba
+    cred = service_account.Credentials.from_service_account_info(info, scopes=['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/youtube.readonly'])
     cred.refresh(Request())
     s = requests.Session(); s.headers['Authorization'] = 'Bearer ' + cred.token
     return s, info.get('client_email', '')
@@ -45,9 +46,11 @@ def thin(p):
 def bucket(vid): return 'bt_h_' + format(ord(vid[0]) % 16, 'x')
 
 def main():
-    key = os.environ.get('YT_API_KEY', '').strip().strip('"\'')  # mezera / uvozovky navíc při vkládání
-    if not key or not os.environ.get('GDRIVE_SA_JSON'):
-        log('Chybí tajné hodnoty YT_API_KEY / GDRIVE_SA_JSON (Settings → Secrets → Actions) – zatím nic nedělám.'); return
+    # YouTube: platný API klíč (AIza…), jinak přihlášení servisním účtem – stačí tedy jen GDRIVE_SA_JSON
+    key = os.environ.get('YT_API_KEY', '').strip().strip('"\'')
+    if not key.startswith('AIza'): key = ''
+    if not os.environ.get('GDRIVE_SA_JSON'):
+        log('Chybí tajná hodnota GDRIVE_SA_JSON (Settings → Secrets → Actions) – zatím nic nedělám.'); return
     s, sa_email = drive_session()
     folders = dlist(s, f"name='{FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false")
     if not folders: sys.exit(f'Složka „{FOLDER}“ není nasdílená servisnímu účtu {sa_email} – nasdílej ji jako Editor.')
@@ -90,13 +93,15 @@ def main():
     for i in range(0, len(due), 50):
         if calls >= MAX_CALLS: log('pojistka – zbytek příště'); break
         part = due[i:i + 50]
-        r = requests.get('https://www.googleapis.com/youtube/v3/videos', params={'part': 'statistics', 'id': ','.join(part), 'key': key})
+        params = {'part': 'statistics', 'id': ','.join(part)}
+        if key: r = requests.get('https://www.googleapis.com/youtube/v3/videos', params={**params, 'key': key})
+        else: r = s.get('https://www.googleapis.com/youtube/v3/videos', params=params)  # servisní účet
         calls += 1
         if r.status_code != 200:
             log('YouTube chyba', r.status_code, r.text[:300])
-            if r.status_code in (403, 429) or 'API key' in r.text:
-                if 'API key' in r.text: log(f'Špatný YT_API_KEY (délka {len(key)}, začíná {key[:4]!r}) – vlož znovu klíč „Brawl Trendy robot“ do Secrets.')
-                break
+            if key and 'API key' in r.text:  # klíč nefunguje → zkusit servisní účet
+                log('YT_API_KEY nefunguje – přepínám na servisní účet.'); key = ''; continue
+            if r.status_code in (401, 403, 429): break
             continue
         for x in r.json().get('items', []):
             views = int(x.get('statistics', {}).get('viewCount', 0))
