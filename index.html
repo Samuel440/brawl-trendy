@@ -23,6 +23,10 @@ header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.96);backdrop-fi
 #status.err{color:var(--hot)}
 .right{display:flex;gap:8px;align-items:center}
 #quota{color:var(--muted);font-size:12px}
+#quotaBar{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:12px;color:var(--muted)}
+#quotaBar:empty{display:none}
+#quotaBar b{color:var(--text);font-weight:600}
+#quotaBar .hot{color:var(--hot)}
 nav{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
 nav button{border-radius:999px;padding:7px 14px;font-weight:600}
 nav button.on{background:var(--accent);color:#111;border-color:var(--accent)}
@@ -181,6 +185,7 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
     <input id="q" type="search" placeholder="🔎 Hledat v názvech videí – piš česky, přeloží se do jazyka státu (např. opening, nový brawler, glitch)">
     <select id="qScope"><option value="view">v tomto výběru</option><option value="all">ve všech uložených videích</option></select>
   </div>
+  <div id="quotaBar"></div>
 </header>
 <main id="main"></main>
 
@@ -248,8 +253,8 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
-const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$)/;
-const APP_VERSION = '2026-10-21.3'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$)/;
+const APP_VERSION = '2026-10-21.4'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -401,7 +406,13 @@ async function driveSignIn(pick) {
     google.accounts.oauth2.initTokenClient({
       client_id:gClientId(), scope:'https://www.googleapis.com/auth/drive', login_hint:pick ? undefined : ls('bt_gemail', '') || undefined,
       ...(pick ? {prompt:'select_account'} : {}),
-      callback:r => { if (r.error) return rej(new Error(r.error_description || r.error)); DRIVE.token = r.access_token; DRIVE.exp = Date.now() + r.expires_in * 1000; res(); },
+      callback:r => {
+        if (r.error) return rej(new Error(r.error_description || r.error));
+        DRIVE.token = r.access_token; DRIVE.exp = Date.now() + r.expires_in * 1000;
+        // přihlášení si pamatuje jen tahle karta (sessionStorage) – přežije obnovu stránky po aktualizaci
+        try { sessionStorage.setItem('bt_tok', JSON.stringify({t:DRIVE.token, exp:DRIVE.exp})); } catch {}
+        res();
+      },
       error_callback:e => rej(new Error(e.type === 'popup_closed' ? 'Přihlášení zavřeno.' : 'Přihlašovací okno se neotevřelo (blokované vyskakovací okno?).')),
     }).requestAccessToken({prompt:pick ? 'select_account' : ''});
   });
@@ -497,6 +508,7 @@ async function driveConnect(create, pick) {
 // 🔄 Změnit účet: odhlásí současný Google účet ze stránky a otevře výběr účtu
 function driveSwitch() {
   if (DRIVE.token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(DRIVE.token, () => {});
+  try { sessionStorage.removeItem('bt_tok'); } catch {}
   logEvent(`🔄 odpojil Google účet ${DRIVE.email || ''}`);
   Object.assign(DRIVE, {token:null, exp:0, email:'', folder:null, thumbs:null, cache:{}, mine:{}, owner:undefined, state:'off'});
   REMOTE = null; DRIVE_BACKEND.ready = false; SYNC.ok = false;
@@ -568,11 +580,36 @@ function quota(search = 0, query = 0) {
   let q = ls('bt_quota', {d:''});
   if (q.d !== ptDate()) q = {d:ptDate(), s:0, q:0};
   q.s = (q.s || 0) + search; q.q = (q.q || 0) + query; ss('bt_quota', q);
+  // sdílené počítadlo: každé zařízení zapisuje jen svůj řádek do bt_qs, přes Disk ho vidí všichni
+  if (search || query || ls('bt_qs', {})[DEV_ID]?.d !== q.d) {
+    const qs = ls('bt_qs', {});
+    qs[DEV_ID] = {d:q.d, s:q.s, q:q.q, who:typeof meWho === 'function' ? meWho() : '', dev:matchMedia('(pointer:coarse)').matches ? '📱' : '💻', at:Date.now()};
+    for (const [id, e] of Object.entries(qs)) if (Date.now() - (e.at || 0) > 3 * 864e5) delete qs[id];
+    ss('bt_qs', qs);
+  }
+  renderQuotaBar();
   const el = $('#quota');
   el.textContent = `Hledání dnes: ${q.s} / ${S.slimit}${searchBlocked() ? ' (došla)' : ''}`;
   el.title = `Ostatní dotazy: ${q.q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}. Počítá se jen tohle zařízení – přesné číslo za všechna je v Google Cloud.`;
   el.style.color = q.s >= S.slimit * .85 || searchBlocked() ? 'var(--hot)' : '';
   return q;
+}
+// ID tohohle zařízení (jen pro sdílené počítadlo kvóty)
+const DEV_ID = ls('bt_dev', '') || (() => { const id = Math.random().toString(36).slice(2, 10); ss('bt_dev', id); return id; })();
+// 🔑 lišta pod hledáním: dnešní spotřeba po lidech (každý má svůj API klíč = svůj limit), rozpad po zařízeních
+function renderQuotaBar() {
+  const el = $('#quotaBar'); if (!el) return;
+  const today = ptDate(), by = {};
+  for (const e of Object.values(ls('bt_qs', {}))) if (e.d === today) (by[e.who || ''] ||= []).push(e);
+  const me = typeof meWho === 'function' ? meWho() : '';
+  by[me] ||= [];
+  const parts = Object.entries(by).sort(([a], [b]) => (b === me) - (a === me)).map(([who, list]) => {
+    const s = list.reduce((a, e) => a + e.s, 0), q = list.reduce((a, e) => a + e.q, 0);
+    const lim = who === me ? S.slimit : SEARCH_MAX, hot = s >= lim * .85 || (who === me && searchBlocked());
+    const devs = list.length > 1 ? ` <span>(${list.map(e => e.dev + ' ' + e.s).join(' · ')})</span>` : list.length ? ' ' + list[0].dev : '';
+    return `<span class="${hot ? 'hot' : ''}">🔑 <b>${esc(typeof whoLabel === 'function' ? whoLabel(who) : 'Moje')}</b>: hledání ${s} / ${lim}${who === me && searchBlocked() ? ' – došla' : ''}${devs} · dotazy ${q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}</span>`;
+  });
+  el.innerHTML = parts.join('') + '<span>· obnoví se v 9:00</span>';
 }
 // když Google řekne, že hledání došla (i z jiného zařízení), do resetu už hledat nezkoušíme
 const searchBlocked = () => ls('bt_sq_block', '') === ptDate();
@@ -942,6 +979,7 @@ function mergeKey(k, mine, theirs) {
   return mergeKey0(k, mine, theirs);
 }
 function mergeKey0(k, mine, theirs) {
+  if (k === 'bt_qs') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
   if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
   if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), items:capItems(byId(mine.items, theirs.items))};
@@ -1995,7 +2033,7 @@ document.addEventListener('click', e => {
   else if (b.id === 'btnNoDrive') { ss('bt_nodrive', true); showCountry(false); }
   else if (b.id === 'btnDriveCreate') driveConnect(true);
   else if (b.id === 'btnDriveSwitch') driveSwitch();
-  else if (b.id === 'btnDriveOff') { REMOTE = null; DRIVE.token = null; DRIVE.state = 'off'; ss('bt_gdrive', false); SYNC.ok = false; pullShared(); rerender(); }
+  else if (b.id === 'btnDriveOff') { try { sessionStorage.removeItem('bt_tok'); } catch {} REMOTE = null; DRIVE.token = null; DRIVE.state = 'off'; ss('bt_gdrive', false); SYNC.ok = false; pullShared(); rerender(); }
   else if (b.dataset.country) { S.view = null; S.country = b.dataset.country; ss('bt_country', S.country); show(); }
   else if (b.dataset.loadall) loadAll(b.dataset.loadall);
   else if (b.dataset.type) { S.type = b.dataset.type; ss('bt_type', S.type); rerender(); }
@@ -2103,7 +2141,7 @@ function reloadMemory() {
 }
 async function pullShared() {
   if (!await syncPull()) return;
-  reloadMemory();
+  reloadMemory(); renderQuotaBar();
   // nepřekreslovat, když zrovna něco píšeš do pole na stránce
   if (S.key && !(document.activeElement?.closest?.('#main') && document.activeElement.matches('input, textarea'))) rerender();
 }
@@ -2119,8 +2157,17 @@ async function pullShared() {
   navigator.storage?.persist?.().catch(() => {});
   cleanupRemovedCountries();
   reloadMemory();
+  // po obnově stránky (aktualizace) se přihlášení k Disku vezme z téhle karty – nemusíš se znovu připojovat
+  let tok = null;
+  try { tok = JSON.parse(sessionStorage.getItem('bt_tok') || 'null'); } catch {}
+  if (tok && tok.exp - 60e3 > Date.now() && ls('bt_gdrive', false) && gClientId()) { DRIVE.token = tok.t; DRIVE.exp = tok.exp; }
   show();
-  pullShared();
+  if (DRIVE.token) await driveConnect(false); else pullShared();
+  renderQuotaBar();
+  // hláška po automatické aktualizaci
+  let upd = null;
+  try { upd = sessionStorage.getItem('bt_updated'); sessionStorage.removeItem('bt_updated'); } catch {}
+  if (upd) status(`✅ Aktualizace proběhla – nová verze ${APP_VERSION}${REMOTE === DRIVE_BACKEND ? ', Disk zůstal připojený' : ''}.`);
 })();
 // co minutu (když je stránka vidět) se podívat, jestli ostatní nenačetli něco nového – nic to nestojí
 setInterval(() => { if (!document.hidden && SYNC.ok) pullShared(); }, 30e3);
@@ -2134,9 +2181,9 @@ async function checkNewVersion() {
     const v = (html.match(/APP_VERSION = '([^']+)'/) || [])[1];
     if (!v || v === APP_VERSION) return;
     const typing = document.activeElement?.matches?.('input, textarea, select');
-    if (!typing && !S.busy) { await kvFlush(); location.reload(); return; }
+    if (!typing && !S.busy) { await kvFlush(); try { sessionStorage.setItem('bt_updated', v); } catch {} location.reload(); return; }
     status('🆕 Je tu nová verze stránky. ');
-    $('#status').insertAdjacentHTML('beforeend', '<button onclick="location.reload()">Obnovit</button>');
+    $('#status').insertAdjacentHTML('beforeend', `<button onclick="kvFlush().then(() => { try { sessionStorage.setItem('bt_updated', '1'); } catch {} location.reload(); })">Obnovit</button>`);
   } catch {}
 }
 setInterval(() => { if (!document.hidden) checkNewVersion(); }, 2 * 60e3);
