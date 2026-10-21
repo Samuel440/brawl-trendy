@@ -355,8 +355,8 @@ const PERIODS = {
   all:  {label:'🏆 Celá doba',    hours:null, ttl:1440},
   arch: {label:'🗄️ Archiv', local:true},
   star: {label:'⭐ Uložené', local:true},
+  cal:  {label:'🗓️ Kalendář', local:true}, // hned vedle ⭐ Uložené
   ideas:{label:'💡 Nápady & trendy'},
-  cal:  {label:'🗓️ Kalendář', local:true},
 };
 const SHOW_STEP = 120;
 const TIME_PERIODS = ['day', 'week', 'month', 'all']; // jeden přepínač; archiv, uložené a nápady jsou zvlášť tlačítka
@@ -397,7 +397,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.37'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.38'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1902,7 +1902,9 @@ function calEditor(id, date) {
       : `<h3>${esc(e.title || 'Video')}</h3><div class="ch">📅 ${esc(e.date)}</div>`}
     <h4>💡 Inspirace (videa, ze kterých vycházím)</h4>
     <div class="calinspo">${inspoHtml(e.inspo)}</div>
-    ${own ? `<div class="row"><button class="primary" data-calbrowse="star">⭐ Vybrat z oblíbených</button><button data-calbrowse="trend">🔥 Vybrat z trendů</button><button data-calbrowse="seen">👀 Naposledy viděné</button></div>
+    ${own ? `<div class="ch" style="margin:8px 0 4px">⭐ Oblíbené – klikni pro přidání / odebrání:</div>
+      <div class="calstrip">${strip()}</div>
+      <div class="row"><button data-calbrowse="star">⭐ Všechna oblíbená…</button><button data-calbrowse="trend">🔥 Vybrat z trendů</button><button data-calbrowse="seen">👀 Naposledy viděné</button></div>
       <details><summary class="ch">✏️ Odkazy ručně</summary><textarea class="calin" data-f="inspo" rows="2" placeholder="Odkazy na videa z YouTube (každý na řádek)">${esc(e.inspo)}</textarea></details>` : ''}
     <h4>🖼️ Co chci na miniatuře <span class="ch">(pro grafika)</span></h4>
     ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea>` : `<div class="caltxt">${esc(e.thumb) || '<span class="ch">Zatím nic.</span>'}</div>`}
