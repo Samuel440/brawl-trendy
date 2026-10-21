@@ -509,7 +509,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$)/;
-const APP_VERSION = '2026-10-21.61'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.62'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -691,7 +691,7 @@ async function gfetch(url, opts = {}) {
 async function dList(q) {
   const out = []; let page;
   do {
-    const r = await (await gfetch(`${DAPI}/files?` + new URLSearchParams({q, pageSize:1000, orderBy:'createdTime', fields:'nextPageToken,files(id,name,modifiedTime,ownedByMe,owners(emailAddress))', ...(page ? {pageToken:page} : {})}))).json();
+    const r = await (await gfetch(`${DAPI}/files?` + new URLSearchParams({q, pageSize:1000, orderBy:'createdTime', fields:'nextPageToken,files(id,name,modifiedTime,ownedByMe,md5Checksum,owners(emailAddress))', ...(page ? {pageToken:page} : {})}))).json();
     out.push(...r.files); page = r.nextPageToken;
   } while (page);
   return out;
@@ -778,26 +778,28 @@ const DRIVE_BACKEND = {
   async listVersAll(id) {
     return (await dList(`'${DRIVE.thumbs}' in parents and name contains '${dEsc(id)}~' and trashed=false`))
       .filter(f => f.name.startsWith(id + '~')).sort((a, b) => a.name < b.name ? -1 : 1)
-      .map(f => { const [, t, hash] = f.name.replace(/\.jpg$/, '').split('~'); return {at:+t, hash, src:{drive:f.id}, fid:f.id}; });
+      .map(f => { const [, t, hash] = f.name.replace(/\.jpg$/, '').split('~'); return {at:+t, hash, src:{drive:f.id}, fid:f.id, mine:!!f.ownedByMe, md5:f.md5Checksum}; });
   },
   // jednorázová oprava starých verzí: otisky se dřív počítaly z jiného (menšího) obrázku, než jaký se uložil,
   // takže stejné miniatury vypadaly jako různé. Přepočítá otisk z uloženého obrázku, kopie smaže, ostatní přejmenuje.
+  // Disk dovolí mazat jen vlastníkovi souboru → každé zařízení opraví své soubory (cizí jen započítá jako „už je“).
   async fixVers(id) {
     const all = await this.listVersAll(id); if (all.length < 2) return;
     const keep = [];
     for (const v of all) {
       let h; try { h = await thumbHash(await verBlob(v)); } catch { continue; }
-      if (keep.some(k => hamHex(k.h, h) <= THUMB_SAME)) { await dDel(v.fid).catch(() => {}); continue; }
+      if (keep.some(k => hamHex(k.h, h) <= THUMB_SAME)) { if (v.mine) await dDel(v.fid).catch(() => {}); continue; }
       keep.push({v, h});
-      if (h !== v.hash) { await dUpload(`${id}~${v.at}~${h}.jpg`, DRIVE.thumbs, await verBlob(v)); await dDel(v.fid).catch(() => {}); }
+      if (h !== v.hash && v.mine) { await dUpload(`${id}~${v.at}~${h}.jpg`, DRIVE.thumbs, await verBlob(v)); await dDel(v.fid).catch(() => {}); }
     }
   },
   async listVers(id) {
     const all = await this.listVersAll(id);
     // stejné miniatury uložené víckrát (PC, mobil a grafik ji zkontrolovali naráz) → ukázat jen jednou a kopie smazat
     const out = [], dup = [];
-    for (const v of all) (out.some(o => hamHex(o.hash, v.hash) <= THUMB_SAME) ? dup : out).push(v);
-    if (dup.length && DRIVE.owner) dup.forEach(v => dDel(v.fid).catch(() => {}));
+    // stejná = stejný soubor (kontrolní součet Disku) nebo skoro stejný otisk
+    for (const v of all) (out.some(o => (o.md5 && o.md5 === v.md5) || hamHex(o.hash, v.hash) <= THUMB_SAME) ? dup : out).push(v);
+    dup.filter(v => v.mine).forEach(v => dDel(v.fid).catch(() => {})); // mazat smí jen vlastník souboru
     return out;
   },
   async saveVer(id, at, hash, blob) {
@@ -1905,13 +1907,16 @@ async function checkThumb(id) {
   // otisk z TÉHOŽ obrázku, který se uloží (dřív z menší verze → stejné miniatury vypadaly jako různé)
   const blob = await bestThumb(id, true), h = await thumbHash(blob);
   await migrateLocalVers(id);
-  // jednou za zařízení opravit staré verze (jen majitel – smí mazat)
-  const fixed = ls('bt_vfix', {});
-  if (REMOTE === DRIVE_BACKEND && DRIVE.owner && !fixed[id]) { await REMOTE.fixVers(id).catch(() => {}); fixed[id] = 1; ss('bt_vfix', fixed); }
+  // jednou za zařízení opravit staré verze (každý své soubory)
+  const fixed = ls('bt_vfix2', {});
+  if (REMOTE === DRIVE_BACKEND && !fixed[id]) { await REMOTE.fixVers(id).catch(() => {}); fixed[id] = 1; ss('bt_vfix2', fixed); }
   const vers = await getVers(id);
   // stejný obrázek = 0–2 rozdílné body, různé miniatury 38+ ze 144; porovnává se se VŠEMI verzemi
   // (když se youtuber vrátí ke staré miniatuře, není to nová verze)
   if (vers.some(v => hamHex(h, v.hash) <= THUMB_SAME)) return false;
+  // pojistka pro staré otisky (spočítané z jiného obrázku): porovnat i obsah s poslední uloženou verzí
+  const last = vers[vers.length - 1];
+  if (last) { try { if (hamHex(h, await thumbHash(await verBlob(last))) <= THUMB_SAME) return false; } catch {} }
   await saveVer(id, Date.now(), h, blob);
   return true;
 }
