@@ -252,7 +252,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$)/;
-const APP_VERSION = '2026-10-21.11'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.13'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -303,7 +303,8 @@ const S = {
   ai: ls('bt_ai', !matchMedia('(pointer:coarse)').matches),
   slimit: ls('bt_slimit', 100),
   severy: ls('bt_severy', 24),
-  discover: ls('bt_discover', true), // 🔭 objevování malých kanálů (1 hledání denně na otevřený stát) // plné hledání nejvýš jednou za tolik hodin (na stát a období) // můj denní limit hledání (Google dává 100; grafikovi třeba 20)
+  discover: ls('bt_discover', true), // 🔭 objevování malých kanálů
+  discDays: ls('bt_discDays', 20), // jak často (dní) – pak důkladně, všemi výrazy // plné hledání nejvýš jednou za tolik hodin (na stát a období) // můj denní limit hledání (Google dává 100; grafikovi třeba 20)
   starTab: 'videos',
   showN: 120, // kolik videí ukázat najednou (seznamy mají až 1 000) – zbytek tlačítkem
   noLive: ls('bt_noLive', true),
@@ -847,7 +848,7 @@ const DISC_Q = {
   kr:['브롤스타즈', 'ch:브롤스타즈', '브롤스타즈 신캐', 'ch:브롤'],
   en:['brawl stars', 'ch:brawl stars', 'brawl stars new', 'ch:brawl stars guide'],
 };
-const DISC_EVERY = 24 * 3600e3;
+const DISC_EVERY_OPTS = [1, 7, 20, 30]; // dní; výchozí 20 – zato důkladně (všechny výrazy najednou)
 const discInfo = cid => ls('bt_disc', {})[cid] || {};
 function saveDisc(cid, patch) {
   const all = ls('bt_disc', {}), e = {...(all[cid] || {}), ...patch, at:Date.now()};
@@ -857,8 +858,8 @@ function saveDisc(cid, patch) {
 const trackedIds = c => new Set(Object.keys(ls(chKey(c.id), {})));
 // objevený kanál stojí za sledování, jen když není mrtvý (spousta dětských „Brawl Stars CZ“ kanálů má 5 odběratelů)
 const alive = it => (it.subs ?? 1000) >= 200 || it.views >= 1000;
-async function discoverSearch(c) {
-  const qs = DISC_Q[c.id] || ['brawl stars'], d = discInfo(c.id), qi = (d.qi || 0) % qs.length, q = qs[qi];
+async function discoverSearch(c, qi0) {
+  const qs = DISC_Q[c.id] || ['brawl stars'], d = discInfo(c.id), qi = (qi0 ?? d.qi ?? 0) % qs.length, q = qs[qi];
   saveDisc(c.id, {qi:qi + 1});
   if (q.startsWith('ch:')) {
     // hledání kanálů → každý kandidát se ověří podle posledních videí
@@ -913,22 +914,32 @@ async function verifyCandidates(c, ids, checked) {
   }
   return [...trackedIds(c)].filter(id => !before.has(id)).length;
 }
-// spustí se samo po otevření státu (nejvýš jednou za 24 h na stát, sdílí se přes Disk) nebo tlačítkem
+// Spustí se samo po otevření státu jednou za S.discDays dní (sdílí se přes Disk), nebo tlačítkem.
+// Důkladné kolo: všechny výrazy státu (videa i kanály, 4–8 hledání) + doporučené kanály. Tlačítko = jeden další výraz (1 hledání).
 async function discover(c, manual) {
   if (discover.busy) return; discover.busy = true;
   try {
     status(`🔭 Hledám malé kanály – ${c.name}…`);
     let n = 0;
-    if (searchLeft()) n += await discoverSearch(c);
-    n += await discoverFeatured(c);
-    saveDisc(c.id, {last:Date.now(), found:n, total:(discInfo(c.id).total || 0) + n});
+    const qs = DISC_Q[c.id] || ['brawl stars'];
+    for (let i = 0; i < (manual ? 1 : qs.length) && searchLeft(); i++) {
+      status(`🔭 Hledám malé kanály – ${c.name} (${i + 1}/${manual ? 1 : qs.length})…`);
+      n += await discoverSearch(c, manual ? undefined : i);
+    }
+    n += await discoverFeatured(c, manual ? 15 : 40, manual ? 30 : 80);
+    // ruční tlačítko neposouvá termín důkladného kola; důkladné kolo si zapíše i den (nejvýš jeden stát denně)
+    saveDisc(c.id, {...(manual ? {} : {last:Date.now()}), found:n, total:(discInfo(c.id).total || 0) + n});
+    if (!manual) saveDisc('_auto', {last:Date.now()});
     if (n) logEvent(`🔭 objevil ${n} nových kanálů (${c.name})`);
     status(n ? `🔭 ${c.name}: nově sleduju ${n} ${n === 1 ? 'kanál' : n < 5 ? 'kanály' : 'kanálů'} – jejich videa přibudou při další obnově.` : manual ? `🔭 ${c.name}: tentokrát nic nového.` : '');
     rerender();
   } catch (e) { status(e.message, true); }
   finally { discover.busy = false; }
 }
-const discoverDue = c => Date.now() - (discInfo(c.id).last || 0) > DISC_EVERY;
+// důkladné kolo stojí 4–8 hledání → nejvýš jeden stát za den a jen když zbývá dost hledání na zbytek dne
+const discoverDue = c => Date.now() - (discInfo(c.id).last || 0) > S.discDays * 864e5
+  && Date.now() - (discInfo('_auto').last || 0) > 20 * 3600e3
+  && S.slimit - quota().s >= (DISC_Q[c.id] || []).length + 15;
 
 // Kolik HLEDÁNÍ by načtení stálo (ostatní dotazy jsou prakticky zdarma). 0 = jen lehká aktualizace.
 // extra = otevření ze seznamu státu (může přidat hledání nejnovějších)
@@ -1174,7 +1185,8 @@ function renderSettings() {
     <div class="sec" id="set-upd"><h2>⟳ Aktualizace</h2>
       ${chk('auto', 'Automaticky aktualizovat', 'Jen když máš stránku otevřenou a vidíš ji. Obnovují se zhlédnutí a nová videa ze sledovaných kanálů – to hledání nestojí.')}
       <label class="setrow"><select data-set="interval">${[15, 30, 60, 120].map(m => opt(m, 'každých ' + m + ' min')).join('')}</select><span><b>Jak často obnovovat</b><span class="ch">Levná obnova (zhlédnutí + sledované kanály) – hledání nestojí, jen pár jednotek z 10 000 ostatních dotazů.</span></span></label>
-      ${chk('discover', '🔭 Objevovat malé kanály', 'Jednou denně u státu, který otevřeš, hledá nejnovější videa v místním jazyce (1 hledání) a projde doporučené kanály sledovaných youtuberů (bez hledání). Nové kanály s Brawl videi v jazyce státu se začnou sledovat samy.')}
+      ${chk('discover', '🔭 Objevovat malé kanály', 'U státu, který otevřeš, jednou za čas důkladně prohledá nejnovější videa i kanály v místním jazyce (4–8 hledání) a projde doporučené kanály sledovaných youtuberů (bez hledání). Nové kanály s Brawl videi v jazyce státu (a aspoň 200 odběrateli) se začnou sledovat samy.')}
+      <label class="setrow"><select data-set="discDays">${DISC_EVERY_OPTS.map(d => `<option value="${d}" ${S.discDays === d ? 'selected' : ''}>jednou za ${d} ${d === 1 ? 'den' : 'dní'}</option>`).join('')}</select><span><b>Jak často objevovat</b><span class="ch">Za každý stát zvlášť, když ho otevřeš. Mezitím jde kdykoli ručně tlačítkem 🔭 u státu (1 hledání).</span></span></label>
       <label class="setrow"><select data-set="severy">${SEARCH_EVERY_OPTS.map(h => `<option value="${h}" ${S.severy === h ? 'selected' : ''}>jednou za ${h} h</option>`).join('')}</select><span><b>Plné hledání nových videí</b><span class="ch">Hledání jsou to vzácné (100 denně pro všechna zařízení). Každý stát a období se plně prohledá nejvýš takhle často – a když už to mezitím udělal někdo jiný (mobil, grafik), nehledá se znova. Mezitím jen levná obnova.</span></span></label>
       ${TIME_PERIODS.includes(S.period) ? `<div class="setrow"><button id="btnRefresh">⟳ Aktualizovat teď</button><span><b>${esc(C(S.country).name)} – ${PERIODS[S.period].label}</b><span class="ch">Plné hledání hned teď (1–2 hledání ze 100 denních), bez čekání na časomíru. Pak se vrátíš na seznam.</span></span></div>` : ''}
     </div>
@@ -1736,13 +1748,16 @@ async function queryVariants(q, langs) {
 }
 function matchQ(it) {
   const q = S.q.trim(); if (!q) return true;
-  const text = words(it.t + ' ' + (TR[it.t] || ''));
+  // hledá se v názvu, jeho překladu i ve jménu kanálu (napíšeš „Eby“ → ukáže videa kanálu Eby)
+  const text = words(it.t + ' ' + (TR[it.t] || '') + ' ' + (it.ch || ''));
+  // jméno kanálu i se zdrobnělinou / koncovkou: „Ebynovce“, „Štěpsovo“ najde kanál Eby / Štěps
+  const chToks = words(it.ch || '').filter(t => t.length >= 3);
   const variants = [q, QTR[it.c.lang + '|' + q]].filter(Boolean);
   // stačí, když sedí aspoň polovina významových slov (překlad nikdy nesedí slovo od slova)
   return variants.some(v => {
     const ws = words(v).filter(w => w.length >= 3 && !STOP.has(w));
     const list = ws.length ? ws : words(v);
-    return list.filter(w => text.some(tok => wordHit(w, tok))).length >= Math.ceil(list.length / 2);
+    return list.filter(w => text.some(tok => wordHit(w, tok)) || chToks.some(t => w.startsWith(t))).length >= Math.ceil(list.length / 2);
   });
 }
 let qTimer = null;
@@ -1864,7 +1879,7 @@ function renderCountry(set, c, p) {
       <details class="row ch" ${tracked.length ? '' : 'open'}><summary>📡 Sledované Brawl kanály: ${tracked.length}${tracked.length ? '' : ' (naučí se z výsledků, nebo si je přidej ručně)'}</summary>
         <div class="tags" style="margin-top:6px">${tracked.map(ch => `<span class="tag ${ch.manual ? 'ok' : ''}"><a href="https://www.youtube.com/channel/${esc(ch.id)}" target="_blank" rel="noopener" style="text-decoration:none">${ch.manual ? '📌 ' : ''}${esc(ch.name)}${ch.ids.length ? ' · ' + ch.ids.length + ' videí' : ''}</a>${ch.manual ? ` <button class="x" data-unch="${esc(ch.id)}" title="Přestat sledovat">✖</button>` : ''}</span>`).join('')}</div>
         <div class="addch"><input id="chInput" placeholder="@LukasBrawlStars nebo odkaz na kanál"><button id="btnAddCh">➕ Přidat kanál do ${esc(c.name)}</button></div></details>
-      ${(() => { const d = discInfo(c.id); return `<div class="row ch">🔭 Objevování malých kanálů: ${d.last ? `naposledy ${ago((Date.now() - d.last) / 3600e3)}, celkem objeveno ${d.total || 0}` : 'ještě neproběhlo'}${S.discover ? ' · samo jednou denně' : ' · vypnuté v Nastavení'} <button data-discover="${c.id}"${searchLeft() ? ' class="costly" title="1 hledání ze 100 denních + pár levných dotazů"' : ''}>🔭 Hledat malé kanály teď</button></div>`; })()}
+      ${(() => { const d = discInfo(c.id); return `<div class="row ch">🔭 Objevování malých kanálů: ${d.last ? `naposledy ${ago((Date.now() - d.last) / 3600e3)}, celkem objeveno ${d.total || 0}` : 'ještě neproběhlo'}${S.discover ? ` · důkladně samo jednou za ${S.discDays} ${S.discDays === 1 ? 'den' : 'dní'}` : ' · vypnuté v Nastavení'} <button data-discover="${c.id}"${searchLeft() ? ' class="costly" title="1 hledání ze 100 denních + pár levných dotazů"' : ''}>🔭 Hledat malé kanály teď</button></div>`; })()}
     </div>
     ${list.length ? sections.map(([h, l]) => `<div class="sec"><h2>${h} <span class="ch">(${l.length})</span></h2>${l.length ? `<div class="grid">${l.slice(0, S.showN).map((it, i) => card(it, i)).join('')}</div>${l.length > S.showN ? `<button class="more" data-showmore>Zobrazit dalších ${Math.min(SHOW_STEP, l.length - S.showN)} (z ${l.length})</button>` : ''}` : '<div class="empty">Nic.</div>'}</div>`).join('') : '<div class="empty">Nic nenalezeno. Zkus jiný stát, nebo v ⚙️ Nastavení vypnout „Jen videa z daného státu“.</div>'}
     ${set.next ? `<button class="more" id="btnMore">Načíst dalších 50 (1 hledání)</button>` : ''}`;
@@ -2257,7 +2272,7 @@ document.addEventListener('change', e => {
   if (e.target.id === 'gcidInput') { ss('bt_gcid', e.target.value.trim()); renderMain(); return; }
   if (e.target.dataset.chmode) { BLOCK.channels[e.target.dataset.chmode].mode = e.target.value; saveBlock(); return; }
   const k = e.target.dataset.set; if (!k) return;
-  S[k] = e.target.type === 'checkbox' ? e.target.checked : (k === 'interval' || k === 'severy' ? +e.target.value : k === 'slimit' ? Math.min(SEARCH_MAX, Math.max(1, +e.target.value || SEARCH_MAX)) : e.target.value);
+  S[k] = e.target.type === 'checkbox' ? e.target.checked : (k === 'interval' || k === 'severy' || k === 'discDays' ? +e.target.value : k === 'slimit' ? Math.min(SEARCH_MAX, Math.max(1, +e.target.value || SEARCH_MAX)) : e.target.value);
   if (k === 'slimit') quota();
   if (k === 'severy') SEARCH_EVERY = S.severy * 60;
   ss('bt_' + k, S[k]);
