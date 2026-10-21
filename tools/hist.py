@@ -45,7 +45,7 @@ def thin(p):
 def bucket(vid): return 'bt_h_' + format(ord(vid[0]) % 16, 'x')
 
 def main():
-    key = os.environ.get('YT_API_KEY', '')
+    key = os.environ.get('YT_API_KEY', '').strip().strip('"\'')  # mezera / uvozovky navíc při vkládání
     if not key or not os.environ.get('GDRIVE_SA_JSON'):
         log('Chybí tajné hodnoty YT_API_KEY / GDRIVE_SA_JSON (Settings → Secrets → Actions) – zatím nic nedělám.'); return
     s, sa_email = drive_session()
@@ -94,7 +94,9 @@ def main():
         calls += 1
         if r.status_code != 200:
             log('YouTube chyba', r.status_code, r.text[:300])
-            if r.status_code in (403, 429): break
+            if r.status_code in (403, 429) or 'API key' in r.text:
+                if 'API key' in r.text: log(f'Špatný YT_API_KEY (délka {len(key)}, začíná {key[:4]!r}) – vlož znovu klíč „Brawl Trendy robot“ do Secrets.')
+                break
             continue
         for x in r.json().get('items', []):
             views = int(x.get('statistics', {}).get('viewCount', 0))
