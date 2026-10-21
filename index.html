@@ -221,7 +221,13 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 /* tlustá čára mezi dny, ještě tlustší mezi týdny */
 .ct.dfirst{border-top:5px solid var(--bg)}
 .ct.dfirst.weekstart{border-top:14px solid var(--bg)}
-.cname{flex-direction:column;align-items:flex-start;justify-content:center}
+.cname{flex-direction:column;align-items:stretch;justify-content:center;padding:0}
+.cnamebtn{border:0;border-radius:0;margin:0;background:transparent;color:var(--text);padding:8px 10px 4px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;flex:1;text-align:left;white-space:normal}
+.cname:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)}
+.caledit{align-self:flex-start;margin:0 10px 8px;padding:3px 10px;font-size:12px}
+.calview h2{margin:0 40px 2px 0;font-size:clamp(20px,2.4vw,28px);line-height:1.2;text-wrap:balance}
+.calview .caltxt{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.calview .caltxt.script{font-size:15px;line-height:1.55;max-height:55vh;overflow:auto}
 .ctitle{font-size:clamp(17px,1.7vw,22px);font-weight:800;line-height:1.25;text-align:left}
 .cinspo img{width:96px;border-radius:5px}
 .cthumb{font-size:12.5px}
@@ -400,7 +406,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.44'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.45'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1780,7 +1786,7 @@ function renderCal() {
     const dayCell = (n) => `<div class="ct cday dfirst ${cls}"${n > 1 ? ` style="grid-row:span ${n}"` : ''}><b>${DOW[d.getDay()]}</b> ${d.getDate()}. ${d.getMonth() + 1}.${iso === today ? '<span class="tag hot">dnes</span>' : ''}</div>`;
     const rows = list.map((e, i) => { const ids = ytIds(e.inspo), f = i === 0 ? ' dfirst' : '';
       return `${i === 0 ? dayCell(list.length + (own ? 1 : 0)) : ''}
-        <button class="ct cname${f} ${cls}" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '')}</span><span class="ch">${badge(e)}</span></button>
+        <div class="ct cname${f} ${cls}"><button class="cnamebtn" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '')}</span><span class="ch">${badge(e)}</span></button>${own ? `<button class="caledit" data-caledit="${esc(e.id)}" title="Upravit">✏️ Upravit</button>` : ''}</div>
         <button class="ct cinspo${f} ${cls}" data-calopen="${esc(e.id)}">${ids.length ? ids.slice(0, 4).map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`).join('') + (ids.length > 4 ? `<span class="ch">+${ids.length - 4}</span>` : '') : '<span class="ch">–</span>'}</button>
         <button class="ct cthumb${f} ${cls}" data-calopen="${esc(e.id)}">${e.thumb ? esc(e.thumb) : '<span class="ch">–</span>'}</button>`; }).join('');
     const add = own ? `<div class="ct cadd ${cls}"><button class="caladd" data-caladd="${iso}">＋ video</button></div>` : '';
@@ -1922,8 +1928,9 @@ function textPicker(insert) {
   });
   document.body.append(ov);
 }
-function calEditor(id, date, focusScript) {
-  const own = isOwner(), all = ls(calKey(), {});
+// klik na video = 👁 přehled (jen ke čtení), ✏️ Upravit = úpravy (jen majitel)
+function calEditor(id, date, focusScript, edit = true) {
+  const admin = isOwner(), own = admin && edit, all = ls(calKey(), {});
   const e = all[id] || {id:'v' + Date.now().toString(36), date, title:'', script:'', thumb:'', inspo:''};
   const stars = Object.entries(STARS).sort((a, b) => byOrd(a[1], b[1]));
   const sel = () => new Set(ytIds(e.inspo));
@@ -1935,10 +1942,11 @@ function calEditor(id, date, focusScript) {
     return `<div class="inspoitem"><a href="${ytUrl(v)}" target="_blank" rel="noopener" title="Otevřít na YouTube"><img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt=""></a>
       <div class="ch">${esc(i?.t || '')}${i?.views ? ` · ${n(i.views)} zhl.` : ''}</div>${own ? `<button class="x" data-calunpick="${v}" title="Odebrat">✖</button>` : ''}</div>`; }).join('') || '<span class="ch">Zatím žádná.</span>';
   const ov = document.createElement('div'); ov.className = 'histov';
-  ov.innerHTML = `<div class="histbox calbox"><button class="histx" title="Zavřít">✖</button>
+  const dt = e.date ? new Date(e.date + 'T12:00') : null;
+  ov.innerHTML = `<div class="histbox calbox ${own ? '' : 'calview'}"><button class="histx" title="Zavřít">✖</button>
     ${own ? `<input class="calin title" data-f="title" value="${esc(e.title)}" placeholder="Název videa">
-      <div class="row"><label>📅 Vyjde <input type="date" class="calin" data-f="date" value="${esc(e.date)}"></label><button class="blockbtn" data-caldel>🗑 Smazat</button></div>`
-      : `<h3>${esc(e.title || 'Video')}</h3><div class="ch">📅 ${esc(e.date)}</div>`}
+      <div class="row"><label>📅 Vyjde <input type="date" class="calin" data-f="date" value="${esc(e.date)}"></label><button class="blockbtn" data-caldel>🗑 Smazat</button><button data-calview>👁 Hotovo – zobrazit přehled</button></div>`
+      : `<h2>${esc(e.title || 'Video')}</h2><div class="row"><span class="ch">📅 ${dt ? `${DOW[dt.getDay()]} ${dt.getDate()}. ${dt.getMonth() + 1}. ${dt.getFullYear()}` : ''}</span>${admin ? '<button class="primary" data-caledit2>✏️ Upravit</button>' : ''}</div>`}
     <h4>💡 Inspirace (videa, ze kterých vycházím)</h4>
     <div class="calinspo">${inspoHtml(e.inspo)}</div>
     ${own ? `<div class="row"><button data-calbrowse="star">⭐ Vybrat z oblíbených</button><button data-calbrowse="trend">🔥 Vybrat z trendů</button><button data-calbrowse="seen">👀 Naposledy viděné</button></div>
@@ -1946,7 +1954,7 @@ function calEditor(id, date, focusScript) {
     <h4>🖼️ Co chci na miniatuře <span class="ch">(pro grafika)</span></h4>
     ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea>` : `<div class="caltxt">${esc(e.thumb) || '<span class="ch">Zatím nic.</span>'}</div>`}
     <h4>📝 Scénář <button data-calfull>🖥️ Na celou obrazovku</button>${own ? ' <button data-caltext>📥 Vložit z uložených</button>' : ''}</h4>
-    ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt">${esc(e.script) || '<span class="ch">Zatím nic.</span>'}</div>`}
+    ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt script">${esc(e.script) || '<span class="ch">Zatím nic.</span>'}</div>`}
     <h4>🎨 Poznámky (grafik a ostatní)</h4>
     <div class="calnotes">${notes()}</div>
     <div class="addch"><input data-calnote placeholder="Např. miniatury, ze kterých si půjčím (odkaz na YouTube), nápad…"><button data-calnoteadd>➕ Přidat</button></div>
@@ -1980,6 +1988,8 @@ function calEditor(id, date, focusScript) {
     if (bgClick(ev, ov) || b?.classList.contains('histx')) { clearTimeout(timer); if (own && (e.title || e.script || e.thumb || e.inspo)) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || 'video')} na ${e.date}`); } ov.remove(); renderMain(); return; }
     if (!b) return;
     if (b.matches('[data-caldel]')) { calDelete(e.id); ov.remove(); renderMain(); }
+    else if (b.matches('[data-caledit2]')) { ov.remove(); calEditor(e.id); }
+    else if (b.matches('[data-calview]')) { clearTimeout(timer); if (e.title || e.script || e.thumb || e.inspo) calSave(e); ov.remove(); renderMain(); calEditor(e.id, null, false, false); }
     else if (b.matches('[data-calfull]')) teleprompter(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title);
     else if (b.matches('[data-calnoteadd]')) {
       const inp = ov.querySelector('[data-calnote]'), text = inp.value.trim(); if (!text) return;
@@ -3143,7 +3153,8 @@ document.addEventListener('click', e => {
   else if (b.dataset.mv) moveSaved(b.dataset.mk, b.dataset.mid, b.dataset.mv);
   else if (b.dataset.calshift !== undefined) { S.calOff = b.dataset.calshift === '0' ? 0 : (S.calOff || 0) + +b.dataset.calshift; renderMain(); }
   else if (b.dataset.caladd) calEditor(null, b.dataset.caladd);
-  else if (b.dataset.calopen) calEditor(b.dataset.calopen);
+  else if (b.dataset.calopen) calEditor(b.dataset.calopen, null, false, false);
+  else if (b.dataset.caledit) calEditor(b.dataset.caledit);
   else if (b.dataset.vprev) togglePreview(b, async () => embedHtml(b.dataset.vprev));
   else if (b.dataset.chprev) togglePreview(b, () => channelPreview(b.dataset.chprev));
   else if (b.dataset.playin) { const box = b.closest('.bprev').querySelector('.playin'); box.innerHTML = embedHtml(b.dataset.playin); box.scrollIntoView({behavior:'smooth', block:'nearest'}); }
