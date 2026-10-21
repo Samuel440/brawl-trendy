@@ -249,7 +249,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$)/;
-const APP_VERSION = '2026-10-21.2'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.3'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -693,7 +693,7 @@ function learnChannels(c, items) {
     if (!e.ids.includes(it.id)) { e.ids = [...e.ids, it.id].slice(-40); e.views += it.views; }
     e.name = it.ch; e.subs = it.subs; db[it.chId] = e;
     // jasný důkaz, že je kanál odsud → pak bereme všechna jeho videa (i ta jen anglicky bez překladu)
-    if (homeSignal(it, c)) e.home = true;
+    if (c.lang !== 'en' && homeSignal(it, c)) e.home = true; // v angličtině „domácí“ kanál nedává smysl (anglicky taguje každý)
   }
   ss(chKey(c.id), db);
 }
@@ -1030,7 +1030,40 @@ const OTHER_SCRIPT = /[Ѐ-ӿ؀-ۿ぀-ヿ一-鿿가-힯]/;
 const homeSignal = (it, c) => (it.cc && (c.regions || [c.region]).includes(it.cc)) || it.lang.split('-')[0] === c.lang || it.chL === c.lang || (it.homeL || []).includes(c.lang);
 // Video patří ke státu, když je kanál z té země, sedí původní jazyk, výchozí jazyk kanálu, nebo má kanál
 // název přeložený jen do pár jazyků včetně tohoto (youtuber dabující do angličtiny, např. LukasBS)
+// Angličtina je zvláštní: anglický jazyk videa a anglické tagy dávají skoro všichni (i Brazilci, Turci…),
+// tak tady rozhoduje hlavně NÁZEV – musí být opravdu anglicky. Kanál „domácí“ se tu nepočítá, jen ručně přidaný.
+const EN_WORDS = new Set(('the a an and or but of to in on at for with from by is are was were be been am i you he she we they it ' +
+  'my your our his her their me us them this that these those what why how when where who which if so not no yes all every only ' +
+  'can will would should could get got have has had do does did make made go going gone come take give see look find help meet ' +
+  'new old best worst first last never ever again always just more most much many very too one two three five ten one ' +
+  'play playing played win won winning lose lost free skin skins event day days time times guide tips trick tricks secret secrets hidden ' +
+  'reward rewards update ranked rank up down inside out over under vs versus against before after now today week year ' +
+  'buy open opening opened unlock unlocked try tried nice good bad broken weak strong run hide seek vote voting order trust became ' +
+  'aware exposing solve room build loot claim final drops drop way gem gems angry moment patience level born perfect animation combo ' +
+  'miss part normal bro every trapped box kills characters famous follow fame next school family games game wrong wants everything ' +
+  'nothing logic evolution life real like be when wait why ruin legendary should never pro noob funny moments challenge challenges ' +
+  'brawler brawlers mode modes map maps team teammate random ultimate rare epic mythic chromatic hypercharge gadget gadgets power ' +
+  'star stars king magic world biggest smallest fastest only ways things thing reasons reason tier list explained explain story ' +
+  'friendly battle battles crazy craziest member members trio duo solo showdown counter fight fights mistake kill killed high highest ' +
+  'reveal guess fast close far sad happy players player everyone items hand getting keep history escape finally thank thanks ' +
+  'insane crazy hard easy impossible beat beating destroy destroyed ever strongest weakest fun stuff new better worse than about ' +
+  'think know need want love hate use used using people guys everybody nobody someone something trying should must').split(' '));
+const NOT_EN_CHARS = /[ãõçğşıäöüßñœøåæáàâéèêíìîóòôúùûřšžčěůý]/i;
+function englishTitle(t) {
+  const clean = t.replace(/#[^\s#]+/g, ' ').replace(/@[^\s]+/g, ' ');
+  if (OTHER_SCRIPT.test(clean) || /[Ѐ-ӿ]/.test(clean) || NOT_EN_CHARS.test(clean)) return false;
+  const words = (clean.toLowerCase().match(/[a-z']{2,}/g) || []).filter(w => !/^(brawl|brawlstars|supercell|shorts|bs)$/.test(w));
+  if (!words.length) return false;
+  const en = words.filter(w => EN_WORDS.has(w.replace(/'s$/, ''))).length;
+  return en >= 1 && en / words.length >= 0.25;
+}
 function langOk(it, c) {
+  if (c.lang === 'en') {
+    if (chDb(c.id)[it.chId]?.manual) return true;
+    const L = it.lang.split('-')[0];
+    if ((L && L !== 'en' && L !== 'zxx') || (it.chL && it.chL !== 'en')) return false; // video nebo kanál hlásí jiný jazyk
+    return englishTitle(it.t);
+  }
   if (it.cc && (c.regions || [c.region]).includes(it.cc)) return true;
   const known = chDb(c.id)[it.chId];
   if (known?.manual || known?.home) return true; // ručně přidaný / kanál už poznaný jako domácí
