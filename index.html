@@ -159,6 +159,7 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .histx{position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:50%;padding:0}
 .histtab{width:100%;font-size:12.5px;border-collapse:collapse}
 .histtab td,.histtab th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
+.histtab tr.drop td{color:var(--hot)}
 .setnav{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:8px}
 .brow[hidden]{display:none}
 .setnav button{font-size:12.5px;padding:5px 10px}
@@ -272,7 +273,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$)/;
-const APP_VERSION = '2026-10-21.27'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.28'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1674,12 +1675,15 @@ function histSvg(pts, w, h, big) {
   if (big) {
     for (let i = 0; i <= 4; i++) { const v = v1 * i / 4, y = Y(v); ax += `<line x1="${pad}" x2="${w - 10}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,.08)"/><text x="${pad - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="currentColor" opacity=".6">${n(Math.round(v))}</text>`; }
     for (let i = 0; i <= 4; i++) { const t = t0 + (t1 - t0) * i / 4; ax += `<text x="${X(t)}" y="${h - 6}" text-anchor="${i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}" font-size="11" fill="currentColor" opacity=".6">${i ? '+' + ago((t - t0) / 3600e3).replace('před ', '') : 'zveřejnění'}</text>`; }
-    ax += pts.slice(1).map(p => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="3" fill="var(--accent)"><title>${fmtDate(p[0])}: ${n(p[1])} zhlédnutí</title></circle>`).join('');
+    ax += pts.slice(1).map((p, i) => { const drop = p[1] < pts[i][1];
+      return `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${drop ? 5 : 3}" fill="${drop ? 'var(--hot)' : 'var(--accent)'}"><title>${fmtDate(p[0])}: ${n(p[1])} zhlédnutí${drop ? ' – YouTube odečetl neplatná zhlédnutí' : ''}</title></circle>`; }).join('');
   }
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" class="hist">${ax}<polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="${big ? 2.5 : 1.6}" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
 }
 function showHistory(it) {
   const pts = histOf(it), rows = pts.slice(1).map((p, i) => { const prev = pts[i]; const dh = (p[0] - prev[0]) / 3600e3;
+    // pokles = YouTube přepočítal zhlédnutí (odečetl neplatná / od botů) – data jsou pravdivá, jen to vysvětlíme
+    if (p[1] < prev[1]) return `<tr class="drop" title="YouTube u videa zhlédnutí přepočítal a odečetl neplatná (boti, opakované přehrání). U malých a čerstvých videí je to běžné."><td>${fmtDate(p[0])}</td><td>${ago((p[0] - pts[0][0]) / 3600e3).replace('před ', '+')}</td><td><b>${n(p[1])}</b></td><td colspan="2">⚠️ YouTube odečetl ${n(prev[1] - p[1])} neplatných zhlédnutí</td></tr>`;
     return `<tr><td>${fmtDate(p[0])}</td><td>${ago((p[0] - pts[0][0]) / 3600e3).replace('před ', '+')}</td><td><b>${n(p[1])}</b></td><td>+${n(p[1] - prev[1])}</td><td>${n(Math.round((p[1] - prev[1]) / Math.max(dh, 0.01)))}/h</td></tr>`; }).reverse();
   const ov = document.createElement('div'); ov.className = 'histov';
   ov.innerHTML = `<div class="histbox"><button class="histx" title="Zavřít">✖</button>
@@ -1804,7 +1808,9 @@ function aiScore(e) {
   const ex = logits.map(l => Math.exp(l - mx)), sum = ex.reduce((a, b) => a + b, 0);
   return {s:+(ex.slice(0, AI_YES.length).reduce((a, b) => a + b, 0) / sum).toFixed(2), v:AI_VER};
 }
-const aiOf = it => { const a = AI_CACHE[it.id]; return a && (a.v || 1) >= AI_VER ? a : null; }; // staré verdikty (bez CS:GO apod.) neplatí
+// Verdikt se pamatuje navždy (sdílí se přes Disk). Po rozšíření popisů jiných her (AI_VER 2: CS:GO, střílečky…) se znovu
+// kontrolují jen staré verdikty „je to Brawl“ – nové popisy můžou Brawl skóre jen snížit, „není Brawl“ tedy platí dál.
+const aiOf = it => { const a = AI_CACHE[it.id]; return a && ((a.v || 1) >= AI_VER || a.s < 0.5) ? a : null; };
 function aiBadge(it) {
   const a = aiOf(it);
   if (!S.ai || !a || !it.cand) return '';
@@ -1813,7 +1819,8 @@ function aiBadge(it) {
 // Projde miniatury sporných videí (bez „Brawl Stars“ v textu), které ještě nemají verdikt
 async function aiCheck(items) {
   if (!S.ai) return;
-  items.filter(it => (it.cand || strictCh(it)) && !aiOf(it)).forEach(it => AI.pending.add(it));
+  // jiná hra v názvu nebo zablokované video = verdikt je jasný bez AI
+  items.filter(it => (it.cand || strictCh(it)) && !aiOf(it) && !otherGame(it) && !BLOCK.videos[it.id]).forEach(it => AI.pending.add(it));
   if (AI.running || !AI.pending.size) return;
   AI.running = true;
   let newCand = false, done = 0;
@@ -1836,7 +1843,7 @@ async function aiCheck(items) {
 }
 function saveAi() {
   const keys = Object.keys(AI_CACHE);
-  if (keys.length > 5000) keys.slice(0, keys.length - 5000).forEach(k => delete AI_CACHE[k]);
+  if (keys.length > 30000) keys.slice(0, keys.length - 30000).forEach(k => delete AI_CACHE[k]); // dřív 5 000 → mazaly se a kontrolovaly dokola
   ss('bt_aicache', AI_CACHE);
 }
 
