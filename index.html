@@ -84,6 +84,8 @@ th{color:var(--muted);font-weight:600}
 .seg button{border:0;border-radius:0;background:var(--panel2);padding:6px 12px}
 .seg button.on{background:var(--accent);color:#111;font-weight:700}
 .seg button.costly{background:#fff;color:#111}
+.allvids{font-weight:800;border:2px solid var(--accent);color:var(--accent)}
+.allvids:hover{background:var(--accent);color:#111}
 .sec h3{margin:14px 0 8px}
 details summary{cursor:pointer}
 .addch{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
@@ -397,7 +399,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.38'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.39'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2487,7 +2489,11 @@ function renderHeader() {
   const nStar = Object.keys(STARS).length;
   // bílé tlačítko = ještě nenačtené, kliknutí stojí kvótu (období se počítá pro aktuální stát)
   const tab = k => `<button data-period="${k}" class="${S.period === k ? 'on' : costAttr(openCost(C(S.country), k))}">${PERIODS[k].label}${k === 'star' && nStar ? ` (${nStar})` : ''}</button>`;
-  $('#tabs').innerHTML = `<span class="seg periods">${TIME_PERIODS.map(tab).join('')}</span>` +
+  // v Uložených / Kalendáři / Nápadech místo výběru období jen „🎬 Všechna videa“ → vrátí na poslední vybrané období
+  const inVideos = TIME_PERIODS.includes(S.period) || S.period === 'arch';
+  const lastP = ls('bt_lastp', 'week');
+  $('#tabs').innerHTML = (inVideos ? `<span class="seg periods">${TIME_PERIODS.map(tab).join('')}</span>`
+      : `<button class="allvids" data-period="${lastP}" title="Zpět na videa – ${esc(PERIODS[lastP]?.label || '')}">🎬 Všechna videa</button>`) +
     Object.keys(PERIODS).filter(k => !TIME_PERIODS.includes(k)).map(tab).join('');
   $('#countries').style.display = S.period === 'ideas' || S.period === 'star' || S.period === 'cal' ? 'none' : 'flex';
   $('#countries').innerHTML = COUNTRIES.map(c => `<button data-country="${c.id}" class="${S.country === c.id ? 'on' : costAttr(openCost(c, S.period))}">${flag(c)}${esc(c.name)}</button>`).join('');
@@ -3041,7 +3047,7 @@ document.addEventListener('click', e => {
   if (b.dataset.startab) { S.starTab = b.dataset.startab; S.starWho = null; } // ⭐ Uložené: Videa / Nápady (i z odkazu v míchači)
   if (b.dataset.showmore !== undefined) { const y = scrollY; S.showN += SHOW_STEP; renderMain(); scrollTo(0, y); return; }
   if (b.dataset.period || b.dataset.country) S.showN = SHOW_STEP;
-  if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); show(); }
+  if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); if (TIME_PERIODS.includes(S.period) || S.period === 'arch') ss('bt_lastp', S.period); show(); }
   else if (b.dataset.startab) renderMain();
   else if (b.id === 'btnExport') exportData();
   else if (b.id === 'btnDrive') driveConnect(false);
