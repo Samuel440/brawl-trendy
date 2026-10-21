@@ -1,11 +1,12 @@
 # 🤖 Sběr bodů do grafů zhlédnutí každých 30 minut – i když jsou všechna zařízení vypnutá.
-# Potřebuje v Settings → Secrets and variables → Actions dvě tajné hodnoty:
-#   YT_API_KEY      – YouTube API klíč BEZ omezení na weby (jen na YouTube Data API v3)
+# Potřebuje v Settings → Secrets and variables → Actions tajnou hodnotu:
 #   GDRIVE_SA_JSON  – celý obsah JSON klíče servisního účtu Googlu (složka „Brawl Trendy – data“ mu je nasdílená jako Editor)
+#   (YT_API_KEY je nepovinný – servisní účet má i YouTube)
+# Minuty 7 a 37 schválně: na celou a půl hodinu má GitHub nejvíc plánovaných běhů a ty se pak zpožďují nebo vypadávají.
 name: Grafy zhlédnutí
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '7,37 * * * *'
   workflow_dispatch:
 permissions:
   contents: read
