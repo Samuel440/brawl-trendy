@@ -162,6 +162,16 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .histtab tr.drop td{color:var(--hot)}
 .setnav{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:8px}
 .brow[hidden]{display:none}
+.brow{flex-wrap:wrap}
+.bprev{flex-basis:100%;margin-top:8px}
+.embed{position:relative;width:100%;max-width:720px;aspect-ratio:16/9}
+.embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:10px}
+.chprev{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}
+.chav{width:56px;height:56px;border-radius:50%;flex:none}
+.chdesc{margin-top:4px;white-space:pre-wrap}
+.chvids{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:10px}
+.chvid{display:flex;flex-direction:column;gap:4px;text-align:left;padding:6px;font-size:12px;line-height:1.3}
+.chvid img{width:100%;border-radius:6px;aspect-ratio:16/9;object-fit:cover}
 /* 📤 Přenos */
 .dropbox{background:var(--panel);border:2px dashed var(--line);border-radius:12px;padding:12px;margin:10px 0;display:flex;flex-direction:column;gap:8px}
 .dropbox.over{border-color:var(--accent);background:rgba(255,200,0,.06)}
@@ -175,6 +185,37 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .dropfile img{width:100%;max-height:260px;object-fit:contain;border-radius:8px;background:var(--bg)}
 .dropfile:has(img){flex-direction:column;align-items:stretch}
 .dropicon{font-size:34px}
+.droph{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.ordbtns{display:inline-flex;gap:2px}
+.card[data-drag]{cursor:grab}
+.card.dragging{opacity:.4}
+.card.dragover{outline:3px dashed var(--accent);outline-offset:3px}
+/* 📅 kalendář */
+.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+@media (max-width:900px){.calgrid{grid-template-columns:1fr}}
+.calday{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px;min-height:110px;min-width:0}
+.calday.today{border-color:var(--accent)}
+.calday.past{opacity:.6}
+.caldh{display:flex;justify-content:space-between;align-items:center;gap:4px;font-size:13px}
+.calvid{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:6px 8px;font-size:12.5px;line-height:1.3;white-space:normal;overflow-wrap:anywhere}
+.caladd{font-size:12px;opacity:.7}
+.caladd:hover{opacity:1}
+.calbox{width:min(820px,100%)}
+.calbox h4{margin:14px 0 6px}
+.calbox textarea,.calin{width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+.calin.title{font-size:18px;font-weight:700;margin:0 36px 8px 0;width:calc(100% - 40px)}
+.calin[type=date]{width:auto}
+.calin.script{min-height:220px;resize:vertical}
+.calinspo,.calnote{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px}
+.calinspo img,.calnote img{width:150px;border-radius:6px}
+.caltxt{white-space:pre-wrap;overflow-wrap:anywhere;flex-basis:100%}
+.calnote{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
+/* 🖥️ scénář na celou obrazovku */
+.tele{position:fixed;inset:0;z-index:60;background:#000;color:#fff;display:flex;flex-direction:column}
+.telebar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 16px;background:#111}
+.telebar button{margin-left:6px}
+.teletext{flex:1;overflow:auto;padding:4vh 6vw 40vh;white-space:pre-wrap;line-height:1.45;font-weight:600}
+.ordbtns button{padding:2px 7px;font-size:12px;min-width:0}
 .setnav button{font-size:12.5px;padding:5px 10px}
 .loglist{display:flex;flex-direction:column;gap:2px;max-height:520px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .logrow{display:grid;grid-template-columns:auto auto 1fr;gap:10px;font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)}
@@ -246,6 +287,7 @@ const PERIODS = {
   arch: {label:'🗄️ Archiv', local:true},
   star: {label:'⭐ Uložené', local:true},
   ideas:{label:'💡 Nápady & trendy'},
+  cal:  {label:'🗓️ Kalendář', local:true},
 };
 const SHOW_STEP = 120;
 const TIME_PERIODS = ['day', 'week', 'month', 'all']; // jeden přepínač; archiv, uložené a nápady jsou zvlášť tlačítka
@@ -285,8 +327,8 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
-const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.29'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
+const APP_VERSION = '2026-10-21.30'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -379,7 +421,7 @@ const $ = s => document.querySelector(s);
 // Úložiště (REMOTE): ☁️ Google Disk (po přihlášení – funguje i na mobilu bez PC), jinak server.py na PC, jinak nic.
 var SHARED_RX = KV_RX;
 // ⭐, nápady a blokace: smazání se zapíše do bt_tomb (klíč|id → kdy), aby se při slučování smazané nevrátilo
-const TOMB_RX = /^bt_(star|mixsaved|drop)(_g_[a-z0-9_]+)?$|^bt_block$/;
+const TOMB_RX = /^bt_(star|mixsaved|drop)(_g_[a-z0-9_]+)?$|^bt_block$|^bt_cal$/;
 function tomb(k, id) { const t = ls('bt_tomb', {}); t[k + '|' + id] = Date.now(); ss('bt_tomb', t); }
 function applyTomb(k, v) {
   const t = ls('bt_tomb', {}), dead = (key, at) => (t[key] || 0) >= (at || 0);
@@ -582,7 +624,7 @@ function driveSwitch() {
 // Přihlašovací okno Googlu jde otevřít jen po kliknutí → když už Disk používáš, připojí ho samo
 // tvoje první kliknutí kamkoli na stránce (a po hodině, kdy přihlášení vyprší, zase další kliknutí)
 document.addEventListener('click', e => {
-  if (!S.key || !gClientId() || !ls('bt_gdrive', false) || REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.state === 'nofolder') return;
+  if (!hasAccess() || !gClientId() || !ls('bt_gdrive', false) || REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.state === 'nofolder') return;
   if (e.target.closest('#btnDrive, #btnDriveCreate, #btnDriveOff, #btnDriveSwitch, #btnNoDrive, #btnClose')) return;
   driveConnect(false);
 }, true);
@@ -1191,14 +1233,41 @@ function renderBlocked() {
       <p class="hint">„Jen ověřená Brawl videa“ = z kanálu se ukáže jen video s Brawl Stars přímo v názvu, nebo v tazích a zároveň s Brawl miniaturou podle AI.</p>
       <div class="blist">${chs.map(([id, e]) => `<div class="brow"${ds(e.name)}>
         <a class="grow chlink" href="https://www.youtube.com/channel/${esc(id)}/videos" target="_blank" rel="noopener"><b>${esc(e.name)}</b></a>
+        <button data-chprev="${esc(id)}" title="Ukázat kanál přímo tady">👁 Náhled</button>
         ${own ? `<select data-chmode="${esc(id)}">${mopt(id, e, 'all', 'Celý kanál blokovaný')}${mopt(id, e, 'strict', 'Jen ověřená Brawl videa')}</select>
-        <button data-unblockch="${esc(id)}">↩ Vrátit</button>` : `<span class="ch">${e.mode === 'strict' ? 'jen ověřená Brawl videa' : 'celý kanál'}</span>`}</div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>
+        <button data-unblockch="${esc(id)}">↩ Vrátit</button>` : `<span class="ch">${e.mode === 'strict' ? 'jen ověřená Brawl videa' : 'celý kanál'}</span>`}
+        <div class="bprev" hidden></div></div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>
     <div class="sec"><h2>🚫 Zablokovaná videa (${vids.length})</h2>
       <div class="blist">${vids.map(([id, e]) => `<div class="brow"${ds(e.t, e.ch)}>
         <img src="https://i.ytimg.com/vi/${esc(id)}/default.jpg" width="80" alt="">
         <div class="grow"><a class="chlink" href="${ytUrl(id)}" target="_blank" rel="noopener">${esc(e.t)}</a><div class="ch">${esc(e.ch)}</div></div>
-        ${own ? `<button data-unblockv="${esc(id)}">↩ Vrátit</button>` : ''}</div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>`;
+        <button data-vprev="${esc(id)}" title="Přehrát přímo tady">▶ Přehrát</button>
+        ${own ? `<button data-unblockv="${esc(id)}">↩ Vrátit</button>` : ''}
+        <div class="bprev" hidden></div></div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>`;
   filterBlocked();
+}
+// 👁 Náhled přímo ve stránce: video = vložený přehrávač YouTube, kanál = profil + posledních 12 videí (2 levné dotazy)
+const embedHtml = id => `<div class="embed"><iframe src="https://www.youtube-nocookie.com/embed/${esc(id)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>`;
+const CHPREV = {};
+async function togglePreview(b, html) {
+  const box = b.closest('.brow').querySelector('.bprev');
+  if (!box.hidden) { box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false; box.innerHTML = '<div class="ch">Načítám…</div>';
+  try { box.innerHTML = await html(); } catch (e) { box.innerHTML = `<div class="ch">Nepovedlo se: ${esc(e.message)}</div>`; }
+}
+async function channelPreview(id) {
+  if (!CHPREV[id]) {
+    const ch = (await api('channels', {part:'snippet,statistics,contentDetails', id}, 1)).items?.[0];
+    if (!ch) throw new Error('kanál nenalezen');
+    const pl = await api('playlistItems', {part:'snippet', playlistId:ch.contentDetails.relatedPlaylists.uploads, maxResults:12}, 1);
+    CHPREV[id] = {ch, vids:(pl.items || []).map(x => ({id:x.snippet.resourceId.videoId, t:x.snippet.title, pub:x.snippet.publishedAt}))};
+  }
+  const {ch, vids} = CHPREV[id], st = ch.statistics;
+  return `<div class="chprev"><img class="chav" src="${esc(ch.snippet.thumbnails?.default?.url || '')}" alt="">
+      <div><b>${esc(ch.snippet.title)}</b><div class="ch">${st.hiddenSubscriberCount ? '' : n(+st.subscriberCount) + ' odběr. · '}${n(+st.videoCount)} videí · ${n(+st.viewCount)} zhlédnutí${ch.snippet.country ? ' · ' + esc(ch.snippet.country) : ''}</div>
+      <div class="ch chdesc">${esc((ch.snippet.description || '').slice(0, 220))}</div></div></div>
+    <div class="chvids">${vids.map(v => `<button class="chvid" data-playin="${esc(v.id)}" title="${esc(v.t)}"><img src="https://i.ytimg.com/vi/${esc(v.id)}/mqdefault.jpg" alt=""><span>${esc(v.t)}</span><span class="ch">${ago((Date.now() - new Date(v.pub)) / 3600e3)}</span></button>`).join('')}</div>
+    <div class="playin"></div>`;
 }
 function filterBlocked() {
   const q = fold(S.blkQ || '').trim();
@@ -1226,11 +1295,11 @@ function mergeKey(k, mine, theirs) {
 function mergeKey0(k, mine, theirs) {
   if (typeof mine === 'number') return Math.max(mine, +theirs || 0); // časy (bt_autoAt…) – platí pozdější
   if (/^bt_h_/.test(k)) { const out = {...theirs}; for (const [id, p] of Object.entries(mine)) out[id] = out[id] ? thinPts([...out[id], ...p]) : p; return out; }
-  if (k === 'bt_qs' || k === 'bt_disc') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
+  if (k === 'bt_qs' || k === 'bt_disc' || k === 'bt_cal') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
   if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
   if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), items:capItems(byId(mine.items, theirs.items))};
-  if (/^bt_(mixsaved|drop)/.test(k)) { const seen = new Set(mine.map(s => s.at)); return [...mine, ...theirs.filter(s => !seen.has(s.at))].sort((a, b) => b.at - a.at); }
+  if (/^bt_(mixsaved|drop)/.test(k)) { const seen = new Set(mine.map(s => s.at)); return [...mine, ...theirs.filter(s => !seen.has(s.at))].sort(byOrd); }
   if (k === 'bt_my') return (theirs.videos?.length || 0) > (mine.videos?.length || 0) ? theirs : mine;
   if (k === 'bt_block') return {videos:{...theirs.videos, ...mine.videos}, channels:{...theirs.channels, ...mine.channels}}; // tomb řeší vrácení
   if (/^bt_ch_/.test(k)) { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) out[id] = out[id] ? {...out[id], ...e, ids:[...new Set([...(out[id].ids || []), ...(e.ids || [])])].slice(-40), home:e.home || out[id].home,
@@ -1602,6 +1671,144 @@ async function downloadVersion(b) {
   const a = Object.assign(document.createElement('a'), {href:url, download:`${it.t.replace(/[\\/:*?"<>|]+/g, '').slice(0, 70).trim()} - verze ${+b.dataset.vdl + 1}.jpg`});
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
+// ---------- 📅 Kalendář videí (2 týdny) ----------
+// bt_cal = {id: {id, date:'YYYY-MM-DD', title, script, thumb, inspo, at}} – píše jen majitel (oba Samkovy účty).
+// bt_calg(_g_…) = {id: [{at, text}]} – poznámky ostatních (grafik: „z jakých miniatur si půjčím“), každý do svého.
+const calKey = () => 'bt_cal';
+const calgKey = (who = meWho()) => 'bt_calg' + (who ? '_' + who : '');
+const isoDay = d => d.toLocaleDateString('en-CA'); // místní datum YYYY-MM-DD
+const DOW = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
+const ytIds = s => [...new Set([...String(s || '').matchAll(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/g)].map(m => m[1]))];
+function calSave(e) {
+  if (!isOwner()) return;
+  const all = ls(calKey(), {}); all[e.id] = {...e, at:Date.now()}; ss(calKey(), all);
+}
+function calDelete(id) {
+  if (!isOwner()) return;
+  const all = ls(calKey(), {}), e = all[id]; delete all[id]; tomb(calKey(), id); ss(calKey(), all);
+  if (e) logEvent(`📅 smazal z kalendáře ${shortT(e.title || '(bez názvu)')}`);
+  if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
+}
+function calNotes(id) { return collections('bt_calg').flatMap(w => (ls(calgKey(w), {})[id] || []).map(n => ({...n, w}))).sort((a, b) => a.at - b.at); }
+function renderCal() {
+  const own = isOwner(), all = Object.values(ls(calKey(), {}));
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const start = new Date(t); start.setDate(t.getDate() - ((t.getDay() + 6) % 7) + (S.calOff || 0) * 7);
+  const days = Array.from({length:14}, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  const today = isoDay(t);
+  const badge = e => [e.script ? '📝' : '', e.thumb ? '🖼️' : '', ytIds(e.inspo).length ? `💡${ytIds(e.inspo).length}` : '', calNotes(e.id).length ? `🎨${calNotes(e.id).length}` : ''].filter(Boolean).join(' ');
+  const day = d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => a.at - b.at);
+    return `<div class="calday ${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''}">
+      <div class="caldh"><b>${DOW[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}.</b>${iso === today ? '<span class="tag hot">dnes</span>' : ''}</div>
+      ${list.map(e => `<button class="calvid" data-calopen="${esc(e.id)}"><span>${esc(e.title || '(bez názvu)')}</span><span class="ch">${badge(e)}</span></button>`).join('')}
+      ${own ? `<button class="caladd" data-caladd="${iso}">＋ video</button>` : ''}</div>`; };
+  const later = all.filter(e => e.date > isoDay(days[13])).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
+  $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>
+      <div class="row"><button data-calshift="-1">◀ Týden zpět</button><button data-calshift="0">Dnes</button><button data-calshift="1">Týden dál ▶</button>
+        ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
+      <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div></div>
+    <div class="calgrid">${days.map(day).join('')}</div>`;
+}
+function calEditor(id, date) {
+  const own = isOwner(), all = ls(calKey(), {});
+  const e = all[id] || {id:'v' + Date.now().toString(36), date, title:'', script:'', thumb:'', inspo:''};
+  const starOpts = Object.entries(STARS).sort((a, b) => byOrd(a[1], b[1])).map(([vid, s]) => `<option value="${esc(vid)}">${esc((s.t || '').slice(0, 70))}</option>`).join('');
+  const notes = () => calNotes(e.id).map(n => `<div class="calnote"><b>${esc(whoLabel(n.w))}</b> <span class="ch">${fmtDate(n.at)}</span>
+      ${ytIds(n.text).map(v => `<a href="${ytUrl(v)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt=""></a>`).join('')}
+      <div class="caltxt">${esc(n.text)}</div></div>`).join('') || '<div class="ch">Zatím žádné.</div>';
+  const inspoHtml = s => ytIds(s).map(v => `<a href="${ytUrl(v)}" target="_blank" rel="noopener" title="Otevřít na YouTube"><img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt=""></a>`).join('');
+  const ov = document.createElement('div'); ov.className = 'histov';
+  ov.innerHTML = `<div class="histbox calbox"><button class="histx" title="Zavřít">✖</button>
+    ${own ? `<input class="calin title" data-f="title" value="${esc(e.title)}" placeholder="Název videa">
+      <div class="row"><label>📅 Vyjde <input type="date" class="calin" data-f="date" value="${esc(e.date)}"></label><button class="blockbtn" data-caldel>🗑 Smazat</button></div>`
+      : `<h3>${esc(e.title || '(bez názvu)')}</h3><div class="ch">📅 ${esc(e.date)}</div>`}
+    <h4>💡 Inspirace (videa, ze kterých vycházím)</h4>
+    <div class="calinspo">${inspoHtml(e.inspo)}</div>
+    ${own ? `<textarea class="calin" data-f="inspo" rows="2" placeholder="Odkazy na videa z YouTube (každý na řádek)">${esc(e.inspo)}</textarea>
+      ${starOpts ? `<select data-calstar><option value="">⭐ přidat video z Uložených…</option>${starOpts}</select>` : ''}` : ''}
+    <h4>🖼️ Co chci na miniatuře <span class="ch">(pro grafika)</span></h4>
+    ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea>` : `<div class="caltxt">${esc(e.thumb) || '<span class="ch">Zatím nic.</span>'}</div>`}
+    <h4>📝 Scénář <button data-calfull>🖥️ Na celou obrazovku</button></h4>
+    ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt">${esc(e.script) || '<span class="ch">Zatím nic.</span>'}</div>`}
+    <h4>🎨 Poznámky (grafik a ostatní)</h4>
+    <div class="calnotes">${notes()}</div>
+    <div class="addch"><input data-calnote placeholder="Např. miniatury, ze kterých si půjčím (odkaz na YouTube), nápad…"><button data-calnoteadd>➕ Přidat</button></div>
+    ${own ? '<div class="ch">Ukládá se samo při psaní.</div>' : ''}</div>`;
+  let timer = null;
+  const save = () => { clearTimeout(timer); timer = setTimeout(() => { calSave(e); renderMain(); }, 600); };
+  ov.addEventListener('input', ev => {
+    const f = ev.target.dataset?.f; if (!f || !own) return;
+    e[f] = ev.target.value; if (f === 'inspo') ov.querySelector('.calinspo').innerHTML = inspoHtml(e.inspo);
+    save();
+  });
+  ov.addEventListener('change', ev => {
+    if (ev.target.matches('[data-calstar]') && ev.target.value) {
+      const ta = ov.querySelector('[data-f="inspo"]'); ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + ytUrl(ev.target.value);
+      e.inspo = ta.value; ov.querySelector('.calinspo').innerHTML = inspoHtml(e.inspo); ev.target.value = ''; save();
+    }
+  });
+  ov.addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (ev.target === ov || b?.classList.contains('histx')) { clearTimeout(timer); if (own && (e.title || e.script || e.thumb || e.inspo)) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || '(bez názvu)')} na ${e.date}`); } ov.remove(); renderMain(); return; }
+    if (!b) return;
+    if (b.matches('[data-caldel]')) { calDelete(e.id); ov.remove(); renderMain(); }
+    else if (b.matches('[data-calfull]')) teleprompter(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title);
+    else if (b.matches('[data-calnoteadd]')) {
+      const inp = ov.querySelector('[data-calnote]'), text = inp.value.trim(); if (!text) return;
+      const g = ls(calgKey(), {}); (g[e.id] ||= []).push({at:Date.now(), text}); ss(calgKey(), g);
+      if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
+      inp.value = ''; ov.querySelector('.calnotes').innerHTML = notes(); renderMain();
+    }
+  });
+  document.body.append(ov);
+  if (own && !e.title) ov.querySelector('[data-f="title"]')?.focus();
+}
+// 🖥️ Scénář na celou obrazovku – velké písmo, tmavé pozadí, velikost písma A−/A+, šipky/kolečko posouvají, Esc zavře
+function teleprompter(text, title) {
+  const ov = document.createElement('div'); ov.className = 'tele';
+  let fs = +ls('bt_telefs', 44);
+  ov.innerHTML = `<div class="telebar"><b>${esc(title || 'Scénář')}</b><span><button data-fs="-">A−</button><button data-fs="+">A+</button><button data-tclose>✖ Zavřít</button></span></div>
+    <div class="teletext" style="font-size:${fs}px">${esc(text || '(scénář je prázdný)')}</div>`;
+  const close = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); ov.remove(); };
+  ov.addEventListener('click', ev => {
+    const b = ev.target.closest('button'); if (!b) return;
+    if (b.dataset.fs) { fs = Math.max(18, Math.min(120, fs + (b.dataset.fs === '+' ? 6 : -6))); ov.querySelector('.teletext').style.fontSize = fs + 'px'; ss('bt_telefs', fs); }
+    if (b.hasAttribute('data-tclose')) close();
+  });
+  document.addEventListener('fullscreenchange', function f() { if (!document.fullscreenElement) { ov.remove(); document.removeEventListener('fullscreenchange', f); } });
+  ov.addEventListener('keydown', ev => { if (ev.key === 'Escape') close(); });
+  document.body.append(ov);
+  ov.requestFullscreen?.().catch(() => {}); // když prohlížeč nedovolí, zůstane přes celé okno
+}
+
+// ---------- ↕ Pořadí v Uložených (videa, nápady, přenos) ----------
+// Každá položka může mít „ord“ (vlastní pořadí); bez něj platí čas uložení. Nově uložené jsou vždy nahoře.
+// Pořadí se ukládá do dat, takže ho přes Disk vidí všechna zařízení i ostatní lidé.
+const byOrd = (a, b) => (b.ord ?? b.at) - (a.ord ?? a.at);
+const ordBtns = (kind, key) => `<span class="ordbtns" title="Posunout"><button data-mv="top" data-mk="${kind}" data-mid="${esc(key)}" title="Úplně dopředu">⤒</button><button data-mv="up" data-mk="${kind}" data-mid="${esc(key)}" title="O jedno dopředu">↑</button><button data-mv="down" data-mk="${kind}" data-mid="${esc(key)}" title="O jedno dozadu">↓</button><button data-mv="bottom" data-mk="${kind}" data-mid="${esc(key)}" title="Úplně dozadu">⤓</button></span>`;
+// 🖱️ přetažení myší: chycené video se vloží na místo videa, na které ho pustíš (ostatní se posunou)
+let DRAG = null;
+document.addEventListener('dragstart', e => { const c = e.target.closest?.('[data-drag]'); if (!c) return; DRAG = {kind:c.dataset.drag, key:c.dataset.id}; c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', c.dataset.id); });
+document.addEventListener('dragend', e => { e.target.closest?.('[data-drag]')?.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x => x.classList.remove('dragover')); DRAG = null; });
+document.addEventListener('dragover', e => { if (!DRAG) return; const c = e.target.closest('[data-drag]'); if (!c) return; e.preventDefault(); document.querySelectorAll('.dragover').forEach(x => x !== c && x.classList.remove('dragover')); if (c.dataset.id !== DRAG.key) c.classList.add('dragover'); });
+document.addEventListener('drop', e => { if (!DRAG) return; const c = e.target.closest('[data-drag]'); if (!c) return; e.preventDefault(); e.stopPropagation(); if (c.dataset.id !== DRAG.key) moveSaved(DRAG.kind, DRAG.key, 'to:' + c.dataset.id); DRAG = null; }, true);
+function moveSaved(kind, key, dir) {
+  const isStar = kind === 'star', k = isStar ? starKey() : kind === 'idea' ? mixKey() : dropKey();
+  const arr = isStar ? Object.entries(STARS).map(([id, e]) => ({...e, _id:id})).sort(byOrd) : [...ls(k, [])].sort(byOrd);
+  const idx = arr.findIndex(x => String(isStar ? x._id : x.at) === String(key));
+  if (idx < 0) return;
+  const keyOf = x => String(isStar ? x._id : x.at);
+  const tIdx = dir.startsWith('to:') ? arr.findIndex(x => keyOf(x) === dir.slice(3)) : -1; // na místo jiného (přetažení myší)
+  const [it] = arr.splice(idx, 1);
+  arr.splice(tIdx >= 0 ? tIdx : dir === 'top' ? 0 : dir === 'bottom' ? arr.length : Math.max(0, Math.min(arr.length, idx + (dir === 'up' ? -1 : 1))), 0, it);
+  const base = Date.now();
+  arr.forEach((x, i) => { x.ord = base - i; }); // první = nejvyšší
+  if (isStar) { for (const x of arr) { const id = x._id; delete x._id; STARS[id] = x; } ss(k, STARS); }
+  else ss(k, arr);
+  if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
+  const y = scrollY; renderMain(); scrollTo(0, y);
+}
+
 // ---------- 📤 Přenos: texty a soubory mezi vlastními zařízeními (přes sdílený Disk) ----------
 // Každý člověk má svou kolekci bt_drop(_g_…) – seznam {at, kind:'text'|'file', text | name, mime, size, fid, dev}.
 // Soubory leží na Disku v podsložce „prenos“; v seznamu je jen odkaz (fid). Smazání = záznam v bt_tomb + smazání souboru.
@@ -1672,10 +1879,10 @@ async function fillDropPreviews() {
   }
 }
 function renderDrop(tabs, who) {
-  const mine = who === meWho(), list = ls(dropKey(who), []), drive = REMOTE === DRIVE_BACKEND;
+  const mine = who === meWho(), list = [...ls(dropKey(who), [])].sort(byOrd), drive = REMOTE === DRIVE_BACKEND;
   const size = b => b > 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' kB';
   const row = it => `<div class="drop" data-at="${it.at}">
-    <div class="ch">${it.dev || ''} ${fmtDate(it.at)}</div>
+    <div class="ch droph"><span>${it.dev || ''} ${fmtDate(it.at)}</span>${mine ? ordBtns('drop', it.at) : ''}</div>
     ${it.kind === 'text' ? `<pre class="droptext">${esc(it.text)}</pre>
       <div class="actions"><button data-dropcopy="${it.at}">📋 Kopírovat text</button>${mine ? `<button class="blockbtn" data-dropdel="${it.at}" title="Smazat">✖</button>` : ''}</div>`
     : `<div class="dropfile">${/^image\//.test(it.mime) ? `<img data-dropimg="${esc(it.fid)}" alt="">` : `<span class="dropicon">${/^video\//.test(it.mime) ? '🎬' : /pdf/.test(it.mime) ? '📄' : '📦'}</span>`}
@@ -1713,7 +1920,7 @@ function renderStars() {
       ${savedIdeasHtml(who) || '<div class="empty">Zatím nic. V 💡 Nápady & trendy → 🎲 Míchač zamíchej videa a ulož nápad.</div>'}`;
     return;
   }
-  const list = Object.values(coll).sort((a, b) => b.at - a.at).map(s => enrich(s, C(s.cid)))
+  const list = Object.values(coll).sort(byOrd).map(s => enrich(s, C(s.cid)))
     .filter(it => S.type === 'all' || (S.type === 'short' ? it.short : !it.short)).filter(matchQ);
   $('#main').innerHTML = tabs + `<div class="summary"><h3>⭐ Uložená videa – ${esc(whoLabel(who))} – ${list.length}</h3>
     ${mine ? '' : '<div class="row ch">Kolekce druhého člověka. ☆ u videa ho uloží do tvé kolekce.</div>'}
@@ -1721,6 +1928,11 @@ function renderStars() {
     <div class="row ch">🖼️ U uložených videí se každých 30 min hlídá miniatura – když ji youtuber změní (třeba po A/B testu), uloží se nová verze do sdílené složky. Hlídá ten, komu zrovna stránka běží, a verze vidí všichni. Varianty, které YouTube během testu ukazuje jen části diváků, veřejně dostupné nejsou.
       <button id="btnThumbsNow">Zkontrolovat miniatury teď</button></div></div>
     ${list.length ? `<div class="grid">${list.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Zatím nic. Klikni na ☆ v rohu miniatury u videa, které se ti líbí.</div>'}`;
+  // ↕ vlastní kolekce: šipky pro posouvání (pořadí se uloží a uvidí ho všichni)
+  if (mine && !S.q.trim()) document.querySelectorAll('#main .grid .card').forEach(el => {
+    el.querySelector('.actions')?.insertAdjacentHTML('afterbegin', ordBtns('star', el.dataset.id));
+    el.draggable = true; el.dataset.drag = 'star'; // 🖱️ chytit a pustit na místo jiného videa
+  });
   autoTranslate();
   if (mine) refreshStars();
   fillVersions();
@@ -2086,14 +2298,16 @@ function renderHeader() {
   const tab = k => `<button data-period="${k}" class="${S.period === k ? 'on' : costAttr(openCost(C(S.country), k))}">${PERIODS[k].label}${k === 'star' && nStar ? ` (${nStar})` : ''}</button>`;
   $('#tabs').innerHTML = `<span class="seg periods">${TIME_PERIODS.map(tab).join('')}</span>` +
     Object.keys(PERIODS).filter(k => !TIME_PERIODS.includes(k)).map(tab).join('');
-  $('#countries').style.display = S.period === 'ideas' || S.period === 'star' ? 'none' : 'flex';
+  $('#countries').style.display = S.period === 'ideas' || S.period === 'star' || S.period === 'cal' ? 'none' : 'flex';
   $('#countries').innerHTML = COUNTRIES.map(c => `<button data-country="${c.id}" class="${S.country === c.id ? 'on' : costAttr(openCost(c, S.period))}">${flag(c)}${esc(c.name)}</button>`).join('');
   const opt = (v, cur, l) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
   const seg = (v, l) => `<button data-type="${v}" class="${S.type === v ? 'on' : ''}">${l}</button>`;
   // ostatní volby jsou v ⚙️ Nastavení
   const common = `<span class="seg">${seg('all', 'Obojí')}${seg('long', '🎬 Videa')}${seg('short', '📱 Shorts')}</span>`;
   const sortSel = `<label>Řadit <select data-set="sort">${opt('views', S.sort, 'Nejvíc zhlédnutí')}${opt('vph', S.sort, 'Nejrychleji rostoucí (views/h)')}${opt('outlier', S.sort, '💥 Bangery (views / odběry)')}${opt('eng', S.sort, 'Engagement (lajky+komenty)')}${opt('new', S.sort, 'Nejnovější')}</select></label>`;
-  if (S.period === 'ideas') {
+  if (S.period === 'cal') {
+    $('#controls').innerHTML = '';
+  } else if (S.period === 'ideas') {
     $('#controls').innerHTML = common + '<span>Nápady berou data ze všech států (načti je tlačítky níže).</span>';
   } else if (S.period === 'star') {
     $('#controls').innerHTML = common + '<span>Uložená videa ze všech států.</span>';
@@ -2110,13 +2324,14 @@ function renderHeader() {
 // ---------- Pohled: seznam pro stát ----------
 // Bez připojeného Disku se z YouTube nic nestahuje (data jiných zařízení jsou na Disku zdarma).
 // „Bez Disku“ jde jen na zařízení, které se k Disku nikdy nepřipojilo – jinak by si každé stahovalo samo a pálilo kvótu.
+const hasAccess = () => !!S.key || ls('bt_viewer', false); // vlastní klíč, nebo 👀 jen prohlížení
 const driveUsedHere = () => !!ls('bt_gemail', '') || ls('bt_gdrive', false);
 const driveGate = () => !!gClientId() && REMOTE !== DRIVE_BACKEND && (!ls('bt_nodrive', false) || driveUsedHere());
 const driveGateHtml = () => `<div class="drivegate">☁️ <b>Nejdřív připoj Google Disk.</b> Co už načetla jiná zařízení, se stáhne zdarma a z YouTube se bude stahovat jen to, co chybí.
   <button class="primary" id="btnDrive">Připojit Disk</button>${driveUsedHere() ? '' : '<button id="btnNoDrive" title="Každé zařízení si pak stahuje samo a bere kvótu – jen když Disk vůbec nechceš">Používat bez Disku (bere kvótu)</button>'}</div>`;
 async function showCountry(force) {
   const token = ++S.loadToken, c = C(S.country), p = S.period;
-  if (p === 'arch' || p === 'star') { renderMain(); return; }
+  if (p === 'arch' || p === 'star' || p === 'cal') { renderMain(); return; }
   let set = getSet(c.id, p);
   // Při zapnuté auto-aktualizaci jsou novinky/týden zastaralé po uplynutí intervalu (i když stránka byla mezitím zavřená)
   const maxAge = (S.auto && p !== 'all' ? S.interval : PERIODS[p].ttl) * 60e3;
@@ -2136,6 +2351,7 @@ async function showCountry(force) {
     set = getSet(c.id, p);
     if (token !== S.loadToken) return;
   }
+  if (!S.key) { renderMain(); return; } // 👀 bez klíče jen data z Disku – stahují ostatní
   if (S.auto && due && p !== 'all' && !force) ss('bt_autoAt', Date.now()); // odpočet jede znovu od teď – pro všechny záložky i zařízení
   if (needs()) {
     status(`Načítám ${c.name} – ${PERIODS[p].label}…`);
@@ -2339,7 +2555,7 @@ function savedIdeasHtml(who = meWho()) {
       <a href="${ytUrl(s.a.id)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${esc(s.a.id)}/default.jpg" width="64" alt=""></a><span class="plus">+</span><a href="${ytUrl(s.b.id)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${esc(s.b.id)}/default.jpg" width="64" alt=""></a>
       <div class="grow"><div class="ch">${esc(s.a.t)} <b>+</b> ${esc(s.b.t)} · ${fmtDate(s.at)}</div>
         <input class="mixnote" ${ro ? 'disabled' : `data-mixnote="${i}"`} value="${esc(s.note)}" placeholder="${ro ? '' : 'Můj nápad…'}"></div>
-      ${ro ? '' : `<button data-mixdel="${i}" title="Smazat">✖</button>`}</div>`).join('')}</div>` : '';
+      ${ro ? '' : ordBtns('idea', s.at) + `<button data-mixdel="${i}" title="Smazat">✖</button>`}</div>`).join('')}</div>` : '';
 }
 async function myLoadUI(b) {
   status('📺 Načítám tvoje videa…');
@@ -2560,7 +2776,12 @@ function renderIdeas() {
 function renderSetup() {
   $('#tabs').innerHTML = ''; $('#countries').innerHTML = ''; $('#controls').innerHTML = '';
   $('#main').innerHTML = `<div class="setup">
-    <h2>🔑 Potřebuju YouTube API klíč (zdarma, 5 minut)</h2>
+    <div class="drivegate" style="flex-direction:column;align-items:flex-start">
+      <b>👀 Jsi grafik / kamarád a chceš jen koukat?</b>
+      <span class="ch">Klíč nepotřebuješ – videa, nápady, uložené i kalendář uvidíš z našeho sdíleného Google Disku. Stačí se přihlásit Googlem (účtem, kterému Samko složku nasdílel).</span>
+      <button class="primary" id="btnViewer">👀 Jen prohlížet – bez klíče</button>
+    </div>
+    <h2>🔑 Nebo vlastní YouTube API klíč (zdarma, 5 minut) – pak můžeš i sám načítat nová videa</h2>
     <ol>
       <li>Otevři <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">console.cloud.google.com</a> a přihlas se Google účtem.</li>
       <li>Vytvoř nový projekt (třeba „Brawl Trendy“).</li>
@@ -2578,7 +2799,8 @@ function renderSetup() {
 // ---------- Řízení ----------
 function show(force = false) {
   quota();
-  if (!S.key) { renderSetup(); return; }
+  // 👀 režim „jen prohlížet“ (bez API klíče): všechno z Disku, z YouTube se nic nestahuje
+  if (!hasAccess()) { renderSetup(); return; }
   renderHeader();
   if (S.period === 'ideas') renderIdeas(); else showCountry(force);
 }
@@ -2592,6 +2814,7 @@ function renderMain() {
   if (S.view === 'settings') return renderSettings();
   if (S.q.trim() && (S.qScope === 'all' || S.period === 'ideas')) return renderSearchAll();
   if (S.period === 'ideas') renderIdeas();
+  else if (S.period === 'cal') renderCal();
   else if (S.period === 'star') renderStars();
   else renderCountry(S.period === 'arch' ? getArchive(S.country) : getSet(S.country, S.period), C(S.country), S.period);
 }
@@ -2678,6 +2901,14 @@ document.addEventListener('click', e => {
   else if (b.dataset.unblockch) { logEvent(`↩ odblokoval kanál ${BLOCK.channels[b.dataset.unblockch]?.name || ''}`); delete BLOCK.channels[b.dataset.unblockch]; tomb('bt_block.c', b.dataset.unblockch); saveBlock(); renderBlocked(); }
   else if (b.dataset.unblockv) { logEvent(`↩ odblokoval video ${shortT(BLOCK.videos[b.dataset.unblockv]?.t || '')}`); delete BLOCK.videos[b.dataset.unblockv]; tomb('bt_block.v', b.dataset.unblockv); saveBlock(); renderBlocked(); }
   else if (b.dataset.discover) discover(C(b.dataset.discover), true);
+  else if (b.id === 'btnViewer') { ss('bt_viewer', true); show(); driveConnect(false); }
+  else if (b.dataset.mv) moveSaved(b.dataset.mk, b.dataset.mid, b.dataset.mv);
+  else if (b.dataset.calshift !== undefined) { S.calOff = b.dataset.calshift === '0' ? 0 : (S.calOff || 0) + +b.dataset.calshift; renderMain(); }
+  else if (b.dataset.caladd) calEditor(null, b.dataset.caladd);
+  else if (b.dataset.calopen) calEditor(b.dataset.calopen);
+  else if (b.dataset.vprev) togglePreview(b, async () => embedHtml(b.dataset.vprev));
+  else if (b.dataset.chprev) togglePreview(b, () => channelPreview(b.dataset.chprev));
+  else if (b.dataset.playin) { const box = b.closest('.bprev').querySelector('.playin'); box.innerHTML = embedHtml(b.dataset.playin); box.scrollIntoView({behavior:'smooth', block:'nearest'}); }
   else if (b.id === 'btnDropText') { const t = $('#dropText').value.trim(); if (t) dropAdd({at:Date.now(), kind:'text', text:t, dev:devIcon()}); }
   else if (b.dataset.dropcopy) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropcopy); navigator.clipboard?.writeText(it?.text || '').then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.dataset.dropdl) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropdl); if (it) dropDownload(it, b); }
@@ -2756,7 +2987,7 @@ async function pullShared() {
   const cur = TIME_PERIODS.includes(S.period) && getSet(S.country, S.period);
   if (cur && S.nextAuto) S.nextAuto = Math.max(S.nextAuto, cur.ts + S.interval * 60e3);
   // nepřekreslovat, když zrovna něco píšeš do pole na stránce
-  if (S.key && !(document.activeElement?.closest?.('#main') && document.activeElement.matches('input, textarea'))) rerender();
+  if (hasAccess() && !(document.activeElement?.closest?.('#main') && document.activeElement.matches('input, textarea'))) rerender();
 }
 // start: nejdřív načíst velká data z IndexedDB (a poprvé je tam přestěhovat z localStorage), pak teprve kreslit
 (async () => {
