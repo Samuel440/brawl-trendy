@@ -247,6 +247,10 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .chvids{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:10px}
 .chvid{display:flex;flex-direction:column;gap:4px;text-align:left;padding:6px;font-size:12px;line-height:1.3}
 .chvid img{width:100%;border-radius:6px;aspect-ratio:16/9;object-fit:cover}
+/* „jen ověřená Brawl videa“: video, které stránka skrývá, je černobílé a průhlednější */
+.chvid.chhid img{filter:grayscale(1);opacity:.55}
+.chvid.chhid > span:not(.tag){opacity:.6}
+.chvid .tag{white-space:normal;line-height:1.3}
 /* 📤 Přenos */
 .dropbox{background:var(--panel);border:2px dashed var(--line);border-radius:12px;padding:12px;margin:10px 0;display:flex;flex-direction:column;gap:8px}
 .dropbox.over{border-color:var(--accent);background:rgba(255,200,0,.06)}
@@ -520,7 +524,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.64'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.65'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1532,18 +1536,32 @@ async function togglePreview(b, html) {
   box.hidden = false; box.innerHTML = '<div class="ch">Načítám…</div>';
   try { box.innerHTML = await html(); } catch (e) { box.innerHTML = `<div class="ch">Nepovedlo se: ${esc(e.message)}</div>`; }
 }
+// u kanálu v režimu „jen ověřená Brawl videa“ se u každého videa ukáže, jestli ho stránka pouští, nebo skrývá (černobíle + důvod)
+const whyShown = it => (it.bsN ?? BRAWL_RX.test(it.t)) ? 'Brawl v názvu' : hasBrawler(it) ? 'brawler v názvu' : 'tagy + AI miniatury';
+const whyHidden = it => otherGame(it) ? 'jiná hra v názvu' : (it.bsTag ?? it.bsT) ? 'Brawl jen v tazích, AI to nepotvrdila' : 'v názvu není Brawl ani brawler';
 async function channelPreview(id) {
+  const strict = BLOCK.channels[id]?.mode === 'strict';
   if (!CHPREV[id]) {
     const ch = (await api('channels', {part:'snippet,statistics,contentDetails', id}, 1)).items?.[0];
     if (!ch) throw new Error('kanál nenalezen');
-    const pl = await api('playlistItems', {part:'snippet', playlistId:ch.contentDetails.relatedPlaylists.uploads, maxResults:12}, 1);
+    const pl = await api('playlistItems', {part:'snippet', playlistId:ch.contentDetails.relatedPlaylists.uploads, maxResults:strict ? 24 : 12}, 1);
     CHPREV[id] = {ch, vids:(pl.items || []).map(x => ({id:x.snippet.resourceId.videoId, t:x.snippet.title, pub:x.snippet.publishedAt}))};
   }
-  const {ch, vids} = CHPREV[id], st = ch.statistics;
+  // detaily (tagy, Brawl v názvu…) = 1 levný dotaz na 24 videí; podle nich stejné rozhodnutí jako v seznamech
+  if (strict && !CHPREV[id].det) {
+    const det = new Map((await details(CHPREV[id].vids.map(v => v.id)).catch(() => [])).map(it => [it.id, it]));
+    CHPREV[id].det = det;
+  }
+  const {ch, vids, det} = CHPREV[id], st = ch.statistics;
+  const verdict = v => { const it = strict && det?.get(v.id); return it ? {ok:verified(it), it} : null; };
+  const shown = strict ? vids.filter(v => verdict(v)?.ok).length : 0;
   return `<div class="chprev"><img class="chav" src="${esc(ch.snippet.thumbnails?.default?.url || '')}" alt="">
       <div><b>${esc(ch.snippet.title)}</b><div class="ch">${st.hiddenSubscriberCount ? '' : n(+st.subscriberCount) + ' odběr. · '}${n(+st.videoCount)} videí · ${n(+st.viewCount)} zhlédnutí${ch.snippet.country ? ' · ' + esc(ch.snippet.country) : ''}</div>
       <div class="ch chdesc">${esc((ch.snippet.description || '').slice(0, 220))}</div></div></div>
-    <div class="chvids">${vids.map(v => `<button class="chvid" data-playin="${esc(v.id)}" title="${esc(v.t)}"><img src="https://i.ytimg.com/vi/${esc(v.id)}/mqdefault.jpg" alt=""><span>${esc(v.t)}</span><span class="ch">${ago((Date.now() - new Date(v.pub)) / 3600e3)}</span></button>`).join('')}</div>
+    ${strict ? `<div class="row ch" style="margin:6px 0">Posledních ${vids.length} videí: <b style="color:var(--ok)">✔ ${shown} se ukazuje</b> · <b style="color:var(--hot)">🚫 ${vids.length - shown} skryto</b> (černobílá). Když je mezi skrytými opravdové Brawl video, přepni kanál na „Celý kanál“ ↩ Vrátit, nebo mi napiš.</div>` : ''}
+    <div class="chvids">${vids.map(v => { const d = verdict(v);
+      return `<button class="chvid ${d && !d.ok ? 'chhid' : ''}" data-playin="${esc(v.id)}" title="${esc(v.t)}"><img src="https://i.ytimg.com/vi/${esc(v.id)}/mqdefault.jpg" alt=""><span>${esc(v.t)}</span><span class="ch">${ago((Date.now() - new Date(v.pub)) / 3600e3)}</span>
+        ${d ? `<span class="tag ${d.ok ? 'ok' : 'hot'}">${d.ok ? '✔ ukazuje se – ' + whyShown(d.it) : '🚫 skryto – ' + whyHidden(d.it)}</span>` : ''}</button>`; }).join('')}</div>
     <div class="playin"></div>`;
 }
 function filterBlocked() {
