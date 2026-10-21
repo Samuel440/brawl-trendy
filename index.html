@@ -252,7 +252,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$)/;
-const APP_VERSION = '2026-10-21.7'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.8'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -535,6 +535,7 @@ async function driveConnectInner(create, pick) {
     if (pick || !DRIVE.token || Date.now() > DRIVE.exp - 60e3) await driveSignIn(pick);
     if (!await driveInit(create)) { status('☁️ Na Disku zatím není složka „' + DRIVE_FOLDER + '“ – založ ji v ⚙️ Nastavení, nebo počkej, až ti ji někdo nasdílí.', true); renderMain(); return; }
     REMOTE = DRIVE_BACKEND; DRIVE_BACKEND.ready = false; ss('bt_gdrive', true);
+    setTimeout(() => pullMissingChannels().then(() => rerender()).catch(() => {}), 5000);
     S.starWho = null; reloadMemory(); // kolekce ⭐ a 💡 podle toho, kdo je přihlášený
     await pullShared(true);
     status(`☁️ Disk připojen (${DRIVE.email}).`); ss('bt_nodrive', false);
@@ -765,12 +766,39 @@ async function addChannelUI() {
   if (!val.trim()) return;
   try {
     const name = await addChannel(c, val);
-    status(`📌 ${name} se teď sleduje v ${c.name} – načítám jeho nová videa…`);
-    // vynutí lehkou aktualizaci (bez drahého hledání), která stáhne i videa nového kanálu
-    for (const p of ['day', 'week']) { const set = getSet(c.id, p); if (set) putSet(c.id, p, {...set, ts:0}); }
-    if (S.period === 'all') { status(`📌 ${name} přidán – jeho nová videa uvidíš v Novinkách a Týdnu.`); rerender(); }
-    else await showCountry(false);
+    status(`📌 ${name} se teď sleduje v ${c.name} – načítám jeho videa za poslední měsíc…`);
+    const id = Object.entries(ls(chKey(c.id), {})).find(([, e]) => e.name === name && e.manual)?.[0];
+    const n = id ? await pullChannel(c, id) : 0;
+    status(`📌 ${name} se sleduje v ${c.name} – ${n ? `přidáno ${n} videí za posledních 30 dní` : 'za posledních 30 dní nic nenahrál'}.`);
+    rerender();
   } catch (e) { status(e.message, true); }
+}
+// Stáhne videa jednoho kanálu za posledních 30 dní a přidá je do Novinek / Týdne / Měsíce (2 dotazy, žádné hledání)
+async function pullChannel(c, chId) {
+  const r = await api('playlistItems', {part:'contentDetails', playlistId:'UU' + chId.slice(2), maxResults:50}, 1);
+  const ids = (r.items || []).map(i => i.contentDetails.videoId);
+  const items = ids.length ? (await details(ids)).map(it => classify(it)) : [];
+  const fresh = items.filter(it => Date.now() - new Date(it.pub) < 720 * 3600e3);
+  for (const p of ['day', 'week', 'month']) {
+    const since = Date.now() - PERIODS[p].hours * 3600e3, add = fresh.filter(it => new Date(it.pub) >= since);
+    if (!add.length) continue;
+    const set = getSet(c.id, p);
+    if (set) mergeInto(c.id, p, add);
+    else if (p !== 'day') putSet(c.id, p, {ts:Date.now(), searchTs:Date.now(), items:add, next:null}); // aspoň něco, plné hledání přijde samo
+  }
+  archive(c.id, fresh);
+  const db = ls(chKey(c.id), {});
+  if (db[chId]) { db[chId].pulled = Date.now(); for (const it of fresh) if (!db[chId].ids.includes(it.id)) db[chId].ids = [...db[chId].ids, it.id].slice(-40); ss(chKey(c.id), db); }
+  return fresh.length;
+}
+// ručně přidané kanály, které ještě nikdy nestáhly svůj měsíc (přidané dřív, než to stránka uměla), doplnit na pozadí
+async function pullMissingChannels() {
+  if (pullMissingChannels.busy) return; pullMissingChannels.busy = true;
+  try { await pullMissing0(); } finally { pullMissingChannels.busy = false; }
+}
+async function pullMissing0() {
+  for (const c of COUNTRIES) for (const [id, e] of Object.entries(ls(chKey(c.id), {})))
+    if (e.manual && !e.pulled) { try { await pullChannel(c, id); } catch (err) { if (/limit/.test(err.message)) return; } }
 }
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'chInput') addChannelUI(); });
 function removeChannel(c, id) {
@@ -859,7 +887,7 @@ async function ensureSet(c, p, force, light, extra) {
   archive(c.id, set.items);
   return set;
 }
-const MAX_SET = 1000, MAX_ARCH = 2000; // data jsou v IndexedDB, místa je dost
+const MAX_SET = 2000, MAX_ARCH = 3000; // data jsou v IndexedDB, místa je dost
 // při přeplnění necháme nejsledovanější
 const capItems = items => items.length <= MAX_SET ? items : [...items].sort((a, b) => b.views - a.views).slice(0, MAX_SET);
 function mergeInto(cid, p, items) {
@@ -2181,6 +2209,8 @@ async function pullShared() {
   show();
   if (DRIVE.token) await driveConnect(false); else pullShared();
   renderQuotaBar();
+  // doplnit měsíc u ručně přidaných kanálů, které ho ještě nemají (jen se sdílením, ať to nedělá každé zařízení zvlášť)
+  if (S.key && (REMOTE === DRIVE_BACKEND || !ls('bt_gdrive', false))) pullMissingChannels().then(() => rerender()).catch(() => {});
   // hláška po automatické aktualizaci
   let upd = null;
   try { upd = sessionStorage.getItem('bt_updated'); sessionStorage.removeItem('bt_updated'); } catch {}
