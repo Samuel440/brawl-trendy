@@ -164,14 +164,15 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
   /* nahoře: velké logo vlevo, vpravo v rohu jen emoji (☁️ 🚫 ⚙️), pod tím kvóta a stav */
   .top{gap:6px 8px}
   .logo{height:58px}
-  /* pořadí: logo, řazení, hledání – a pak záložky, období, státy (ty zůstanou při scrollu přilepené nahoře) */
-  header{display:flex;flex-direction:column}
-  header > .top{order:0}
-  #controls{order:1}
-  header > .search{order:2;margin-top:6px}
-  nav#tabs{order:3}
-  #periods{order:4}
-  #countries{order:5}
+  /* při scrollu zůstane přilepené všechno od záložek dolů (období, státy, řazení, hledání) – proto úsporně */
+  #controls{margin-top:6px;gap:4px 6px}
+  #controls label{font-size:0;gap:0} /* bez nápisu „Řadit“, ať se řazení i Obojí/Videa/Shorts vejdou do řádku */
+  #controls label select{max-width:40vw;font-size:12px;padding:5px 2px}
+  #controls .seg button{padding:5px 7px;font-size:12px}
+  #updated{font-size:11px;flex-basis:100%}
+  header > .search{margin-top:6px;flex-wrap:nowrap;gap:6px}
+  header > .search input{min-width:0;flex:1}
+  header > .search select{width:auto !important;max-width:38%;flex:none}
   /* mřížka: logo | ☁️ | 🚫 | ⚙️ v jednom řádku, pod tím kvóta a stav */
   .top{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:6px;align-items:center}
   .right{display:contents}
@@ -195,8 +196,6 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
   .seg button{padding:5px 8px;font-size:12.5px}
   .cats button{padding:3px 8px;font-size:12px}
   #controls{gap:6px;font-size:12px}
-  .search{flex-wrap:wrap}
-  .search select{width:100%}
   /* 2 videa vedle sebe, menší písmo; bez řádku s nápadem */
   .grid{grid-template-columns:1fr 1fr;gap:8px}
   .card .body{padding:7px 8px;gap:4px}
@@ -479,7 +478,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$)/;
-const APP_VERSION = '2026-10-21.52'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.55'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1889,13 +1888,14 @@ function renderCal() {
   if (S.calJump) {
     S.calJump = false;
     scrollTo(0, 0); // z hodně sjeté stránky by se výpočet rozhodil
-    requestAnimationFrame(() => {
+    setTimeout(() => {
+      applyStick();
       const el = $('#main .cday.today'); if (!el) return;
       // výška toho, co po sjetí zůstane nahoře přilepené
       const bar = getComputedStyle(hd).position === 'sticky' ? hd.offsetHeight + (parseFloat(hd.style.top) || 0) : 0;
       const h1 = $('#main .ch1')?.offsetHeight || 0;
       scrollTo({top:Math.max(0, el.getBoundingClientRect().top + scrollY - bar - h1 - 8)});
-    });
+    }, 30);
   }
 }
 // Zavřít okno kliknutím vedle – jen když i STISK myši začal vedle. Když označuješ text v okně a pustíš myš venku,
@@ -2456,12 +2456,13 @@ const histOf = it => { const p = histDb(histKey(it.id))[it.id] || []; const pub 
 // SVG graf: x = čas od zveřejnění, y = zhlédnutí
 function histSvg(pts, w, h, big) {
   const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]));
-  const pad = big ? 46 : 2, X = t => pad + (t - t0) / Math.max(1, t1 - t0) * (w - pad - (big ? 10 : 2)), Y = v => h - (big ? 24 : 2) - v / v1 * (h - (big ? 34 : 4));
+  const pad = big ? 54 : 2, X = t => pad + (t - t0) / Math.max(1, t1 - t0) * (w - pad - (big ? 10 : 2)), Y = v => h - (big ? 24 : 2) - v / v1 * (h - (big ? 34 : 4));
   const line = pts.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ');
   let ax = '';
   if (big) {
     for (let i = 0; i <= 4; i++) { const v = v1 * i / 4, y = Y(v); ax += `<line x1="${pad}" x2="${w - 10}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,.08)"/><text x="${pad - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="currentColor" opacity=".6">${n(Math.round(v))}</text>`; }
-    for (let i = 0; i <= 4; i++) { const t = t0 + (t1 - t0) * i / 4; ax += `<text x="${X(t)}" y="${h - 6}" text-anchor="${i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}" font-size="11" fill="currentColor" opacity=".6">${i ? '+' + ago((t - t0) / 3600e3).replace('před ', '') : 'zveřejnění'}</text>`; }
+    // úzký graf (mobil): jen 3 popisky času, ať se nepřekrývají
+    for (let i = 0; i <= 4; i += w < 450 ? 2 : 1) { const t = t0 + (t1 - t0) * i / 4; ax += `<text x="${X(t)}" y="${h - 6}" text-anchor="${i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}" font-size="11" fill="currentColor" opacity=".6">${i ? '+' + ago((t - t0) / 3600e3).replace('před ', '') : 'zveřejnění'}</text>`; }
     ax += pts.slice(1).map((p, i) => { const drop = p[1] < pts[i][1];
       return `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${drop ? 5 : 3}" fill="${drop ? 'var(--hot)' : 'var(--accent)'}"><title>${fmtDate(p[0])}: ${n(p[1])} zhlédnutí${drop ? ' – YouTube odečetl neplatná zhlédnutí' : ''}</title></circle>`; }).join('');
   }
@@ -2472,15 +2473,17 @@ function showHistory(it) {
     // pokles = YouTube přepočítal zhlédnutí (odečetl neplatná / od botů) – data jsou pravdivá, jen to vysvětlíme
     if (p[1] < prev[1]) return `<tr class="drop" title="YouTube u videa zhlédnutí přepočítal a odečetl neplatná (boti, opakované přehrání). U malých a čerstvých videí je to běžné."><td>${fmtDate(p[0])}</td><td>${ago((p[0] - pts[0][0]) / 3600e3).replace('před ', '+')}</td><td><b>${n(p[1])}</b></td><td colspan="2">⚠️ YouTube odečetl ${n(prev[1] - p[1])} neplatných zhlédnutí</td></tr>`;
     return `<tr><td>${fmtDate(p[0])}</td><td>${ago((p[0] - pts[0][0]) / 3600e3).replace('před ', '+')}</td><td><b>${n(p[1])}</b></td><td>+${n(p[1] - prev[1])}</td><td>${n(Math.round((p[1] - prev[1]) / Math.max(dh, 0.01)))}/h</td></tr>`; }).reverse();
+  // graf kreslit přesně v šířce okna – jinak se na mobilu text v bublině a popisky os zdeformují (smrsknou do šířky)
+  const GW = Math.round(Math.min(640, document.documentElement.clientWidth - 66));
   const ov = document.createElement('div'); ov.className = 'histov';
   ov.innerHTML = `<div class="histbox"><button class="histx" title="Zavřít">✖</button>
     <h3>📈 ${esc(it.t)}</h3><div class="ch">${esc(it.ch)} · ${n(it.views)} zhlédnutí · ${pts.length - 1} ${pts.length - 1 === 1 ? 'měření' : 'měření'}${pts.length <= 3 ? ' – víc bodů přibude s každou obnovou (na všech zařízeních)' : ''}</div>
-    ${histSvg(pts, 640, 260, true)}
+    ${histSvg(pts, GW, 260, true)}
     <table class="histtab"><tr><th>Kdy</th><th>Od zveřejnění</th><th>Zhlédnutí</th><th>Přírůstek</th><th>Rychlost</th></tr>${rows.join('')}</table></div>`;
   ov.addEventListener('click', e => { if (bgClick(e, ov) || e.target.closest('.histx')) ov.remove(); });
   document.body.append(ov);
   // najetí myší (nebo prstem) na graf: svislá čára + přesný počet zhlédnutí v tu chvíli (mezi měřeními dopočítaný)
-  const svg = ov.querySelector('svg.hist'), W = 640, Hh = 260, pad = 46;
+  const svg = ov.querySelector('svg.hist'), W = GW, Hh = 260, pad = 54;
   const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]));
   const X = t => pad + (t - t0) / Math.max(1, t1 - t0) * (W - pad - 10), Y = v => Hh - 24 - v / v1 * (Hh - 34);
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g'); g.style.display = 'none'; g.style.pointerEvents = 'none';
@@ -2498,7 +2501,9 @@ function showHistory(it) {
     g.querySelector('line').setAttribute('x1', X(tt)); g.querySelector('line').setAttribute('x2', X(tt));
     g.querySelector('circle').setAttribute('cx', X(tt)); g.querySelector('circle').setAttribute('cy', y);
     const label = `${vv.toLocaleString('cs')} zhlédnutí${exact ? '' : ' (odhad)'}`, sub = `${fmtDate(tt)} · ${ago((tt - t0) / 3600e3).replace('před ', '+')} od zveřejnění`;
-    const w = Math.max(label.length, sub.length) * 6.4 + 16, bx = X(tt) + w + 12 > W ? X(tt) - w - 10 : X(tt) + 10, by = Math.max(4, Math.min(Hh - 66, y - 46));
+    const w = Math.max(label.length, sub.length) * 6.4 + 16;
+    // bublina vpravo od čáry, když se nevejde, tak vlevo – a nikdy přes okraj grafu
+    const bx = Math.max(2, Math.min(W - w - 2, X(tt) + w + 12 > W ? X(tt) - w - 10 : X(tt) + 10)), by = Math.max(4, Math.min(Hh - 66, y - 46));
     const rect = g.querySelector('rect'); rect.setAttribute('x', bx); rect.setAttribute('y', by); rect.setAttribute('width', w);
     const txt = g.querySelector('text'); txt.setAttribute('x', bx + 8); txt.setAttribute('y', by + 16);
     const ta = g.querySelector('.a'), tb = g.querySelector('.b'); ta.textContent = label; tb.textContent = sub;
@@ -2770,6 +2775,7 @@ function renderHeader() {
     Object.keys(PERIODS).filter(k => !TIME_PERIODS.includes(k)).map(tab).join('');
   $('#periods').style.display = inVideos ? 'flex' : 'none';
   $('#periods').innerHTML = TIME_PERIODS.map(tab).join('');
+  STICK = stickFor(); setTimeout(applyStick); // 📱 přilepit záložky (stránka se někdy kreslí bez renderMain)
   $('#countries').style.display = S.period === 'ideas' || S.period === 'star' || S.period === 'cal' ? 'none' : 'flex';
   $('#countries').innerHTML = COUNTRIES.map(c => `<button data-country="${c.id}" class="${S.country === c.id ? 'on' : costAttr(openCost(c, S.period))}">${flag(c)}${esc(c.name)}</button>`).join('');
   const opt = (v, cur, l) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
@@ -3283,17 +3289,21 @@ function rerender() {
 // jen obsah stránky (hlavičku s polem hledání nepřekreslujeme, ať se nepřeruší psaní)
 // 📱 mobil: hlavička se posune nahoru tak, aby přilepená zůstala jen část od prvku STICK dolů
 // (u videí záložky + období + státy, v Nastavení řádek jeho záložek). Přepočítá se při každé změně výšky hlavičky.
-let STICK = null;
+var STICK = null; // var: hlavička se může kreslit dřív, než sem skript dojde
+// v kalendáři zůstane nahoře celá hlavička (logo, využití kvóty i záložky), jinde od záložek dolů
+function stickFor() { return S.period === 'cal' ? 'header > .top' : '#tabs'; }
 function applyStick() {
   const hd = $('header'), el = STICK && $(STICK);
-  if (!el || !matchMedia('(max-width:600px)').matches) { hd.style.position = ''; hd.style.top = ''; return; }
-  hd.style.position = 'sticky';
-  hd.style.top = -(el.getBoundingClientRect().top - hd.getBoundingClientRect().top - 4) + 'px'; // vzdálenost od začátku hlavičky
+  if (!el || !el.offsetParent || !matchMedia('(max-width:600px)').matches) { hd.style.position = ''; hd.style.top = ''; return; }
+  const top = -Math.round(el.getBoundingClientRect().top - hd.getBoundingClientRect().top - 4) + 'px'; // vzdálenost od začátku hlavičky
+  if (hd.style.position !== 'sticky') hd.style.position = 'sticky';
+  if (hd.style.top !== top) hd.style.top = top;
 }
-new ResizeObserver(() => applyStick()).observe($('header'));
+addEventListener('scroll', applyStick, {passive:true}); // pojistka: přepočet i při posouvání
+{ const ro = new ResizeObserver(() => applyStick()); ro.observe($('header')); for (const el of $('header').children) ro.observe(el); }
 addEventListener('resize', applyStick);
 function renderMain() {
-  STICK = S.view ? null : '#tabs'; // Nastavení si nastaví '.setnav' samo
+  STICK = S.view ? null : stickFor(); // Nastavení si nastaví '.setnav' samo
   // v kalendáři vyhledávání nic nedělá → schovat
   $('header .search').style.display = S.period === 'cal' && !S.view ? 'none' : '';
   applyStick();
