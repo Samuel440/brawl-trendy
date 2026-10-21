@@ -546,7 +546,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.67'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.68'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -793,14 +793,25 @@ const DRIVE_BACKEND = {
       }
     }));
     if (authErr) throw authErr;
-    const out = {}, suffix = `__${DRIVE.email}.json`;
+    const out = {}, suffix = `__${DRIVE.email}.json`, hist = {};
     DRIVE.mine = {};
     for (const [id, c] of Object.entries(DRIVE.cache)) {
       const {k, v, t} = c.e;
-      // historie grafů se skládá ze VŠECH souborů (každé zařízení i GitHub robot přidává své body), ostatní: novější vyhrává
-      if (out[k] && /^bt_h_/.test(k)) out[k] = {v:mergeKey(k, out[k].v, v || {}), t:Math.max(t, out[k].t)};
+      // historie grafů se skládá ze VŠECH souborů (každé zařízení i robot přidává své body) – sloučí se níž; ostatní: novější vyhrává
+      if (/^bt_h_/.test(k)) (hist[k] ||= []).push([id, c]);
       else if (!out[k] || t > out[k].t) out[k] = {v, t};
       if (c.name.endsWith(suffix)) DRIVE.mine[k] = id;
+    }
+    // slučování tisíců grafů je drahé → jen když se některý z jejich souborů změnil (jinak to každých 30 s zamrazilo prohlížeč)
+    DRIVE.hmerge ||= {};
+    for (const [k, list] of Object.entries(hist)) {
+      const sig = list.map(([id, c]) => id + c.mt).sort().join('|');
+      if (DRIVE.hmerge[k]?.sig !== sig) {
+        let v = null, t = 0;
+        for (const [, c] of list) { v = v ? mergeKey(k, v, c.e.v || {}) : c.e.v; t = Math.max(t, c.e.t); }
+        DRIVE.hmerge[k] = {sig, v, t};
+      }
+      out[k] = {v:DRIVE.hmerge[k].v, t:DRIVE.hmerge[k].t};
     }
     this.ready = true;
     return out;
@@ -1102,12 +1113,14 @@ async function newestSearch(c) {
 const NEWDONE = new Set();
 async function ingestNew() {
   if (!S.key) return 0; // bez klíče detaily videa stáhnout nejde – doplní je majitel
-  const by = {};
+  const by = {}, have = {};
+  // co už v seznamech státu máme – načíst jednou na stát (getSet rozbaluje celý velký seznam; stovky volání = zamrzlý prohlížeč)
+  const known = cid => have[cid] ??= new Set(TIME_PERIODS.flatMap(p => (ls(ckey(cid, p), null)?.items || []).map(i => i.id)));
   for (const [id, e] of Object.entries(ls('bt_new', {}))) {
     if (NEWDONE.has(id) || !COUNTRIES.some(c => c.id === e.cid)) continue;
     NEWDONE.add(id);
     if (!(Date.now() - Date.parse(e.pub) < 30 * 864e5)) continue;
-    if (TIME_PERIODS.some(p => getSet(e.cid, p)?.items.some(i => i.id === id))) continue; // už ho máme
+    if (known(e.cid).has(id)) continue; // už ho máme
     (by[e.cid] = by[e.cid] || []).push(id);
   }
   let n = 0;
@@ -3336,7 +3349,7 @@ function reroll() {
   if (!mine.length) return;
   MIX.a = pick(mine);
   if (MIX.mode === 'trend') { const pool = trendPool(); MIX.b = pool.length ? pick(pool) : null; }
-  else { do { MIX.b = pick(mine); } while (mine.length > 1 && MIX.b.id === MIX.a.id); }
+  else { const rest = mine.filter(v => v.id !== MIX.a.id); MIX.b = rest.length ? pick(rest) : MIX.a; }
 }
 // u videa ze zahraničí (v.c = stát) se pod originál vždy ukáže český překlad
 const mixCard = (v, lbl) => v ? `<a class="mixcard" href="${ytUrl(v.id)}" target="_blank" rel="noopener">
