@@ -37,9 +37,10 @@ header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.96);backdrop-fi
 /* hlavní lišta (co chci vidět) je velká a výrazná; státy pod ní jsou menší „kategorie“ v rámečku */
 nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}
 nav button{border-radius:999px;padding:10px 15px;font-weight:800;font-size:16px}
-nav .seg{border-radius:12px;border-width:2px}
-nav .seg button{padding:10px 13px;font-size:16px;font-weight:700}
-nav .seg button.on{font-weight:900}
+/* období (Novinky 24 h / Týden …) jsou menší – je to jen pod-výběr uvnitř videí */
+nav .seg{border-radius:9px;margin-right:6px}
+nav .seg button{padding:6px 10px;font-size:13.5px;font-weight:600}
+nav .seg button.on{font-weight:800}
 nav button.on{background:var(--accent);color:#111;border-color:var(--accent)}
 #countries{display:flex;gap:5px;margin-top:10px;overflow-x:auto;padding:5px 8px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:10px}
 #countries::before{content:"🌍 Stát:";color:var(--muted);font-size:12px;font-weight:700;white-space:nowrap;margin-right:4px}
@@ -150,7 +151,7 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
   nav{gap:4px;margin-top:6px}
   .seg button{padding:5px 8px;font-size:12.5px}
   nav button{padding:8px 11px;font-size:14px}
-  nav .seg button{padding:7px 8px;font-size:13px}
+  nav .seg button{padding:5px 7px;font-size:12px}
   .right{gap:4px;flex-wrap:wrap}
   .right button{padding:4px 7px;font-size:12px}
   #quota{font-size:11px}
@@ -413,7 +414,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.46'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.47'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1960,7 +1961,7 @@ function calEditor(id, date, focusScript, edit = true) {
       <details><summary class="ch">✏️ Odkazy ručně</summary><textarea class="calin" data-f="inspo" rows="2" placeholder="Odkazy na videa z YouTube (každý na řádek)">${esc(e.inspo)}</textarea></details>` : ''}
     <h4>🖼️ Co chci na miniatuře <span class="ch">(pro grafika)</span></h4>
     ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea>` : `<div class="caltxt">${esc(e.thumb) || '<span class="ch">Zatím nic.</span>'}</div>`}
-    <h4>📝 Scénář <button data-calfull>🖥️ Na celou obrazovku</button>${own ? ' <button data-caltext>📥 Vložit z uložených</button>' : ''}</h4>
+    <h4>📝 Scénář <button data-calfull title="Samostatné okno – posuneš si ho kamkoli, i na druhý monitor">🪟 Otevřít v okně</button>${own ? ' <button data-caltext>📥 Vložit z uložených</button>' : ''}</h4>
     ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt script">${esc(e.script) || '<span class="ch">Zatím nic.</span>'}</div>`}
     <h4>🎨 Poznámky (grafik a ostatní)</h4>
     <div class="calnotes">${notes()}</div>
@@ -1971,6 +1972,7 @@ function calEditor(id, date, focusScript, edit = true) {
   ov.addEventListener('input', ev => {
     const f = ev.target.dataset?.f; if (!f || !own) return;
     e[f] = ev.target.value; if (f === 'inspo') ov.querySelector('.calinspo').innerHTML = inspoHtml(e.inspo);
+    if (f === 'script' || f === 'title') scriptWindowSync(e.script, e.title);
     save();
   });
   // přidat / odebrat video z inspirace (z lišty uložených, z výběru, křížkem)
@@ -1997,7 +1999,7 @@ function calEditor(id, date, focusScript, edit = true) {
     if (b.matches('[data-caldel]')) { calDelete(e.id); ov.remove(); renderMain(); }
     else if (b.matches('[data-caledit2]')) { ov.remove(); calEditor(e.id); }
     else if (b.matches('[data-calview]')) { clearTimeout(timer); if (e.title || e.script || e.thumb || e.inspo) calSave(e); ov.remove(); renderMain(); calEditor(e.id, null, false, false); }
-    else if (b.matches('[data-calfull]')) teleprompter(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title);
+    else if (b.matches('[data-calfull]')) scriptWindow(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title);
     else if (b.matches('[data-calnoteadd]')) {
       const inp = ov.querySelector('[data-calnote]'), text = inp.value.trim(); if (!text) return;
       const g = ls(calgKey(), {}); (g[e.id] ||= []).push({at:Date.now(), text}); ss(calgKey(), g);
@@ -2010,6 +2012,42 @@ function calEditor(id, date, focusScript, edit = true) {
   const sc = ov.querySelector('[data-f="script"]');
   if (focusScript && sc) { sc.scrollIntoView({block:'center'}); sc.focus({preventScroll:true}); sc.setSelectionRange(sc.value.length, sc.value.length); sc.scrollTop = sc.scrollHeight; }
   else if (own && !e.title) ov.querySelector('[data-f="title"]')?.focus();
+}
+// 🪟 Scénář v samostatném okně (PC/Mac) – okno jde posunout kamkoli, i na druhý monitor, a měnit velikost.
+// Při psaní ve scénáři se text v okně rovnou aktualizuje. Na mobilu (nebo když prohlížeč okno zablokuje) celá obrazovka.
+let SCRIPT_WIN = null;
+function scriptWindow(text, title) {
+  if (matchMedia('(pointer:coarse)').matches) return teleprompter(text, title);
+  const w = window.open('', 'btscript', 'popup,width=560,height=760');
+  if (!w) return teleprompter(text, title);
+  SCRIPT_WIN = w;
+  const fs = +ls('bt_winfs', 26);
+  w.document.open();
+  w.document.write(`<!doctype html><html lang="cs"><head><meta charset="utf-8"><title>📝 ${esc(title || 'Scénář')}</title><style>
+    html,body{margin:0;height:100%;background:#0f1115;color:#f2f2f2;font-family:system-ui,Segoe UI,sans-serif}
+    body{display:flex;flex-direction:column}
+    .bar{display:flex;gap:6px;align-items:center;padding:8px 12px;background:#181b22;border-bottom:1px solid #2a2f3a;position:sticky;top:0}
+    .bar b{flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    button{background:#232834;color:#f2f2f2;border:1px solid #2a2f3a;border-radius:8px;padding:5px 10px;font:inherit;font-size:13px;cursor:pointer}
+    button:hover{border-color:#ffcc00}
+    #t{flex:1;overflow:auto;padding:16px 20px 30vh;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;font-weight:600;font-size:${fs}px}
+  </style></head><body><div class="bar"><b id="h"></b><button id="m">A−</button><button id="p">A+</button><button id="f" title="Celá obrazovka (Esc = zpět)">⛶</button></div><div id="t"></div></body></html>`);
+  w.document.close();
+  const d = w.document, t = d.getElementById('t');
+  d.getElementById('h').textContent = title || 'Scénář';
+  t.textContent = text || '(scénář je prázdný)';
+  const size = k => { const v = Math.max(14, Math.min(90, parseInt(t.style.fontSize || fs) + k)); t.style.fontSize = v + 'px'; ss('bt_winfs', v); };
+  d.getElementById('m').onclick = () => size(-3);
+  d.getElementById('p').onclick = () => size(3);
+  d.getElementById('f').onclick = () => d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen?.().catch(() => {});
+  w.focus();
+}
+// při psaní ve scénáři poslat nový text do otevřeného okna
+function scriptWindowSync(text, title) {
+  try { if (!SCRIPT_WIN || SCRIPT_WIN.closed) return;
+    SCRIPT_WIN.document.getElementById('t').textContent = text || '(scénář je prázdný)';
+    if (title != null) { SCRIPT_WIN.document.getElementById('h').textContent = title || 'Scénář'; SCRIPT_WIN.document.title = '📝 ' + (title || 'Scénář'); }
+  } catch {}
 }
 // 🖥️ Scénář na celou obrazovku – velké písmo, tmavé pozadí, velikost písma A−/A+, šipky/kolečko posouvají, Esc zavře
 function teleprompter(text, title) {
