@@ -162,6 +162,19 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .histtab tr.drop td{color:var(--hot)}
 .setnav{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:8px}
 .brow[hidden]{display:none}
+/* 📤 Přenos */
+.dropbox{background:var(--panel);border:2px dashed var(--line);border-radius:12px;padding:12px;margin:10px 0;display:flex;flex-direction:column;gap:8px}
+.dropbox.over{border-color:var(--accent);background:rgba(255,200,0,.06)}
+.dropbox textarea{width:100%;box-sizing:border-box;resize:vertical;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+.filebtn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--bg)}
+.filebtn:hover{border-color:var(--accent)}
+.droplist{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.drop{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.droptext{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font:inherit;max-height:220px;overflow:auto}
+.dropfile{display:flex;gap:10px;align-items:center;min-width:0}
+.dropfile img{width:100%;max-height:260px;object-fit:contain;border-radius:8px;background:var(--bg)}
+.dropfile:has(img){flex-direction:column;align-items:stretch}
+.dropicon{font-size:34px}
 .setnav button{font-size:12.5px;padding:5px 10px}
 .loglist{display:flex;flex-direction:column;gap:2px;max-height:520px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .logrow{display:grid;grid-template-columns:auto auto 1fr;gap:10px;font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)}
@@ -272,8 +285,8 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
-const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$)/;
-const APP_VERSION = '2026-10-21.28'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$)/;
+const APP_VERSION = '2026-10-21.29'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -366,7 +379,7 @@ const $ = s => document.querySelector(s);
 // Úložiště (REMOTE): ☁️ Google Disk (po přihlášení – funguje i na mobilu bez PC), jinak server.py na PC, jinak nic.
 var SHARED_RX = KV_RX;
 // ⭐, nápady a blokace: smazání se zapíše do bt_tomb (klíč|id → kdy), aby se při slučování smazané nevrátilo
-const TOMB_RX = /^bt_(star|mixsaved)(_g_[a-z0-9_]+)?$|^bt_block$/;
+const TOMB_RX = /^bt_(star|mixsaved|drop)(_g_[a-z0-9_]+)?$|^bt_block$/;
 function tomb(k, id) { const t = ls('bt_tomb', {}); t[k + '|' + id] = Date.now(); ss('bt_tomb', t); }
 function applyTomb(k, v) {
   const t = ls('bt_tomb', {}), dead = (key, at) => (t[key] || 0) >= (at || 0);
@@ -1217,7 +1230,7 @@ function mergeKey0(k, mine, theirs) {
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
   if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
   if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), items:capItems(byId(mine.items, theirs.items))};
-  if (/^bt_mixsaved/.test(k)) { const seen = new Set(mine.map(s => s.at)); return [...mine, ...theirs.filter(s => !seen.has(s.at))].sort((a, b) => b.at - a.at); }
+  if (/^bt_(mixsaved|drop)/.test(k)) { const seen = new Set(mine.map(s => s.at)); return [...mine, ...theirs.filter(s => !seen.has(s.at))].sort((a, b) => b.at - a.at); }
   if (k === 'bt_my') return (theirs.videos?.length || 0) > (mine.videos?.length || 0) ? theirs : mine;
   if (k === 'bt_block') return {videos:{...theirs.videos, ...mine.videos}, channels:{...theirs.channels, ...mine.channels}}; // tomb řeší vrácení
   if (/^bt_ch_/.test(k)) { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) out[id] = out[id] ? {...out[id], ...e, ids:[...new Set([...(out[id].ids || []), ...(e.ids || [])])].slice(-40), home:e.home || out[id].home,
@@ -1589,13 +1602,110 @@ async function downloadVersion(b) {
   const a = Object.assign(document.createElement('a'), {href:url, download:`${it.t.replace(/[\\/:*?"<>|]+/g, '').slice(0, 70).trim()} - verze ${+b.dataset.vdl + 1}.jpg`});
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
+// ---------- 📤 Přenos: texty a soubory mezi vlastními zařízeními (přes sdílený Disk) ----------
+// Každý člověk má svou kolekci bt_drop(_g_…) – seznam {at, kind:'text'|'file', text | name, mime, size, fid, dev}.
+// Soubory leží na Disku v podsložce „prenos“; v seznamu je jen odkaz (fid). Smazání = záznam v bt_tomb + smazání souboru.
+const dropKey = (who = meWho()) => 'bt_drop' + (who ? '_' + who : '');
+const DROP_MAX = 100 * 1024 * 1024; // 100 MB na soubor
+const DROPBLOB = new Map(); // fid → objectURL (náhledy obrázků, ať se nestahují pořád dokola)
+const devIcon = () => matchMedia('(pointer:coarse)').matches ? '📱' : '💻';
+async function dropFolder() {
+  if (DRIVE.drop) return DRIVE.drop;
+  const mime = "mimeType='application/vnd.google-apps.folder' and trashed=false";
+  return DRIVE.drop = (await dList(`name='prenos' and '${DRIVE.folder}' in parents and ${mime}`))[0]?.id || await dFolder('prenos', DRIVE.folder);
+}
+function dropAdd(item) {
+  ss(dropKey(), [item, ...ls(dropKey(), [])]);
+  if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); } // hned na Disk, ať to druhé zařízení vidí
+  logEvent(item.kind === 'text' ? `📤 poslal text ${shortT(item.text)}` : `📤 poslal soubor ${item.name}`);
+  renderMain();
+}
+async function dropFiles(files) {
+  if (REMOTE !== DRIVE_BACKEND) { status('📤 Přenos souborů jde jen s připojeným ☁️ Diskem.', true); return; }
+  for (const f of files) {
+    if (f.size > DROP_MAX) { status(`📤 ${f.name} je moc velký (max 100 MB).`, true); continue; }
+    const at = Date.now(), name = f.name || `obrazek-${new Date(at).toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
+    status(`📤 Nahrávám ${name} (${n(Math.round(f.size / 1024))} kB)…`);
+    try {
+      const r = await dUpload(`${at}~${name}`, await dropFolder(), f);
+      dropAdd({at, kind:'file', name, mime:f.type || 'application/octet-stream', size:f.size, fid:r.id, dev:devIcon()});
+      status(`📤 ${name} odesláno – na druhém zařízení se objeví do pár vteřin.`);
+    } catch (e) { status('📤 Nahrání se nepovedlo: ' + e.message, true); }
+  }
+}
+async function dropBlob(it) {
+  const r = await dGet(it.fid); return r.blob();
+}
+async function dropDownload(it, b) {
+  b.textContent = '…';
+  try {
+    const url = URL.createObjectURL(await dropBlob(it));
+    const a = Object.assign(document.createElement('a'), {href:url, download:it.name});
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+    b.textContent = '✔ Staženo';
+  } catch (e) { b.textContent = '⬇ Stáhnout'; status('Stažení se nepovedlo: ' + (e.message === 'auth' ? 'připoj znovu Disk' : e.message), true); }
+}
+// obrázek do schránky (vloží se pak třeba do Photoshopu / Canvy / zprávy) – schránka bere jen PNG
+async function dropCopyImage(it, b) {
+  try {
+    let blob = await dropBlob(it);
+    if (blob.type !== 'image/png') {
+      const img = await createImageBitmap(blob), c = Object.assign(document.createElement('canvas'), {width:img.width, height:img.height});
+      c.getContext('2d').drawImage(img, 0, 0); blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    }
+    await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+    b.textContent = '✔ Zkopírováno';
+  } catch (e) { b.textContent = '📋 Kopírovat'; status('Obrázek se nepodařilo zkopírovat – použij ⬇ Stáhnout.', true); }
+}
+function dropDelete(at) {
+  const k = dropKey(), list = ls(k, []), it = list.find(x => x.at === at);
+  if (it?.fid) dDel(it.fid);
+  tomb(k, at); ss(k, list.filter(x => x.at !== at));
+  if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
+  renderMain();
+}
+async function fillDropPreviews() {
+  for (const img of document.querySelectorAll('img[data-dropimg]')) {
+    const fid = img.dataset.dropimg;
+    if (!DROPBLOB.has(fid)) { try { DROPBLOB.set(fid, URL.createObjectURL(await (await dGet(fid)).blob())); } catch { continue; } }
+    img.src = DROPBLOB.get(fid);
+  }
+}
+function renderDrop(tabs, who) {
+  const mine = who === meWho(), list = ls(dropKey(who), []), drive = REMOTE === DRIVE_BACKEND;
+  const size = b => b > 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' kB';
+  const row = it => `<div class="drop" data-at="${it.at}">
+    <div class="ch">${it.dev || ''} ${fmtDate(it.at)}</div>
+    ${it.kind === 'text' ? `<pre class="droptext">${esc(it.text)}</pre>
+      <div class="actions"><button data-dropcopy="${it.at}">📋 Kopírovat text</button>${mine ? `<button class="blockbtn" data-dropdel="${it.at}" title="Smazat">✖</button>` : ''}</div>`
+    : `<div class="dropfile">${/^image\//.test(it.mime) ? `<img data-dropimg="${esc(it.fid)}" alt="">` : `<span class="dropicon">${/^video\//.test(it.mime) ? '🎬' : /pdf/.test(it.mime) ? '📄' : '📦'}</span>`}
+        <div><b>${esc(it.name)}</b><div class="ch">${size(it.size)}</div></div></div>
+      <div class="actions"><button data-dropdl="${it.at}">⬇ Stáhnout</button>${/^image\//.test(it.mime) ? `<button data-dropimgcopy="${it.at}">📋 Kopírovat</button>` : ''}${mine ? `<button class="blockbtn" data-dropdel="${it.at}" title="Smazat i z Disku">✖</button>` : ''}</div>`}
+  </div>`;
+  $('#main').innerHTML = tabs + `<div class="summary"><h3>📤 Přenos – ${esc(whoLabel(who))} – ${list.length}</h3>
+    <div class="row ch">Pošli si text, fotku nebo soubor z jednoho zařízení a hned si ho stáhni / zkopíruj na druhém (PC ↔ mobil ↔ Mac). Jde to přes tvůj Google Disk, nic se neposílá jinam.</div></div>
+    ${!drive ? '<div class="drivegate">☁️ <b>Přenos funguje přes Google Disk</b> – nejdřív ho připoj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : ''}
+    ${mine && drive ? `<div class="dropbox" id="dropZone">
+      <textarea id="dropText" rows="3" placeholder="Napiš nebo vlož text (odkaz, název, poznámku…)"></textarea>
+      <div class="actions"><button class="primary" id="btnDropText">📤 Poslat text</button>
+        <label class="filebtn">📎 Poslat fotku / soubor<input type="file" id="dropFile" multiple hidden></label>
+        <span class="ch">nebo sem přetáhni soubor / vlož obrázek Ctrl+V</span></div></div>` : ''}
+    ${list.length ? `<div class="droplist">${list.map(row).join('')}</div>` : '<div class="empty">Zatím nic.</div>'}`;
+  if (drive) fillDropPreviews();
+}
 function renderStars() {
+  if (S.starTab === 'drop') {
+    const who = S.starWho ?? meWho();
+    const tabs = `<div class="mixbar"><span class="seg"><button data-startab="videos">⭐ Videa</button><button data-startab="ideas">💡 Nápady</button><button data-startab="drop" class="on">📤 Přenos</button></span>
+      <span class="seg">${collections('bt_drop').map(w => `<button data-starwho="${w}" class="${w === who ? 'on' : ''}">${w === meWho() ? '👤 ' : '👥 '}${esc(whoLabel(w))} (${ls(dropKey(w), []).length})</button>`).join('')}</span></div>`;
+    return renderDrop(tabs, who);
+  }
   const ideas = S.starTab === 'ideas', base = ideas ? 'bt_mixsaved' : 'bt_star';
   const who = S.starWho ?? meWho(), mine = who === meWho();
   const coll = ideas ? ls(mixKey(who), []) : mine ? STARS : ls(starKey(who), {});
   const count = (b, w) => b === 'bt_star' ? Object.keys(w === meWho() ? STARS : ls(starKey(w), {})).length : ls(mixKey(w), []).length;
-  // nahoře: Videa / Nápady, pod tím kolekce lidí (vlastní je vybraná automaticky podle přihlášení)
-  const tabs = `<div class="mixbar"><span class="seg"><button data-startab="videos" class="${!ideas ? 'on' : ''}">⭐ Videa</button><button data-startab="ideas" class="${ideas ? 'on' : ''}">💡 Nápady</button></span>
+  // nahoře: Videa / Nápady / Přenos, pod tím kolekce lidí (vlastní je vybraná automaticky podle přihlášení)
+  const tabs = `<div class="mixbar"><span class="seg"><button data-startab="videos" class="${!ideas ? 'on' : ''}">⭐ Videa</button><button data-startab="ideas" class="${ideas ? 'on' : ''}">💡 Nápady</button><button data-startab="drop">📤 Přenos</button></span>
     <span class="seg">${collections(base).map(w => `<button data-starwho="${w}" class="${w === who ? 'on' : ''}">${w === meWho() ? '👤 ' : '👥 '}${esc(whoLabel(w))} (${count(base, w)})</button>`).join('')}</span></div>`;
   if (ideas) {
     $('#main').innerHTML = tabs + `<div class="summary"><h3>💡 Uložené nápady – ${esc(whoLabel(who))} – ${coll.length}</h3>
@@ -2568,6 +2678,11 @@ document.addEventListener('click', e => {
   else if (b.dataset.unblockch) { logEvent(`↩ odblokoval kanál ${BLOCK.channels[b.dataset.unblockch]?.name || ''}`); delete BLOCK.channels[b.dataset.unblockch]; tomb('bt_block.c', b.dataset.unblockch); saveBlock(); renderBlocked(); }
   else if (b.dataset.unblockv) { logEvent(`↩ odblokoval video ${shortT(BLOCK.videos[b.dataset.unblockv]?.t || '')}`); delete BLOCK.videos[b.dataset.unblockv]; tomb('bt_block.v', b.dataset.unblockv); saveBlock(); renderBlocked(); }
   else if (b.dataset.discover) discover(C(b.dataset.discover), true);
+  else if (b.id === 'btnDropText') { const t = $('#dropText').value.trim(); if (t) dropAdd({at:Date.now(), kind:'text', text:t, dev:devIcon()}); }
+  else if (b.dataset.dropcopy) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropcopy); navigator.clipboard?.writeText(it?.text || '').then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
+  else if (b.dataset.dropdl) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropdl); if (it) dropDownload(it, b); }
+  else if (b.dataset.dropimgcopy) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropimgcopy); if (it) dropCopyImage(it, b); }
+  else if (b.dataset.dropdel) dropDelete(+b.dataset.dropdel);
   else if (b.dataset.hist !== undefined) showHistory(CARD_ITEMS.get(b.closest('.card').dataset.id));
   else if (b.dataset.copytxt !== undefined) { navigator.clipboard?.writeText(b.dataset.copytxt).then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.dataset.jump) { const el = document.getElementById(b.dataset.jump); if (el) scrollTo({top:el.getBoundingClientRect().top + scrollY - (getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0) - 10, behavior:'smooth'}); }
@@ -2590,6 +2705,7 @@ document.addEventListener('input', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'mixNote') $('#btnMixSave').click(); if (e.key === 'Enter' && e.target.id === 'myInput') $('#btnMyLoad').click(); });
 document.addEventListener('change', e => {
   if (e.target.id === 'qScope') { S.qScope = e.target.value; onSearchInput(S.q); return; }
+  if (e.target.id === 'dropFile' && e.target.files.length) { dropFiles([...e.target.files]); e.target.value = ''; return; }
   if (e.target.id === 'importInput' && e.target.files[0]) {
     importData(e.target.files[0]).then(n => status(`💾 Import hotový – sloučeno ${n} částí dat.${REMOTE === DRIVE_BACKEND ? ' Nahrávám na Disk…' : ''}`)).catch(err => status(err.message, true));
     return;
@@ -2675,6 +2791,22 @@ async function pullShared() {
 })();
 // co minutu (když je stránka vidět) se podívat, jestli ostatní nenačetli něco nového – nic to nestojí
 setInterval(() => { if (!document.hidden && SYNC.ok) pullShared(); }, 30e3);
+// 📤 Přenos: obrázek vložený Ctrl+V nebo soubor přetažený na stránku se rovnou pošle (jen na záložce Přenos, ve vlastní kolekci)
+const onDropTab = () => S.period === 'star' && S.starTab === 'drop' && !S.view && (S.starWho ?? meWho()) === meWho();
+document.addEventListener('paste', e => {
+  if (!onDropTab()) return;
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length) { e.preventDefault(); dropFiles(files); }
+});
+document.addEventListener('dragover', e => { if (onDropTab()) { e.preventDefault(); $('#dropZone')?.classList.add('over'); } });
+document.addEventListener('dragleave', e => { if (onDropTab() && !e.relatedTarget) $('#dropZone')?.classList.remove('over'); });
+document.addEventListener('drop', e => {
+  if (!onDropTab()) return;
+  e.preventDefault(); $('#dropZone')?.classList.remove('over');
+  if (e.dataTransfer?.files?.length) dropFiles([...e.dataTransfer.files]);
+});
+// na záložce Přenos se Disk kontroluje co 5 s (jinak co 30 s), ať poslaná věc dorazí „hned“
+setInterval(() => { if (!document.hidden && SYNC.ok && onDropTab() && !(document.activeElement?.id === 'dropText' && $('#dropText').value)) pullShared(); }, 5e3);
 // Nová verze stránky: co 2 minuty (a při návratu do okna) se podívat, jestli na webu není novější APP_VERSION. Pokud ano, stránka se sama
 // obnoví (data zůstanou) – jen ne, když zrovna píšeš; pak ukáže tlačítko.
 async function checkNewVersion() {
