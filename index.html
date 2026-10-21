@@ -148,6 +148,17 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .pagehead #btnClose{margin-left:auto;width:38px;height:38px;border-radius:50%;font-size:16px;padding:0}
 .pagehead #btnClose:hover{border-color:var(--hot);color:var(--hot)}
 .settings{max-width:760px}
+/* 📈 graf zhlédnutí: malý na kartě, velký v okně */
+.histmini{display:flex;align-items:center;gap:6px;width:100%;padding:2px 6px;margin:4px 0;background:transparent;border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--muted)}
+.histmini:hover{border-color:var(--accent)}
+.histmini svg{flex:1;min-width:0}
+.histov{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}
+.histbox{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;width:min(720px,100%);max-height:90vh;overflow:auto;color:var(--text)}
+.histbox h3{margin:0 30px 4px 0;font-size:16px}
+.histbox svg{margin:12px 0;display:block}
+.histx{position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:50%;padding:0}
+.histtab{width:100%;font-size:12.5px;border-collapse:collapse}
+.histtab td,.histtab th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
 .setnav{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:8px}
 .setnav button{font-size:12.5px;padding:5px 10px}
 .loglist{display:flex;flex-direction:column;gap:2px;max-height:520px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
@@ -259,8 +270,8 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
-const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$)/;
-const APP_VERSION = '2026-10-21.18'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$)/;
+const APP_VERSION = '2026-10-21.19'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -296,7 +307,7 @@ async function kvLoad() {
 
 // ---------- Stav ----------
 const ls = (k, d) => { try { const v = kvRaw(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
-const ss = (k, v) => { kvSetRaw(k, JSON.stringify(v)); if (k.startsWith('bt_ch_') && typeof CHCACHE !== 'undefined') delete CHCACHE[k.slice(6)]; markShared(k); };
+const ss = (k, v) => { kvSetRaw(k, JSON.stringify(v)); if (k.startsWith('bt_ch_') && typeof CHCACHE !== 'undefined') delete CHCACHE[k.slice(6)]; if (k.startsWith('bt_h_') && typeof HCACHE !== 'undefined') delete HCACHE[k]; markShared(k); };
 const S = {
   key: ls('bt_key', ''),
   country: ls('bt_country', 'it'),
@@ -673,7 +684,7 @@ async function details(ids) {
       country[x.id] = x.snippet.country || ''; chLang[x.id] = x.snippet.defaultLanguage || '';
     });
   }
-  return vids.map(x => {
+  const res = vids.map(x => {
     const orig = x.snippet.title, tags = (x.snippet.tags || []).join(' ');
     return {
     id: x.id, t: orig, ch: x.snippet.channelTitle, chId: x.snippet.channelId,
@@ -689,6 +700,8 @@ async function details(ids) {
     bsN: BRAWL_RX.test(orig),
     bs: BRAWL_RX.test(orig + ' ' + tags + ' ' + x.snippet.description + ' ' + x.snippet.channelTitle),
   }; });
+  try { recordHistory(res); } catch (e) { console.warn('historie', e); } // 📈 bod do grafu zhlédnutí
+  return res;
 }
 // Youtuber, který dabuje do angličtiny (LukasBS), má originál anglicky, ale název přeložený do svého jazyka.
 // Když video má překlad jen do pár jazyků, je mezi nimi jeho domácí. Velké kanály dabují do 10+ jazyků – ty nebereme.
@@ -1147,6 +1160,7 @@ function mergeKey(k, mine, theirs) {
   return mergeKey0(k, mine, theirs);
 }
 function mergeKey0(k, mine, theirs) {
+  if (/^bt_h_/.test(k)) { const out = {...theirs}; for (const [id, p] of Object.entries(mine)) out[id] = out[id] ? thinPts([...out[id], ...p]) : p; return out; }
   if (k === 'bt_qs' || k === 'bt_disc') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
   if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
@@ -1558,6 +1572,61 @@ async function downloadThumb(it, b) {
   }
   b.textContent = '🖼️'; status('Miniaturu se nepodařilo stáhnout.', true);
 }
+// ---------- 📈 Historie zhlédnutí ----------
+// YouTube historii nedává – stránka si při každém stažení počtů zapíše bod [čas, zhlédnutí]. Sdílí se přes Disk
+// (každé zařízení přidá své body), rozděleno do 16 klíčů bt_h_0…f, ať soubory nejsou obří.
+// Drží se 45 dní a nejvýš 40 bodů na video (starší body se prořídí).
+const HIST_DAYS = 45, HIST_MAX = 40;
+const histKey = id => 'bt_h_' + (id.charCodeAt(0) % 16).toString(16);
+var HCACHE = {}; // klíč → objekt (ss ho zahodí při zápisu)
+const histDb = k => HCACHE[k] ??= ls(k, {});
+function thinPts(p) {
+  p = [...new Map(p.map(x => [x[0], x])).values()].sort((a, b) => a[0] - b[0]);
+  if (p.length <= HIST_MAX) return p;
+  const out = [p[0]], step = (p.length - 1) / (HIST_MAX - 1);
+  for (let i = 1; i < HIST_MAX - 1; i++) out.push(p[Math.round(i * step)]);
+  out.push(p[p.length - 1]); return out;
+}
+function recordHistory(items) {
+  const now = Date.now(), byKey = {};
+  for (const it of items) {
+    if (!it?.id || !(Date.now() - new Date(it.pub) < HIST_DAYS * 864e5)) continue;
+    const k = histKey(it.id), db = byKey[k] ||= {...histDb(k)};
+    const p = db[it.id] || [], last = p[p.length - 1];
+    if (last && (last[1] === it.views || now - last[0] < 10 * 60e3)) continue; // stejné číslo / před chvílí
+    db[it.id] = thinPts([...p, [now, it.views]]);
+  }
+  for (const [k, db] of Object.entries(byKey)) {
+    for (const [id, p] of Object.entries(db)) if (now - p[p.length - 1][0] > HIST_DAYS * 864e5) delete db[id];
+    ss(k, db);
+  }
+}
+const histOf = it => { const p = histDb(histKey(it.id))[it.id] || []; const pub = +new Date(it.pub);
+  const pts = [[pub, 0], ...p.filter(x => x[0] > pub)]; if (!p.length || p[p.length - 1][1] !== it.views) pts.push([Math.max(Date.now() - 1, pts[pts.length - 1][0] + 1), it.views]); return pts; };
+// SVG graf: x = čas od zveřejnění, y = zhlédnutí
+function histSvg(pts, w, h, big) {
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]));
+  const pad = big ? 46 : 2, X = t => pad + (t - t0) / Math.max(1, t1 - t0) * (w - pad - (big ? 10 : 2)), Y = v => h - (big ? 24 : 2) - v / v1 * (h - (big ? 34 : 4));
+  const line = pts.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ');
+  let ax = '';
+  if (big) {
+    for (let i = 0; i <= 4; i++) { const v = v1 * i / 4, y = Y(v); ax += `<line x1="${pad}" x2="${w - 10}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,.08)"/><text x="${pad - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="currentColor" opacity=".6">${n(Math.round(v))}</text>`; }
+    for (let i = 0; i <= 4; i++) { const t = t0 + (t1 - t0) * i / 4; ax += `<text x="${X(t)}" y="${h - 6}" text-anchor="${i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}" font-size="11" fill="currentColor" opacity=".6">${i ? '+' + ago((t - t0) / 3600e3).replace('před ', '') : 'zveřejnění'}</text>`; }
+    ax += pts.slice(1).map(p => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="3" fill="var(--accent)"><title>${fmtDate(p[0])}: ${n(p[1])} zhlédnutí</title></circle>`).join('');
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" class="hist">${ax}<polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="${big ? 2.5 : 1.6}" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+}
+function showHistory(it) {
+  const pts = histOf(it), rows = pts.slice(1).map((p, i) => { const prev = pts[i]; const dh = (p[0] - prev[0]) / 3600e3;
+    return `<tr><td>${fmtDate(p[0])}</td><td>${ago((p[0] - pts[0][0]) / 3600e3).replace('před ', '+')}</td><td><b>${n(p[1])}</b></td><td>+${n(p[1] - prev[1])}</td><td>${n(Math.round((p[1] - prev[1]) / Math.max(dh, 0.01)))}/h</td></tr>`; }).reverse();
+  const ov = document.createElement('div'); ov.className = 'histov';
+  ov.innerHTML = `<div class="histbox"><button class="histx" title="Zavřít">✖</button>
+    <h3>📈 ${esc(it.t)}</h3><div class="ch">${esc(it.ch)} · ${n(it.views)} zhlédnutí · ${pts.length - 1} ${pts.length - 1 === 1 ? 'měření' : 'měření'}${pts.length <= 3 ? ' – víc bodů přibude s každou obnovou (na všech zařízeních)' : ''}</div>
+    ${histSvg(pts, 640, 260, true)}
+    <table class="histtab"><tr><th>Kdy</th><th>Od zveřejnění</th><th>Zhlédnutí</th><th>Přírůstek</th><th>Rychlost</th></tr>${rows.join('')}</table></div>`;
+  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('.histx')) ov.remove(); });
+  document.body.append(ov);
+}
 function card(it, i, showCountry) {
   CARD_ITEMS.set(it.id, it);
   const tags = [];
@@ -1584,6 +1653,7 @@ function card(it, i, showCountry) {
       <a class="title" href="${ytUrl(it.id)}" target="_blank" rel="noopener" title="${esc(it.t)}" data-orig="${esc(it.t)}" data-lang="${langOk(it, it.c) ? it.c.lang : 'auto'}">${esc(S.trAuto && TR[it.t] ? TR[it.t] : it.t)}</a>
       <div class="ch"><a class="chlink" href="https://www.youtube.com/channel/${esc(it.chId)}/videos" target="_blank" rel="noopener" title="Otevřít kanál na YouTube">${esc(it.ch)}</a> · ${n(it.subs)} odběr.</div>
       <div class="stats"><span><b>${n(it.views)}</b> zhlédnutí</span><span>${n(it.vph)}/h</span><span>${ago(it.ageH)}</span></div>
+      <button class="histmini" data-hist title="Jak video nabíralo zhlédnutí – klikni pro velký graf">${histSvg(histOf(it), 200, 30)}<span>📈</span></button>
       <div class="tags">${tags.join('')}</div>
       <div class="idea">💡 ${esc(ideaFor(it))}</div>
       <div class="actions"><button data-tr>🌐 ${S.trAuto && TR[it.t] ? 'Originál' : 'Přeložit'}</button><button data-copy>📋 Kopírovat</button><button data-thumb title="Stáhnout miniaturu v plné kvalitě">🖼️</button><a href="${trUrl(it.t)}" target="_blank" rel="noopener" title="Otevřít v Google Překladači">↗</a>${isOwner() ? '<button class="blockbtn" data-block title="Nemá to nic s Brawlem – zablokovat">✖</button>' : ''}</div>
@@ -2390,6 +2460,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.unblockch) { logEvent(`↩ odblokoval kanál ${BLOCK.channels[b.dataset.unblockch]?.name || ''}`); delete BLOCK.channels[b.dataset.unblockch]; tomb('bt_block.c', b.dataset.unblockch); saveBlock(); renderBlocked(); }
   else if (b.dataset.unblockv) { logEvent(`↩ odblokoval video ${shortT(BLOCK.videos[b.dataset.unblockv]?.t || '')}`); delete BLOCK.videos[b.dataset.unblockv]; tomb('bt_block.v', b.dataset.unblockv); saveBlock(); renderBlocked(); }
   else if (b.dataset.discover) discover(C(b.dataset.discover), true);
+  else if (b.dataset.hist !== undefined) showHistory(CARD_ITEMS.get(b.closest('.card').dataset.id));
   else if (b.dataset.copytxt !== undefined) { navigator.clipboard?.writeText(b.dataset.copytxt).then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.dataset.jump) { const el = document.getElementById(b.dataset.jump); if (el) scrollTo({top:el.getBoundingClientRect().top + scrollY - (getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0) - 10, behavior:'smooth'}); }
   else if (b.id === 'btnAddCh') addChannelUI();
@@ -2447,6 +2518,7 @@ if (!ls('bt_mig_dub', false)) {
 const cleanupRemovedCountries = () => { for (const k of kvKeys()) if (/^bt_(c|ch|arch)_(id|vn|sa)(_|$)/.test(k)) kvDelete(k); };
 // po stažení sdílených dat od ostatních obnovit to, co je načtené v paměti
 function reloadMemory() {
+  HCACHE = {}; CHMED = null; // historie a mediány kanálů se načtou znovu (mohly přijít body z jiných zařízení)
   const swap = (obj, val) => { for (const k of Object.keys(obj)) delete obj[k]; Object.assign(obj, val); };
   swap(STARS, ls(starKey(), {})); swap(BLOCK, ls('bt_block', {videos:{}, channels:{}}));
   swap(AI_CACHE, ls('bt_aicache', {})); swap(TR, ls('bt_tr', {})); swap(QTR, ls('bt_qtr', {}));
