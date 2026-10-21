@@ -193,6 +193,30 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .dragging{opacity:.4}
 .dragover{outline:3px dashed var(--accent);outline-offset:3px}
 /* 📅 kalendář */
+/* 🗓️ kalendář jako tabulka: DEN | NÁZEV | INSPIRACE | POPIS K MINIATUŘE */
+.caltable{display:grid;grid-template-columns:96px minmax(220px,1.3fr) minmax(200px,1.1fr) minmax(200px,1.2fr);border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--line);gap:1px}
+.caltable > *{background:var(--panel);min-width:0}
+.ch1{padding:10px 8px;text-align:center;font-weight:900;font-size:clamp(13px,1.5vw,18px);letter-spacing:.5px;color:#111}
+.ch1.h0{background:#e9e9ef}.ch1.h1{background:#fff}.ch1.h2{background:#ff9f0a}.ch1.h3{background:#2ee6f0}
+.ct{border:0;border-radius:0;margin:0;padding:8px 10px;text-align:left;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;line-height:1.35;white-space:normal;overflow-wrap:anywhere;color:var(--text)}
+button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)}
+.ct.cday{flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;font-size:13px}
+.ct.cadd{grid-column:2 / -1}
+.ct.today{background:color-mix(in srgb,var(--panel) 88%,var(--accent) 12%)}
+.ct.weekend{background:color-mix(in srgb,var(--panel) 92%,#fff 3%)}
+.ct.past{opacity:.55}
+.ct.weekstart{border-top:3px solid var(--line)}
+.cname{flex-direction:column;align-items:flex-start;justify-content:center}
+.ctitle{font-size:clamp(17px,1.7vw,22px);font-weight:800;line-height:1.25;text-align:left}
+.cinspo img{width:96px;border-radius:5px}
+.cthumb{font-size:12.5px}
+@media (max-width:760px){
+  .caltable{grid-template-columns:1fr;background:transparent;border:0;gap:6px}
+  .ch1{display:none}
+  .ct.cday{grid-row:auto !important;flex-direction:row;background:var(--bg);font-size:14px}
+  .ct.cadd{grid-column:auto}
+  .ct{border-radius:8px}
+}
 /* dny pod sebou: vlevo datum, vpravo videa toho dne vedle sebe */
 .calgrid{display:flex;flex-direction:column;gap:6px}
 .calday{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-width:0}
@@ -361,7 +385,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.34'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.35'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1730,21 +1754,23 @@ function renderCal() {
   const days = Array.from({length:14}, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
   const today = isoDay(t);
   const badge = e => [e.script ? '📝' : '', e.thumb ? '🖼️' : '', ytIds(e.inspo).length ? `💡${ytIds(e.inspo).length}` : '', calNotes(e.id).length ? `🎨${calNotes(e.id).length}` : ''].filter(Boolean).join(' ');
+  // tabulka jako v Google Tabulkách: DEN | NÁZEV (největší) | INSPIRACE | POPIS K MINIATUŘE – každé video jeden řádek; scénář až po rozkliknutí
   const day = d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => a.at - b.at);
-    return `${d.getDay() === 1 && iso !== isoDay(days[0]) ? '<div class="calsep"></div>' : ''}<div class="calday ${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''} ${d.getDay() % 6 === 0 ? 'weekend' : ''}">
-      <div class="caldh"><b>${DOW[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}.</b>${iso === today ? '<span class="tag hot">dnes</span>' : ''}</div>
-      <div class="calvids">${list.map(e => { const ths = ytIds(e.inspo).slice(0, 3);
-        // vlevo název, vpravo pod sebou: 💡 inspirace (miniatury) a 🖼️ co chci na miniatuře; scénář až po rozkliknutí
-        return `<button class="calvid" data-calopen="${esc(e.id)}"><span class="calvt"><b>${esc(e.title || '(bez názvu)')}</b><span class="ch">${badge(e) || 'zatím jen název'}</span></span>
-          <span class="calvd"><span class="calrow"><span class="lbl">💡 Inspirace</span>${ths.length ? ths.map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`).join('') + (ytIds(e.inspo).length > 3 ? `<span class="ch">+${ytIds(e.inspo).length - 3}</span>` : '') : '<span class="ch">–</span>'}</span>
-          <span class="calrow"><span class="lbl">🖼️ Miniatura</span><span class="calthumb">${e.thumb ? esc(e.thumb) : '<span class="ch">–</span>'}</span></span></span></button>`; }).join('')}
-      ${own ? `<button class="caladd" data-caladd="${iso}">＋ video</button>` : list.length ? '' : '<span class="ch">–</span>'}</div></div>`; };
+    const cls = `${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''} ${d.getDay() % 6 === 0 ? 'weekend' : ''} ${d.getDay() === 1 && iso !== isoDay(days[0]) ? 'weekstart' : ''}`;
+    const dayCell = (n) => `<div class="ct cday ${cls}"${n > 1 ? ` style="grid-row:span ${n}"` : ''}><b>${DOW[d.getDay()]}</b> ${d.getDate()}. ${d.getMonth() + 1}.${iso === today ? '<span class="tag hot">dnes</span>' : ''}</div>`;
+    const rows = list.map((e, i) => { const ids = ytIds(e.inspo);
+      return `${i === 0 ? dayCell(list.length + (own ? 1 : 0)) : ''}
+        <button class="ct cname ${cls}" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '(bez názvu)')}</span><span class="ch">${badge(e)}</span></button>
+        <button class="ct cinspo ${cls}" data-calopen="${esc(e.id)}">${ids.length ? ids.slice(0, 4).map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`).join('') + (ids.length > 4 ? `<span class="ch">+${ids.length - 4}</span>` : '') : '<span class="ch">–</span>'}</button>
+        <button class="ct cthumb ${cls}" data-calopen="${esc(e.id)}">${e.thumb ? esc(e.thumb) : '<span class="ch">–</span>'}</button>`; }).join('');
+    const add = own ? `<div class="ct cadd ${cls}"><button class="caladd" data-caladd="${iso}">＋ video</button></div>` : '';
+    return list.length ? rows + add : dayCell(1) + (add || `<div class="ct cadd ${cls}"><span class="ch">–</span></div>`); };
   const later = all.filter(e => e.date > isoDay(days[13])).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
   $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>
       <div class="row"><button data-calshift="-1">◀ Týden zpět</button><button data-calshift="0">Dnes</button><button data-calshift="1">Týden dál ▶</button>
         ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div></div>
-    <div class="calgrid">${days.map(day).join('')}</div>`;
+    <div class="caltable"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
 }
 // název / počty videa podle ID (uložené, nebo cokoli, co bylo na stránce vidět)
 const vidInfo = id => STARS[id] || CARD_ITEMS.get(id) || null;
