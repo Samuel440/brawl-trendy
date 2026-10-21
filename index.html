@@ -202,9 +202,16 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .caldh{display:flex;flex-direction:column;gap:2px;width:92px;flex:none;font-size:13px}
 .calvids{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0;align-items:center}
 .calsep{height:6px}
-.calvid{display:flex;gap:8px;align-items:center;text-align:left;padding:5px 5px 5px 10px;font-size:13px;line-height:1.3;white-space:normal;overflow-wrap:anywhere;max-width:560px}
-.calvid > span{flex:1;min-width:0}
-.calvid img{width:80px;border-radius:5px;flex:none}
+.calvids{flex-direction:column;align-items:stretch}
+.calvids .caladd{align-self:flex-start}
+.calvid{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:8px 10px;font-size:13px;line-height:1.3;white-space:normal;overflow-wrap:anywhere;width:100%}
+.calvt{display:flex;flex-direction:column;gap:3px;width:230px;flex:none}
+.calvd{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
+.calrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
+.calrow .lbl{width:92px;flex:none;font-size:12px;opacity:.75}
+.calrow img{width:88px;border-radius:5px;flex:none}
+.calthumb{flex:1;min-width:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+@media (max-width:700px){.calvid{flex-direction:column}.calvt{width:100%}.calrow .lbl{width:auto;flex-basis:100%}}
 .calvid .ch{font-size:11.5px}
 @media (max-width:600px){.caldh{width:100%;flex-direction:row;gap:8px}}
 .caladd{font-size:12px;opacity:.7}
@@ -354,7 +361,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.33'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.34'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1727,7 +1734,10 @@ function renderCal() {
     return `${d.getDay() === 1 && iso !== isoDay(days[0]) ? '<div class="calsep"></div>' : ''}<div class="calday ${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''} ${d.getDay() % 6 === 0 ? 'weekend' : ''}">
       <div class="caldh"><b>${DOW[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}.</b>${iso === today ? '<span class="tag hot">dnes</span>' : ''}</div>
       <div class="calvids">${list.map(e => { const ths = ytIds(e.inspo).slice(0, 3);
-        return `<button class="calvid" data-calopen="${esc(e.id)}"><span><b>${esc(e.title || '(bez názvu)')}</b><br><span class="ch">${badge(e) || 'zatím jen název'}</span></span>${ths.map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="" title="Inspirace">`).join('')}</button>`; }).join('')}
+        // vlevo název, vpravo pod sebou: 💡 inspirace (miniatury) a 🖼️ co chci na miniatuře; scénář až po rozkliknutí
+        return `<button class="calvid" data-calopen="${esc(e.id)}"><span class="calvt"><b>${esc(e.title || '(bez názvu)')}</b><span class="ch">${badge(e) || 'zatím jen název'}</span></span>
+          <span class="calvd"><span class="calrow"><span class="lbl">💡 Inspirace</span>${ths.length ? ths.map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`).join('') + (ytIds(e.inspo).length > 3 ? `<span class="ch">+${ytIds(e.inspo).length - 3}</span>` : '') : '<span class="ch">–</span>'}</span>
+          <span class="calrow"><span class="lbl">🖼️ Miniatura</span><span class="calthumb">${e.thumb ? esc(e.thumb) : '<span class="ch">–</span>'}</span></span></span></button>`; }).join('')}
       ${own ? `<button class="caladd" data-caladd="${iso}">＋ video</button>` : list.length ? '' : '<span class="ch">–</span>'}</div></div>`; };
   const later = all.filter(e => e.date > isoDay(days[13])).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
   $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>
