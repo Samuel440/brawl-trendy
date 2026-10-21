@@ -254,7 +254,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$)/;
-const APP_VERSION = '2026-10-21.4'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.5'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -388,6 +388,10 @@ const SERVER_BACKEND = {
 // a při čtení vyhrává u každého klíče novější. Verze miniatur jsou obrázky v podsložce thumbs: <video>~<čas>~<otisk>.jpg.
 const GOOGLE_CLIENT_ID = '607160039390-r4gosf64n3cacs4tm330v9uh1lkavnen.apps.googleusercontent.com'; // Client ID z Google Cloud (OAuth, webová aplikace)
 const DRIVE_FOLDER = 'Brawl Trendy – data';
+// Majitelské účty (oba Samkovy) – ve veřejném kódu jen jako otisk, ne čitelné e-maily
+const OWNER_HASHES = ['wafq0zr5bd', 'si5wp18hs6'];
+function emailHash(s) { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; for (const ch of String(s).trim().toLowerCase()) { const c = ch.charCodeAt(0); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36); }
+const isOwnerEmail = e => !!e && OWNER_HASHES.includes(emailHash(e));
 const DAPI = 'https://www.googleapis.com/drive/v3';
 const DRIVE = {token:null, exp:0, email:'', folder:null, thumbs:null, cache:{}, mine:{}, state:'off', error:''};
 const gClientId = () => GOOGLE_CLIENT_ID || ls('bt_gcid', '');
@@ -427,7 +431,7 @@ async function gfetch(url, opts = {}) {
 async function dList(q) {
   const out = []; let page;
   do {
-    const r = await (await gfetch(`${DAPI}/files?` + new URLSearchParams({q, pageSize:1000, orderBy:'createdTime', fields:'nextPageToken,files(id,name,modifiedTime,ownedByMe)', ...(page ? {pageToken:page} : {})}))).json();
+    const r = await (await gfetch(`${DAPI}/files?` + new URLSearchParams({q, pageSize:1000, orderBy:'createdTime', fields:'nextPageToken,files(id,name,modifiedTime,ownedByMe,owners(emailAddress))', ...(page ? {pageToken:page} : {})}))).json();
     out.push(...r.files); page = r.nextPageToken;
   } while (page);
   return out;
@@ -452,8 +456,11 @@ async function driveInit(create) {
   ss('bt_gemail', DRIVE.email);
   const mime = "mimeType='application/vnd.google-apps.folder' and trashed=false";
   const found = await dList(`name='${dEsc(DRIVE_FOLDER)}' and ${mime}`);
+  // přednost má složka, kterou vlastní některý z majitelských účtů (kdyby si někdo omylem založil vlastní)
+  found.sort((a, b) => isOwnerEmail(b.owners?.[0]?.emailAddress) - isOwnerEmail(a.owners?.[0]?.emailAddress));
   if (!found.length && !create) { DRIVE.state = 'nofolder'; return false; }
-  DRIVE.owner = found.length ? !!found[0].ownedByMe : true; // majitel složky = majitel stránky (smí blokovat)
+  // majitel = kdo vlastní složku, nebo kterýkoli z majitelských účtů (smí blokovat, má kolekci „Majitel“)
+  DRIVE.owner = isOwnerEmail(DRIVE.email) || (found.length ? !!found[0].ownedByMe : true);
   DRIVE.folder = found[0]?.id || await dFolder(DRIVE_FOLDER);
   DRIVE.thumbs = (await dList(`name='thumbs' and '${DRIVE.folder}' in parents and ${mime}`))[0]?.id || await dFolder('thumbs', DRIVE.folder);
   DRIVE.state = 'on';
@@ -794,7 +801,7 @@ async function fetchChannelVideos(c, p, have) {
 // extra = otevření ze seznamu státu (může přidat hledání nejnovějších)
 function costFor(c, p, extra) {
   if (!PERIODS[p].hours) return 1;
-  const set = getSet(c.id, p);
+  const set = baseSet(c.id, p);
   if (set && Date.now() - (set.searchTs || set.ts || 0) < SEARCH_EVERY * 60e3) return 0;
   if (!searchLeft()) return 0; // hledání došla → stejně proběhne jen lehká aktualizace
   return extra && needsDateSearch(c) ? 2 : 1;
@@ -820,8 +827,17 @@ const isFresh = (set, p) => set && (Date.now() - set.ts) < PERIODS[p].ttl * 60e3
 // (nové počty zhlédnutí + nová videa ze sledovaných kanálů – hledání nestojí). Když hledání dojdou, jede jen lehká.
 const SEARCH_EVERY_OPTS = [6, 12, 24, 48];
 var SEARCH_EVERY = S.severy * 60;
+// Chybějící Novinky se dají vzít z Týdne (a Týden z Měsíce) – videa z posledních 24 h / 7 dní už tam jsou,
+// takže stačí levná obnova a žádné hledání
+function baseSet(cid, p) {
+  const set = getSet(cid, p); if (set) return set;
+  const parent = {day:'week', week:'month'}[p], ps = parent && getSet(cid, parent);
+  if (!ps || !(ps.searchTs || ps.ts)) return null;
+  const since = Date.now() - PERIODS[p].hours * 3600e3;
+  return {ts:0, searchTs:ps.searchTs || ps.ts, items:ps.items.filter(i => new Date(i.pub) >= since)};
+}
 async function ensureSet(c, p, force, light, extra) {
-  let set = getSet(c.id, p);
+  let set = baseSet(c.id, p);
   if (!force && isFresh(set, p)) return set;
   const canLight = set && PERIODS[p].hours;
   // sady bez searchTs (vzniklé přesunem z Novinek do Týdne apod.) berou čas vzniku – jinak by se hledalo pokaždé
