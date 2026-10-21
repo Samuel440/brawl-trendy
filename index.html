@@ -328,7 +328,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.30'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.31'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1545,7 +1545,7 @@ function toggleStar(it, b) {
 // čísla u uložených videí obnovíme nejvýš jednou za hodinu (stojí ~2 jednotky za 50 videí)
 async function refreshStars() {
   const ids = Object.keys(STARS);
-  if (!ids.length || Date.now() - ls('bt_star_ts', 0) < 60 * 60e3) return;
+  if (!S.key || !ids.length || Date.now() - ls('bt_star_ts', 0) < 60 * 60e3) return; // 👀 bez klíče počty neobnovujeme (dělá to robot)
   ss('bt_star_ts', Date.now());
   try {
     for (const it of await details(ids)) if (STARS[it.id]) STARS[it.id] = {...STARS[it.id], views:it.views, likes:it.likes, com:it.com, subs:it.subs};
