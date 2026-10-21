@@ -248,8 +248,8 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
-const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$)/;
-const APP_VERSION = '2026-10-20.7'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$)/;
+const APP_VERSION = '2026-10-21.1'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -271,9 +271,14 @@ async function kvLoad() {
   const rows = await idbKv('readonly', st => ({keys:st.getAllKeys(), vals:st.getAll()}));
   rows.keys.result.forEach((k, i) => KV.set(k, rows.vals.result[i]));
   KV_OK = true;
-  // co je ještě v localStorage, je novější (po přesunu se odtud maže) → má přednost
+  // co je ještě v localStorage (stará verze, nebo zápis, než se IndexedDB načetla), se SLOUČÍ s IndexedDB –
+  // nikdy ji nepřepíše (jinak by třeba prázdná blokace nebo malý seznam smazaly ten velký)
   const moved = Object.keys(localStorage).filter(k => KV_RX.test(k));
-  for (const k of moved) kvSetRaw(k, localStorage.getItem(k));
+  for (const k of moved) {
+    let v = localStorage.getItem(k);
+    try { if (KV.has(k)) v = JSON.stringify(mergeKey(k, JSON.parse(v), JSON.parse(KV.get(k)))); } catch {}
+    kvSetRaw(k, v);
+  }
   clearTimeout(kvTimer); await kvFlush();
   moved.forEach(k => localStorage.removeItem(k));
 }
@@ -331,7 +336,18 @@ const $ = s => document.querySelector(s);
 // Sdílí se videa, kanály, archiv, uložené, blokace, nápady a překlady. Nesdílí se API klíč, kvóta ani nastavení.
 // Úložiště (REMOTE): ☁️ Google Disk (po přihlášení – funguje i na mobilu bez PC), jinak server.py na PC, jinak nic.
 var SHARED_RX = KV_RX;
-const MERGE_RX = /^bt_(c_|ch_|arch_|tr$|qtr$|aicache$)/; // sdílí se právě ta velká data
+// ⭐, nápady a blokace: smazání se zapíše do bt_tomb (klíč|id → kdy), aby se při slučování smazané nevrátilo
+const TOMB_RX = /^bt_(star|mixsaved)(_g_[a-z0-9_]+)?$|^bt_block$/;
+function tomb(k, id) { const t = ls('bt_tomb', {}); t[k + '|' + id] = Date.now(); ss('bt_tomb', t); }
+function applyTomb(k, v) {
+  const t = ls('bt_tomb', {}), dead = (key, at) => (t[key] || 0) >= (at || 0);
+  if (!v) return v;
+  if (k === 'bt_block') {
+    for (const [part, p] of [['videos', 'v'], ['channels', 'c']]) for (const [id, e] of Object.entries(v[part] || {})) if (dead(`${k}.${p}|${id}`, e.at)) delete v[part][id];
+  } else if (Array.isArray(v)) return v.filter(s => !dead(k + '|' + s.at, s.at));
+  else for (const [id, e] of Object.entries(v)) if (dead(k + '|' + id, e.at)) delete v[id];
+  return v;
+}
 var SYNC = {meta:null, dirty:{}, timer:null, ok:null, last:0};
 var REMOTE = null;
 function syncMeta() { return SYNC.meta ??= (() => { try { return JSON.parse(localStorage.getItem('bt_meta')) || {}; } catch { return {}; } })(); }
@@ -522,11 +538,13 @@ async function syncPull() {
   SYNC.ok = true;
   const meta = syncMeta(); let changed = false;
   SYNC.pulling = true;
-  for (const [k, e] of Object.entries(remote)) {
-    if (!SHARED_RX.test(k) || (meta[k] || 0) >= e.t) continue;
-    // společná data (videa, kanály, archiv, překlady) se SLUČUJÍ – když dva lidi mění totéž naráz, nic se neztratí;
-    // osobní věci (⭐, nápady, protokol) a blokace má vždycky jen jeden zapisovatel, tam stačí vzít novější
-    const mine = MERGE_RX.test(k) ? ls(k, null) : null;
+  // záznamy o smazání nejdřív, ať se podle nich řídí slučování ostatního
+  for (const [k, e] of Object.entries(remote).sort(([a], [b]) => (b === 'bt_tomb') - (a === 'bt_tomb'))) {
+    const mine = ls(k, null);
+    // když u nás data chybí (nové zařízení, smazaný prohlížeč), bereme z Disku vždycky – i když meta tvrdí, že je máme
+    if (!SHARED_RX.test(k) || (mine != null && (meta[k] || 0) >= e.t)) continue;
+    // všechno se SLUČUJE – stejný účet na PC i mobilu zapisuje do stejného souboru, tak novější verze
+    // nesmí přepsat starší (prázdné zařízení by smazalo ⭐ nebo blokace); smazání řeší bt_tomb
     const v = mine == null ? e.v : mergeKey(k, mine, e.v);
     const raw = JSON.stringify(v);
     if (raw === JSON.stringify(e.v)) { kvSetRaw(k, raw); meta[k] = e.t; }
@@ -915,10 +933,17 @@ const byId = (a = [], b = []) => { const m = new Map(a.map(i => [i.id, i])); b.f
 // sloučení jednoho klíče: seznamy videí sjednotit, objekty doplnit, nápady sjednotit; nic se nemaže
 function mergeKey(k, mine, theirs) {
   if (mine == null) return theirs;
+  if (theirs == null) return mine;
+  if (TOMB_RX.test(k)) return applyTomb(k, mergeKey0(k, mine, theirs));
+  return mergeKey0(k, mine, theirs);
+}
+function mergeKey0(k, mine, theirs) {
+  if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
+  if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
   if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), items:capItems(byId(mine.items, theirs.items))};
   if (/^bt_mixsaved/.test(k)) { const seen = new Set(mine.map(s => s.at)); return [...mine, ...theirs.filter(s => !seen.has(s.at))].sort((a, b) => b.at - a.at); }
   if (k === 'bt_my') return (theirs.videos?.length || 0) > (mine.videos?.length || 0) ? theirs : mine;
-  if (k === 'bt_block') return {videos:{...theirs.videos, ...mine.videos}, channels:{...theirs.channels, ...mine.channels}};
+  if (k === 'bt_block') return {videos:{...theirs.videos, ...mine.videos}, channels:{...theirs.channels, ...mine.channels}}; // tomb řeší vrácení
   if (/^bt_ch_/.test(k)) { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) out[id] = out[id] ? {...out[id], ...e, ids:[...new Set([...(out[id].ids || []), ...(e.ids || [])])].slice(-40), home:e.home || out[id].home,
     // ručně přidaný/odebraný kanál: platí novější rozhodnutí (mAt), starší data bez mAt sjednotit jako dřív
     ...((e.mAt || out[id].mAt) ? ((e.mAt || 0) >= (out[id].mAt || 0) ? {manual:e.manual, mAt:e.mAt} : {manual:out[id].manual, mAt:out[id].mAt}) : {manual:e.manual || out[id].manual})} : e; return out; }
@@ -1104,7 +1129,7 @@ const RAW_KEYS = ['id', 't', 'ch', 'chId', 'pub', 'views', 'likes', 'com', 'dur'
 function toggleStar(it, b) {
   logEvent(`${STARS[it.id] ? '☆ odebral z uložených' : '⭐ uložil'} video ${shortT(it.t)}`);
   if (STARS[it.id]) {
-    delete STARS[it.id];
+    delete STARS[it.id]; tomb(starKey(), it.id);
     if (!allStarIds().includes(it.id)) delVers(it.id).catch(() => {}); // verze mazat, jen když video nemá uložené nikdo jiný
   }
   else { STARS[it.id] = {...Object.fromEntries(RAW_KEYS.filter(k => k in it).map(k => [k, it[k]])), cid:it.c.id, at:Date.now()}; checkThumb(it.id).catch(() => {}); }
@@ -1957,7 +1982,7 @@ document.addEventListener('click', e => {
     logEvent(`💡 uložil nápad: ${shortT(MIX.a.t)} + ${shortT(MIX.b.t)}`);
     reroll(); renderMain();
   }
-  else if (b.dataset.mixdel !== undefined) { const s = ls(mixKey(), []); const [d] = s.splice(+b.dataset.mixdel, 1); ss(mixKey(), s); if (d) logEvent(`✖ smazal nápad: ${shortT(d.a?.t || '')}`); renderMain(); }
+  else if (b.dataset.mixdel !== undefined) { const s = ls(mixKey(), []); const [d] = s.splice(+b.dataset.mixdel, 1); if (d) tomb(mixKey(), d.at); ss(mixKey(), s); if (d) logEvent(`✖ smazal nápad: ${shortT(d.a?.t || '')}`); renderMain(); }
   else if (b.dataset.tver !== undefined) showVersions(b);
   else if (b.dataset.vdl !== undefined) downloadVersion(b);
   else if (b.id === 'btnThumbsNow') { b.textContent = 'Kontroluju…'; checkAllThumbs(true).then(() => { b.textContent = '✔ Hotovo'; fillVersions(); }); }
@@ -1973,8 +1998,8 @@ document.addEventListener('click', e => {
   else if (b.id === 'btnBlocked') { S.view = 'blocked'; renderBlocked(); }
   else if (b.id === 'btnSettings') { S.view = 'settings'; renderSettings(); }
   else if (b.id === 'btnClose') { S.view = null; rerender(); window.scrollTo(0, 0); }
-  else if (b.dataset.unblockch) { logEvent(`↩ odblokoval kanál ${BLOCK.channels[b.dataset.unblockch]?.name || ''}`); delete BLOCK.channels[b.dataset.unblockch]; saveBlock(); renderBlocked(); }
-  else if (b.dataset.unblockv) { logEvent(`↩ odblokoval video ${shortT(BLOCK.videos[b.dataset.unblockv]?.t || '')}`); delete BLOCK.videos[b.dataset.unblockv]; saveBlock(); renderBlocked(); }
+  else if (b.dataset.unblockch) { logEvent(`↩ odblokoval kanál ${BLOCK.channels[b.dataset.unblockch]?.name || ''}`); delete BLOCK.channels[b.dataset.unblockch]; tomb('bt_block.c', b.dataset.unblockch); saveBlock(); renderBlocked(); }
+  else if (b.dataset.unblockv) { logEvent(`↩ odblokoval video ${shortT(BLOCK.videos[b.dataset.unblockv]?.t || '')}`); delete BLOCK.videos[b.dataset.unblockv]; tomb('bt_block.v', b.dataset.unblockv); saveBlock(); renderBlocked(); }
   else if (b.dataset.jump) { const el = document.getElementById(b.dataset.jump); if (el) scrollTo({top:el.getBoundingClientRect().top + scrollY - (getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0) - 10, behavior:'smooth'}); }
   else if (b.id === 'btnAddCh') addChannelUI();
   else if (b.dataset.unch) { removeChannel(C(S.country), b.dataset.unch); rerender(); }
@@ -2047,8 +2072,12 @@ async function pullShared() {
 (async () => {
   const load = kvLoad().catch(e => console.warn('IndexedDB nejde, jedu z localStorage', e));
   // když IndexedDB do 2,5 s neodpoví (blokuje ji jiná karta), kreslíme z localStorage a přepneme se, až bude
+  // nikdy nekreslit (a hlavně nestahovat z YouTube) s prázdnými daty jen proto, že IndexedDB ještě neodpověděla –
+  // stránka by si myslela, že nic nemá, a pálila by hledání
   const ready = await Promise.race([load.then(() => true), new Promise(r => setTimeout(() => r(false), 2500))]);
-  if (!ready) load.then(() => { if (KV_OK) { reloadMemory(); rerender(); status(''); } });
+  if (!ready) { status('⏳ Čekám na úložiště prohlížeče… (když to trvá, zavři ostatní karty Brawl Trendy)'); await load; status(''); }
+  // požádat prohlížeč, ať data stránky nikdy sám nemaže (při nedostatku místa apod.)
+  navigator.storage?.persist?.().catch(() => {});
   cleanupRemovedCountries();
   reloadMemory();
   show();
