@@ -487,7 +487,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$)/;
-const APP_VERSION = '2026-10-21.57'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.58'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -999,8 +999,12 @@ function newestEvery(c, d = new Date()) { // minut mezi hledáními, 0 = teď ne
   return (weekend ? h >= 8 && h < 17 : h >= 12 && h < 17) ? 60 : 120;
 }
 function newestDue(c) { const every = newestEvery(c); return !!every && Date.now() - (getSet(c.id, 'day')?.newTs || 0) >= every * 60e3 - 60e3; }
+// pojistka: hledání nejnovějších smí brát jen do 70 hledání denně (součet všech mých zařízení) –
+// zbytek ze 100 zůstane na plná hledání a ruční „Načíst dalších“ (víc států proklikaných za hodinu by jinak vzalo všechno)
+const NEWEST_CAP = 70;
+const searchesToday = () => Object.values(ls('bt_qs', {})).filter(e => e.d === ptDate() && (e.who || '') === meWho()).reduce((a, e) => a + (e.s || 0), 0);
 async function newestSearch(c) {
-  const day = baseSet(c.id, 'day'); if (!day || !searchLeft()) return 0;
+  const day = baseSet(c.id, 'day'); if (!day || !searchLeft() || searchesToday() >= NEWEST_CAP) return 0;
   const s = await api('search', {part:'snippet', type:'video', order:'date', maxResults:50, q:c.q || 'brawl stars', relevanceLanguage:c.lang, regionCode:c.region,
     publishedAfter:isoNoMs(new Date(Date.now() - 24 * 3600e3))});
   const have = new Set(day.items.map(i => i.id)), now = Date.now();
