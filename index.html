@@ -252,7 +252,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$)/;
-const APP_VERSION = '2026-10-21.9'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.10'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -830,8 +830,23 @@ async function fetchChannelVideos(c, p, have) {
 // 1) jednou denně na stát hledání NEJNOVĚJŠÍCH videí s místním výrazem (1 hledání) – tam jsou i kanály s pár stovkami odběrů,
 // 2) „doporučené kanály“ ze stránek sledovaných kanálů (bez hledání) – malí youtubeři doporučují kamarády.
 // Kandidát se začne sledovat, jen když má Brawl video v jazyce státu (learnChannels → langOk).
-const DISC_Q = {it:'brawl stars ita', de:'brawl stars deutsch', ru:'бравл старс', ua:'бравл старс', pl:'brawl stars po polsku', fr:'brawl stars fr',
-  es:'brawl stars español', br:'brawl stars br', tr:'brawl stars türkçe', jp:'ブロスタ', kr:'브롤스타즈', en:'brawl stars', cz:'brawl stars cz'};
+// Každý den jiný výraz (střídají se dokola). „ch:“ = hledají se KANÁLY (malí youtubeři mívají zemi v názvu kanálu,
+// i když videa pojmenovávají anglicky – třeba LukeX BS), jinak nejnovější videa.
+const DISC_Q = {
+  cz:['brawl stars cz', 'ch:brawl stars cz', 'brawl stars česky', 'ch:brawl cz', 'brawl stars hraju', 'ch:brawlstars cz', 'brawl stars nový brawler', 'ch:bs cz'],
+  it:['brawl stars ita', 'ch:brawl stars ita', 'brawl stars italiano', 'ch:brawl stars italia'],
+  de:['brawl stars deutsch', 'ch:brawl stars deutsch', 'brawl stars german', 'ch:brawl stars de'],
+  ru:['бравл старс', 'ch:бравл старс', 'бравл старс новый', 'ch:бравл'],
+  ua:['бравл старс українською', 'ch:бравл старс', 'бравл старс', 'ch:brawl stars ua'],
+  pl:['brawl stars po polsku', 'ch:brawl stars pl', 'brawl stars polska', 'ch:brawl stars polska'],
+  fr:['brawl stars fr', 'ch:brawl stars fr', 'brawl stars français', 'ch:brawl stars france'],
+  es:['brawl stars español', 'ch:brawl stars español', 'brawl stars nuevo', 'ch:brawl stars es'],
+  br:['brawl stars br', 'ch:brawl stars br', 'brawl stars brasil', 'ch:brawl stars brasil'],
+  tr:['brawl stars türkçe', 'ch:brawl stars türkçe', 'brawl stars tr', 'ch:brawl stars tr'],
+  jp:['ブロスタ', 'ch:ブロスタ', 'ブロスタ 新キャラ', 'ch:ブロスタ 実況'],
+  kr:['브롤스타즈', 'ch:브롤스타즈', '브롤스타즈 신캐', 'ch:브롤'],
+  en:['brawl stars', 'ch:brawl stars', 'brawl stars new', 'ch:brawl stars guide'],
+};
 const DISC_EVERY = 24 * 3600e3;
 const discInfo = cid => ls('bt_disc', {})[cid] || {};
 function saveDisc(cid, patch) {
@@ -841,7 +856,18 @@ function saveDisc(cid, patch) {
 }
 const trackedIds = c => new Set(Object.keys(ls(chKey(c.id), {})));
 async function discoverSearch(c) {
-  const params = {part:'snippet', type:'video', order:'date', maxResults:50, q:DISC_Q[c.id] || 'brawl stars', relevanceLanguage:c.lang, regionCode:c.region,
+  const qs = DISC_Q[c.id] || ['brawl stars'], d = discInfo(c.id), qi = (d.qi || 0) % qs.length, q = qs[qi];
+  saveDisc(c.id, {qi:qi + 1});
+  if (q.startsWith('ch:')) {
+    // hledání kanálů → každý kandidát se ověří podle posledních videí
+    const s = await api('search', {part:'snippet', type:'channel', maxResults:50, q:q.slice(3), relevanceLanguage:c.lang, regionCode:c.region});
+    const known = trackedIds(c), checked = {...(discInfo(c.id).checked || {})};
+    const ids = s.items.map(i => i.id.channelId || i.snippet.channelId).filter(id => id && !known.has(id) && !checked[id]);
+    const n = await verifyCandidates(c, ids, checked);
+    saveDisc(c.id, {checked});
+    return n;
+  }
+  const params = {part:'snippet', type:'video', order:'date', maxResults:50, q, relevanceLanguage:c.lang, regionCode:c.region,
     publishedAfter:isoNoMs(new Date(Date.now() - 7 * 24 * 3600e3))};
   const s = await api('search', params);
   const ids = s.items.map(i => i.id.videoId).filter(Boolean);
@@ -865,17 +891,24 @@ async function discoverFeatured(c, maxCrawl = 15, maxCheck = 30) {
       for (const sec of r.items || []) for (const id of sec.contentDetails?.channels || []) if (!known.has(id) && !checked[id]) cands.add(id);
     } catch (e) { if (/limit/.test(e.message)) break; }
   }
-  const before = trackedIds(c);
-  const list = [...cands].slice(0, maxCheck);
-  // poslední videa kandidátů (10 na kanál) a z nich se kanál buď naučí, nebo ne
-  const vidIds = [];
-  for (const id of list) {
+  const n = await verifyCandidates(c, [...cands].slice(0, maxCheck), checked);
+  saveDisc(c.id, {crawled, checked});
+  return n;
+}
+// kandidáti: poslední videa (10 na kanál) → kanál se začne sledovat, když má Brawl video v jazyce státu.
+// U kanálu, kde se nezmiňuje Brawl v každém názvu (LukeX BS: „Spike VS 10 El Primos!“), stačí jméno brawlera nebo tagy.
+async function verifyCandidates(c, ids, checked) {
+  const before = trackedIds(c), vidIds = [];
+  for (const id of ids) {
     checked[id] = Date.now();
     try { const r = await api('playlistItems', {part:'contentDetails', playlistId:'UU' + id.slice(2), maxResults:10}, 1); vidIds.push(...r.items.map(x => x.contentDetails.videoId)); }
     catch (e) { if (/limit/.test(e.message)) break; }
   }
-  if (vidIds.length) learnChannels(c, (await details(vidIds)).map(it => classify(it)).filter(it => !it.cand));
-  saveDisc(c.id, {crawled, checked});
+  if (vidIds.length) {
+    const items = (await details(vidIds)).map(it => classify(it)).filter(it => !it.cand);
+    learnChannels(c, items);
+    for (const p of ['day', 'week', 'month']) { const since = Date.now() - PERIODS[p].hours * 3600e3; const add = items.filter(it => langOk(it, c) && new Date(it.pub) >= since); if (add.length) mergeInto(c.id, p, add); }
+  }
   return [...trackedIds(c)].filter(id => !before.has(id)).length;
 }
 // spustí se samo po otevření státu (nejvýš jednou za 24 h na stát, sdílí se přes Disk) nebo tlačítkem
