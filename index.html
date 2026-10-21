@@ -160,6 +160,7 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .histtab{width:100%;font-size:12.5px;border-collapse:collapse}
 .histtab td,.histtab th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
 .setnav{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:8px}
+.brow[hidden]{display:none}
 .setnav button{font-size:12.5px;padding:5px 10px}
 .loglist{display:flex;flex-direction:column;gap:2px;max-height:520px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .logrow{display:grid;grid-template-columns:auto auto 1fr;gap:10px;font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)}
@@ -271,7 +272,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$)/;
-const APP_VERSION = '2026-10-21.24'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.25'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1159,19 +1160,28 @@ function renderBlocked() {
   const chs = Object.entries(BLOCK.channels).sort((a, b) => b[1].at - a[1].at);
   const vids = Object.entries(BLOCK.videos).sort((a, b) => b[1].at - a[1].at);
   const mopt = (id, e, v, l) => `<option value="${v}" ${e.mode === v ? 'selected' : ''}>${l}</option>`;
+  // řádek se hledá podle jména kanálu / názvu videa (bez diakritiky); filtr se drží i po překreslení
+  const ds = (...t) => ` data-s="${esc(fold(t.join(' ')))}"`;
   $('#main').innerHTML = `
+    <div class="search" style="margin:0 0 12px"><input id="blkQ" value="${esc(S.blkQ || '')}" placeholder="🔎 Hledat v zablokovaných – kanál nebo název videa"></div>
     <div class="sec"><h2>🚫 Zablokované kanály (${chs.length})</h2>
       <p class="hint">„Jen ověřená Brawl videa“ = z kanálu se ukáže jen video s Brawl Stars přímo v názvu, nebo v tazích a zároveň s Brawl miniaturou podle AI.</p>
-      <div class="blist">${chs.map(([id, e]) => `<div class="brow">
+      <div class="blist">${chs.map(([id, e]) => `<div class="brow"${ds(e.name)}>
         <a class="grow chlink" href="https://www.youtube.com/channel/${esc(id)}/videos" target="_blank" rel="noopener"><b>${esc(e.name)}</b></a>
         ${own ? `<select data-chmode="${esc(id)}">${mopt(id, e, 'all', 'Celý kanál blokovaný')}${mopt(id, e, 'strict', 'Jen ověřená Brawl videa')}</select>
         <button data-unblockch="${esc(id)}">↩ Vrátit</button>` : `<span class="ch">${e.mode === 'strict' ? 'jen ověřená Brawl videa' : 'celý kanál'}</span>`}</div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>
     <div class="sec"><h2>🚫 Zablokovaná videa (${vids.length})</h2>
-      <div class="blist">${vids.map(([id, e]) => `<div class="brow">
+      <div class="blist">${vids.map(([id, e]) => `<div class="brow"${ds(e.t, e.ch)}>
         <img src="https://i.ytimg.com/vi/${esc(id)}/default.jpg" width="80" alt="">
         <div class="grow"><a class="chlink" href="${ytUrl(id)}" target="_blank" rel="noopener">${esc(e.t)}</a><div class="ch">${esc(e.ch)}</div></div>
         ${own ? `<button data-unblockv="${esc(id)}">↩ Vrátit</button>` : ''}</div>`).join('') || '<div class="ch">Žádné.</div>'}</div></div>`;
+  filterBlocked();
 }
+function filterBlocked() {
+  const q = fold(S.blkQ || '').trim();
+  for (const r of document.querySelectorAll('#main .brow[data-s]')) r.hidden = !!q && !q.split(/\s+/).every(w => r.dataset.s.includes(w));
+}
+document.addEventListener('input', e => { if (e.target.id === 'blkQ') { S.blkQ = e.target.value; filterBlocked(); } });
 // ---------- 💾 Záloha dat: export do souboru a import (sloučí se s tím, co už je) ----------
 // Hodí se pro přenos mezi verzemi stránky (soubor z disku / localhost / web) – každá má v prohlížeči vlastní úložiště.
 function exportData() {
