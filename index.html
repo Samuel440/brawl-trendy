@@ -260,7 +260,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$)/;
-const APP_VERSION = '2026-10-21.15'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.16'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1841,10 +1841,20 @@ async function showCountry(force) {
   let failed = false;
   // Dokud není připojený Disk, z YouTube nic nestahujeme sami – čerstvá data můžou být na Disku zdarma (ruční ⟳ projde)
   if (!force && driveGate()) { renderMain(); return; }
+  // Víc zařízení najednou: než začnu stahovat, podívám se na Disk – když to mezitím obnovilo jiné zařízení
+  // (PC, mobil, grafik), vezmu jeho data a nestahuju nic. Malé náhodné zpoždění, ať dvě zařízení nezačnou v tu samou vteřinu.
+  if (!force && set && Date.now() - set.ts >= maxAge && REMOTE === DRIVE_BACKEND) {
+    await new Promise(r => setTimeout(r, Math.random() * 4000));
+    await pullShared().catch(() => {});
+    set = getSet(c.id, p);
+    if (token !== S.loadToken) return;
+  }
   if (force || !set || Date.now() - set.ts >= maxAge) {
     status(`Načítám ${c.name} – ${PERIODS[p].label}…`);
     try { set = await ensureSet(c, p, true, !force, true); status(''); }
     catch (e) { status(e.message, true); failed = true; }
+    // čerstvá data hned na Disk (ne až za 10 s), ať je ostatní zařízení vidí a nestahují totéž
+    if (!failed && REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
   }
   if (token !== S.loadToken) return;
   S.nextAuto = (set && !failed ? set.ts : Date.now()) + S.interval * 60e3;
@@ -2301,7 +2311,7 @@ function updateUpdated() {
   const el = $('#updated'); if (!el) return;
   const set = getSet(S.country, S.period);
   let t = set ? `Aktualizováno ${ago((Date.now() - set.ts) / 3600e3)}` : '';
-  if (S.auto) { const s = Math.max(0, Math.round((S.nextAuto - Date.now()) / 1000)); t += ` · další za ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+  if (S.auto) { const s = Math.max(0, Math.round((S.nextAuto - Date.now()) / 1000)); t += ` · další za ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}${REMOTE === DRIVE_BACKEND ? ' (společná pro všechna zařízení)' : ''}`; }
   el.textContent = t;
 }
 setInterval(() => {
@@ -2437,6 +2447,9 @@ function reloadMemory() {
 async function pullShared() {
   if (!await syncPull()) return;
   reloadMemory(); renderQuotaBar();
+  // obnovilo to jiné zařízení → odpočet se posune podle jeho času (všechna zařízení sdílí jednu obnovu)
+  const cur = TIME_PERIODS.includes(S.period) && getSet(S.country, S.period);
+  if (cur && S.nextAuto) S.nextAuto = Math.max(S.nextAuto, cur.ts + S.interval * 60e3);
   // nepřekreslovat, když zrovna něco píšeš do pole na stránce
   if (S.key && !(document.activeElement?.closest?.('#main') && document.activeElement.matches('input, textarea'))) rerender();
 }
