@@ -290,7 +290,8 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 .cname{flex-direction:column;align-items:stretch;justify-content:center;padding:0}
 .cnamebtn{border:0;border-radius:0;margin:0;background:transparent;color:var(--text);padding:8px 10px 4px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;flex:1;text-align:left;white-space:normal}
 .cname:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)}
-.caledit{align-self:flex-start;margin:0 10px 8px;padding:3px 10px;font-size:12px}
+.histedit{position:absolute;top:10px;right:50px;width:32px;height:32px;border-radius:50%;padding:0}
+.calview h2{padding-right:84px}
 .calview h2{margin:0 40px 2px 0;font-size:clamp(20px,2.4vw,28px);line-height:1.2;text-wrap:balance}
 .calview .caltxt{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .calview .caltxt.script{font-size:15px;line-height:1.55;max-height:55vh;overflow:auto}
@@ -391,15 +392,36 @@ button.danger{background:var(--hot);border-color:var(--hot);color:#fff;font-weig
 .trashrow{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;flex-wrap:wrap}
 .trashrow .grow{flex:1;min-width:180px;overflow-wrap:anywhere}
 .trashrow .blockbtn{color:var(--hot)}
-/* 📁 vlastní kolekce v Uložených */
-.foldbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
-.foldbar button{border-radius:999px;padding:5px 12px;font-size:13px}
-.foldbar button.on{background:var(--accent);color:#111;border-color:var(--accent);font-weight:700}
-.foldbar button.on .ch{color:#333}
-.foldsel{font-size:12px;padding:3px 6px;max-width:170px;border-radius:6px}
-.card .foldsel{margin:0 12px 4px;align-self:flex-start}
+/* 📁 vlastní kolekce v Uložených: karty (velký název, barva, náhled pár položek) */
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin:4px 0 16px}
+.fcard{display:flex;flex-direction:column;gap:6px;padding:10px;text-align:left;border-radius:14px;border:2px solid var(--fc);
+  background:linear-gradient(160deg,color-mix(in srgb,var(--fc) 26%,var(--panel)) 0%,var(--panel) 70%);cursor:pointer;transition:transform .15s}
+.fcard:hover{transform:translateY(-2px);box-shadow:0 6px 18px color-mix(in srgb,var(--fc) 30%,transparent)}
+.fmosaic{display:grid;grid-template-columns:1fr 1fr;gap:3px;aspect-ratio:16/9;border-radius:9px;overflow:hidden;background:rgba(0,0,0,.25)}
+.fmosaic img{width:100%;height:100%;object-fit:cover;display:block}
+.fmosaic.n1 img{grid-column:1 / -1;grid-row:1 / 3}
+.fmosaic.n2 img{grid-row:1 / 3}
+.fmosaic.n3 img:first-child{grid-row:1 / 3}
+.fempty{grid-column:1 / -1;grid-row:1 / 3;display:flex;align-items:center;justify-content:center;font-size:40px;opacity:.6}
+.fname{font-size:clamp(17px,1.6vw,21px);font-weight:900;line-height:1.2;color:var(--fc);overflow-wrap:anywhere}
+.fnew{--fc:var(--muted);border-style:dashed;background:var(--panel);align-items:center;justify-content:center;min-height:150px}
+.fnew .fplus{font-size:34px}
+.fnew .fname{color:var(--text)}
+.floose{margin:6px 0 10px;font-size:16px;color:var(--muted)}
+.fhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 14px;padding:12px 14px;border-radius:12px;border:2px solid var(--fc);
+  background:linear-gradient(120deg,color-mix(in srgb,var(--fc) 24%,var(--panel)),var(--panel) 70%)}
+.fhead h2{margin:0;font-size:clamp(20px,2.2vw,28px);color:var(--fc)}
+.fhead .grow{flex:1}
+.foldbtn{font-size:12px;padding:3px 8px;border-radius:999px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .foldbtn{margin:0 12px 4px;align-self:flex-start}
 .foldpick{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.foldpick button{padding:8px 14px}
+.foldpick button{padding:8px 14px;border-radius:999px}
+.foldpick button[data-fpick]{border:2px solid var(--fc)}
+.foldpick button[data-fpick].on{background:var(--fc);color:#111;font-weight:800}
+.fcolors{display:flex;gap:8px;flex-wrap:wrap}
+.fcolors button{width:34px;height:34px;border-radius:50%;padding:0;background:var(--fc);border:3px solid transparent}
+.fcolors button.on{border-color:var(--text);box-shadow:0 0 0 2px var(--bg) inset}
+@media (max-width:600px){.fgrid{grid-template-columns:1fr 1fr;gap:8px}.fcard{padding:7px}.fnew{min-height:110px}}
 .ideaicon{font-size:30px;width:64px;text-align:center}
 textarea.mixnote{resize:vertical;font:inherit}
 /* 📈 Google Trends pod kalendářem */
@@ -524,7 +546,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.65'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.66'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1830,85 +1852,122 @@ const shortT = t => `„${String(t).slice(0, 60)}${String(t).length > 60 ? '…'
 const allStarIds = () => [...new Set(collections('bt_star').flatMap(w => Object.keys(w === meWho() ? STARS : ls(starKey(w), {}))))];
 const STARS = ls(starKey(), {});
 const RAW_KEYS = ['id', 't', 'ch', 'chId', 'pub', 'views', 'likes', 'com', 'dur', 'subs', 'cc', 'lang', 'chL', 'homeL', 'bs', 'bsT', 'bsN', 'bsTag', 'live', 'src', 'cand', 'weak'];
+// ☆ → uložit (a hned nabídnout kolekce) · ★ → nabídka: kolekce, nebo „Odebrat z oblíbených“
 function toggleStar(it, b) {
-  logEvent(`${STARS[it.id] ? '☆ odebral z uložených' : '⭐ uložil'} video ${shortT(it.t)}`);
-  if (STARS[it.id]) {
-    delete STARS[it.id]; tomb(starKey(), it.id);
-    if (!allStarIds().includes(it.id)) delVers(it.id).catch(() => {}); // verze mazat, jen když video nemá uložené nikdo jiný
-  }
-  else {
-    STARS[it.id] = {...Object.fromEntries(RAW_KEYS.filter(k => k in it).map(k => [k, it[k]])), cid:it.c.id, at:Date.now(), f:curFold('videos')};
-    checkThumb(it.id).catch(() => {});
-    setTimeout(() => pickFold(it.id)); // 📁 do které kolekce
-  }
+  if (STARS[it.id]) { pickFolds('videos', 'star', it.id, {title:'★ Uložené video – kolekce', remove:() => unstar(it)}); return; }
+  logEvent(`⭐ uložil video ${shortT(it.t)}`);
+  STARS[it.id] = {...Object.fromEntries(RAW_KEYS.filter(k => k in it).map(k => [k, it[k]])), cid:it.c.id, at:Date.now(), fs:curFolds('videos')};
+  checkThumb(it.id).catch(() => {});
+  starSaved(it);
+  if (folds('videos').length) pickFolds('videos', 'star', it.id, {title:'⭐ Uloženo – do kterých kolekcí?', remove:() => unstar(it)});
+}
+function unstar(it) {
+  logEvent(`☆ odebral z uložených video ${shortT(it.t)}`);
+  delete STARS[it.id]; tomb(starKey(), it.id);
+  if (!allStarIds().includes(it.id)) delVers(it.id).catch(() => {}); // verze mazat, jen když video nemá uložené nikdo jiný
+  starSaved(it);
+}
+function starSaved(it) {
   ss(starKey(), STARS);
   if (S.period === 'star' && !S.view) { renderHeader(); renderMain(); return; }
   document.querySelectorAll(`.card[data-id="${it.id}"] .star`).forEach(el => {
     el.classList.toggle('on', !!STARS[it.id]); el.textContent = STARS[it.id] ? '★' : '☆';
-    el.title = STARS[it.id] ? 'Odebrat z uložených' : 'Uložit do ⭐ Uložené';
+    el.title = STARS[it.id] ? 'Uložené – kolekce, nebo odebrat' : 'Uložit do ⭐ Uložené';
   });
   renderHeader();
 }
 // ---------- 📁 Vlastní kolekce v Uložených (zvlášť pro Videa / Nápady / Přenos) ----------
-// bt_folds(_g_…) = {videos:[{id, n}], ideas:[…], drop:[…]} – každý má svoje; položka si pamatuje kolekci v poli f.
-// Smazáním kolekce položky nezmizí – jen se ukážou v „Bez kolekce“.
+// bt_folds(_g_…) = {videos:[{id, n, c}], ideas:[…], drop:[…]} – každý má svoje (n = název, c = barva).
+// Položka si pamatuje kolekce v poli fs – jedna položka může být ve víc kolekcích (starší data: f = jedna kolekce).
+// Přehled = karty kolekcí (velký název, barva, náhled pár položek) a pod nimi položky bez kolekce; klik na kartu = celá kolekce.
+// Smazáním kolekce položky nezmizí – jen se vrátí mezi „bez kolekce“.
+const FOLD_COLORS = ['#ffcc00', '#ff4f6d', '#4fa3ff', '#3ddc84', '#b06bff', '#ff8a3d', '#22d3ee', '#9ca3af'];
 const foldKey = (who = meWho()) => 'bt_folds' + (who ? '_' + who : '');
 const foldTab = () => S.starTab === 'drop' ? 'drop' : S.starTab === 'ideas' ? 'ideas' : 'videos';
 const folds = (tab, who = meWho()) => ls(foldKey(who), {})[tab] || [];
-const FSEL = ls('bt_foldsel', {}); // vybraná kolekce na záložce ('' = vše, '-' = bez kolekce)
-const inFold = (x, id, fs) => id === '' ? true : id === '-' ? !fs.some(d => d.id === x.f) : x.f === id;
-function foldFilter(list, tab, who) { const fs = folds(tab, who), cur = fs.some(d => d.id === FSEL[tab]) || FSEL[tab] === '-' ? FSEL[tab] : ''; return list.filter(x => inFold(x, cur, fs)); }
-function foldBar(tab, who, items) {
-  const mine = who === meWho(), fs = folds(tab, who);
-  const cur = fs.some(d => d.id === FSEL[tab]) || (FSEL[tab] === '-' && fs.length) ? FSEL[tab] : '';
+const FSEL = ls('bt_foldsel', {}); // otevřená kolekce na záložce ('' = přehled)
+const itemFolds = x => x.fs || (x.f ? [x.f] : []);
+const openFold = (tab, who = meWho()) => folds(tab, who).find(d => d.id === FSEL[tab]) || null;
+// položky k zobrazení: v otevřené kolekci, nebo (v přehledu) ty, které nejsou v žádné kolekci
+function foldSplit(list, tab, who) {
+  const fs = folds(tab, who), open = openFold(tab, who);
+  return open ? list.filter(x => itemFolds(x).includes(open.id)) : list.filter(x => !itemFolds(x).some(id => fs.some(d => d.id === id)));
+}
+const foldThumb = (tab, x) => tab === 'videos' ? `https://i.ytimg.com/vi/${x.id}/mqdefault.jpg` : tab === 'ideas' && x.a ? `https://i.ytimg.com/vi/${x.a.id}/mqdefault.jpg` : '';
+const plural = (k, a, b, c) => k === 1 ? a : k > 1 && k < 5 ? b : c;
+// přehled: karty kolekcí · uvnitř kolekce: hlavička s návratem
+function foldHead(tab, who, items) {
+  const mine = who === meWho(), fs = folds(tab, who), open = openFold(tab, who);
+  if (open) { const k = items.filter(x => itemFolds(x).includes(open.id)).length;
+    return `<div class="fhead" style="--fc:${open.c || FOLD_COLORS[0]}"><button data-fopen="">← Všechny kolekce</button><h2>📁 ${esc(open.n)}</h2><span class="ch">${k} ${plural(k, 'položka', 'položky', 'položek')}</span>
+      ${mine ? `<span class="grow"></span><button data-fedit="${open.id}">✏️ Upravit</button><button class="blockbtn" data-fdel="${open.id}">🗑 Smazat kolekci</button>` : ''}</div>`; }
   if (!fs.length && !mine) return '';
-  const chip = (id, label) => `<button data-fsel="${id}" class="${cur === id ? 'on' : ''}">${label} <span class="ch">${items.filter(x => inFold(x, id, fs)).length}</span></button>`;
-  return `<div class="foldbar"><span class="ch">📁 Kolekce:</span>${chip('', 'Vše')}${fs.map(d => chip(d.id, esc(d.n))).join('')}${fs.length ? chip('-', 'Bez kolekce') : ''}
-    ${mine ? `<button data-fnew>➕ Nová kolekce</button>${fs.some(d => d.id === cur) ? `<button data-fren="${cur}" title="Přejmenovat kolekci">✏️</button><button class="blockbtn" data-fdel="${cur}" title="Smazat kolekci (položky zůstanou)">🗑</button>` : ''}` : ''}</div>`;
+  const card = d => {
+    const inside = items.filter(x => itemFolds(x).includes(d.id)), th = inside.map(x => foldThumb(tab, x)).filter(Boolean).slice(0, 4), k = inside.length;
+    return `<button class="fcard" data-fopen="${d.id}" style="--fc:${d.c || FOLD_COLORS[0]}">
+      <div class="fmosaic n${th.length}">${th.length ? th.map(u => `<img src="${esc(u)}" alt="" loading="lazy">`).join('') : `<span class="fempty">${tab === 'ideas' ? '💡' : tab === 'drop' ? '📤' : '🎬'}</span>`}</div>
+      <b class="fname">${esc(d.n)}</b><span class="ch">${k} ${plural(k, 'položka', 'položky', 'položek')}</span></button>`;
+  };
+  return `<div class="fgrid">${fs.map(card).join('')}${mine ? '<button class="fcard fnew" data-fnew><span class="fplus">➕</span><b class="fname">Nová kolekce</b></button>' : ''}</div>
+    ${fs.length ? '<h3 class="floose">Bez kolekce</h3>' : ''}`;
 }
-// výběr kolekce přímo u položky (jen ve vlastních)
-function foldSelect(tab, kind, key, f) {
-  const fs = folds(tab); if (!fs.length) return '';
-  return `<select class="foldsel" data-fmove="${kind}" data-fkey="${esc(String(key))}" title="Přesunout do kolekce"><option value="">📁 Bez kolekce</option>${fs.map(d => `<option value="${d.id}" ${f === d.id ? 'selected' : ''}>📁 ${esc(d.n)}</option>`).join('')}</select>`;
+// 📁 tlačítko u položky – ukáže, ve kterých kolekcích je, a otevře výběr
+function foldBtn(tab, kind, key, x) {
+  if (!folds(tab).length) return '';
+  const names = itemFolds(x).map(id => folds(tab).find(d => d.id === id)?.n).filter(Boolean);
+  return `<button class="foldbtn" data-fitem="${kind}" data-fkey="${esc(String(key))}" title="Do kterých kolekcí">📁 ${names.length ? esc(names.join(', ')) : 'Do kolekce'}</button>`;
 }
-function setItemFold(kind, key, f) {
-  if (kind === 'star') { if (STARS[key]) { STARS[key] = {...STARS[key], f}; ss(starKey(), STARS); } }
-  else { const k = kind === 'idea' ? mixKey() : dropKey(); ss(k, ls(k, []).map(x => String(x.at) === String(key) ? {...x, f} : x)); }
+const foldItem = (kind, key) => kind === 'star' ? STARS[key] : ls(kind === 'idea' ? mixKey() : dropKey(), []).find(x => String(x.at) === String(key));
+function setItemFolds(kind, key, list) {
+  const upd = x => { const y = {...x, fs:list}; delete y.f; return y; };
+  if (kind === 'star') { if (STARS[key]) { STARS[key] = upd(STARS[key]); ss(starKey(), STARS); } }
+  else { const k = kind === 'idea' ? mixKey() : dropKey(); ss(k, ls(k, []).map(x => String(x.at) === String(key) ? upd(x) : x)); }
   if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
 }
-// do které kolekce jde nová položka: ta, kterou máš na záložce zrovna vybranou
-const curFold = tab => folds(tab).some(d => d.id === FSEL[tab]) ? FSEL[tab] : undefined;
+// nová položka jde do kolekce, kterou máš zrovna otevřenou
+const curFolds = tab => openFold(tab) ? [FSEL[tab]] : undefined;
 function saveFolds(tab, list) { const all = ls(foldKey(), {}); all[tab] = list; ss(foldKey(), all); if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); } }
-// přesun položky do jiné kolekce výběrem u položky
-document.addEventListener('change', e => {
-  const s = e.target.closest?.('select.foldsel'); if (!s) return;
-  setItemFold(s.dataset.fmove, s.dataset.fkey, s.value || undefined);
-  const y = scrollY; renderMain(); scrollTo(0, y);
-});
-// ✏️ krátký text v okně (název kolekce)
-function askText(title, value = '', ok = 'Uložit') {
+// ✏️ název a barva kolekce
+function foldEditor(d) {
   return new Promise(res => {
+    let col = d?.c || FOLD_COLORS[folds(foldTab()).length % FOLD_COLORS.length];
     const ov = document.createElement('div'); ov.className = 'histov'; ov.style.zIndex = 70;
-    ov.innerHTML = `<div class="histbox askbox"><h3>${esc(title)}</h3><input class="calin" data-asktext maxlength="40" value="${esc(value)}">
-      <div class="row"><button data-no>Zrušit</button><button class="primary" data-yes>${ok}</button></div></div>`;
+    ov.innerHTML = `<div class="histbox askbox"><h3>${d ? '✏️ Upravit kolekci' : '📁 Nová kolekce'}</h3>
+      <input class="calin" data-asktext maxlength="40" placeholder="Název – třeba Nápady na shorty" value="${esc(d?.n || '')}">
+      <div class="ch" style="margin:10px 0 4px">Barva:</div><div class="fcolors">${FOLD_COLORS.map(c => `<button data-fcol="${c}" style="--fc:${c}" class="${c === col ? 'on' : ''}" title="${c}"></button>`).join('')}</div>
+      <div class="row"><button data-no>Zrušit</button><button class="primary" data-yes>${d ? 'Uložit' : 'Vytvořit'}</button></div></div>`;
     const inp = ov.querySelector('[data-asktext]'), done = v => { ov.remove(); res(v); };
-    ov.addEventListener('click', e => { const b = e.target.closest('button'); if (b?.hasAttribute('data-yes')) done(inp.value.trim()); else if (b?.hasAttribute('data-no') || bgClick(e, ov)) done(null); });
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(inp.value.trim()); if (e.key === 'Escape') done(null); });
-    document.body.append(ov); inp.focus(); inp.select();
+    const ok = () => { const n = inp.value.trim(); if (n) done({n, c:col}); else inp.focus(); };
+    ov.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (b?.dataset.fcol) { col = b.dataset.fcol; ov.querySelectorAll('[data-fcol]').forEach(x => x.classList.toggle('on', x === b)); }
+      else if (b?.hasAttribute('data-yes')) ok();
+      else if (b?.hasAttribute('data-no') || bgClick(e, ov)) done(null);
+    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') ok(); if (e.key === 'Escape') done(null); });
+    document.body.append(ov); inp.focus();
   });
 }
-// ⭐ právě uložené video → hned vybrat kolekci (jen když nějaké máš)
-function pickFold(id) {
-  const fs = folds('videos'); if (!fs.length) return;
+// 📁 výběr kolekcí u položky (zaškrtávání, víc najednou); u ⭐ videa navíc „Odebrat z oblíbených“
+function pickFolds(tab, kind, key, opts = {}) {
   const ov = document.createElement('div'); ov.className = 'histov'; ov.style.zIndex = 70;
-  ov.innerHTML = `<div class="histbox askbox"><h3>⭐ Uloženo – do které kolekce?</h3>
-    <div class="foldpick">${fs.map(d => `<button data-fpick="${d.id}" class="${d.id === curFold('videos') ? 'primary' : ''}">📁 ${esc(d.n)}</button>`).join('')}<button data-fpick="">Bez kolekce</button></div></div>`;
-  ov.addEventListener('click', e => {
+  const draw = () => {
+    const fs = folds(tab), inn = new Set(itemFolds(foldItem(kind, key) || {}));
+    ov.innerHTML = `<div class="histbox askbox"><h3>${opts.title || '📁 Do kterých kolekcí?'}</h3>
+      ${fs.length ? '<div class="ch">Klikni na kolekce, ve kterých to má být (může jich být víc).</div>' : '<div class="ch">Zatím nemáš žádnou kolekci.</div>'}
+      <div class="foldpick">${fs.map(d => `<button data-fpick="${d.id}" class="${inn.has(d.id) ? 'on' : ''}" style="--fc:${d.c || FOLD_COLORS[0]}">${inn.has(d.id) ? '✔' : '＋'} ${esc(d.n)}</button>`).join('')}
+        <button data-fpnew>➕ Nová kolekce</button></div>
+      <div class="row">${opts.remove ? '<button class="danger" data-fprem>☆ Odebrat z oblíbených</button>' : ''}<button class="primary" data-fpok>Hotovo</button></div></div>`;
+  };
+  const close = () => { ov.remove(); if (S.period === 'star' && !S.view) { const y = scrollY; renderMain(); scrollTo(0, y); } };
+  ov.addEventListener('click', async e => {
     const b = e.target.closest('button');
-    if (b?.dataset.fpick !== undefined) { setItemFold('star', id, b.dataset.fpick || undefined); ov.remove(); if (S.period === 'star' && !S.view) renderMain(); }
-    else if (bgClick(e, ov)) ov.remove();
+    if (b?.dataset.fpick) { const cur = itemFolds(foldItem(kind, key) || {}), id = b.dataset.fpick; setItemFolds(kind, key, cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]); draw(); }
+    else if (b?.hasAttribute('data-fpnew')) { const d = await foldEditor(); if (d) { const id = 'f' + Date.now().toString(36); saveFolds(tab, [...folds(tab), {id, ...d}]); setItemFolds(kind, key, [...itemFolds(foldItem(kind, key) || {}), id]); } draw(); }
+    else if (b?.hasAttribute('data-fprem')) { ov.remove(); opts.remove(); }
+    else if (b?.hasAttribute('data-fpok') || bgClick(e, ov)) close();
   });
-  document.body.append(ov);
+  draw(); document.body.append(ov);
 }
 // čísla u uložených videí obnovíme nejvýš jednou za hodinu (stojí ~2 jednotky za 50 videí)
 async function refreshStars() {
@@ -2092,9 +2151,9 @@ function renderCal() {
     const dayCell = (n) => `<div class="ct cday dfirst ${cls}"${n > 1 ? ` style="grid-row:span ${n}"` : ''}><b>${DOW[d.getDay()]}</b> ${d.getDate()}. ${d.getMonth() + 1}.${iso === today ? '<span class="tag hot">dnes</span>' : ''}</div>`;
     const rows = list.map((e, i) => { const ids = ytIds(e.inspo), f = i === 0 ? ' dfirst' : '';
       return `${i === 0 ? dayCell(list.length + (own ? 1 : 0)) : ''}
-        <div class="ct cname${f} ${cls}"><button class="cnamebtn" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '')}</span><span class="ch">${badge(e)}</span></button>${own ? `<button class="caledit" data-caledit="${esc(e.id)}" title="Upravit">✏️ Upravit</button>` : ''}</div>
-        <button class="ct cinspo${f} ${cls}" data-calopen="${esc(e.id)}">${ids.length ? ids.slice(0, 4).map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`).join('') + (ids.length > 4 ? `<span class="ch">+${ids.length - 4}</span>` : '') : '<span class="ch">–</span>'}</button>
-        <button class="ct cthumb${f} ${cls}" data-calopen="${esc(e.id)}">${e.thumb ? esc(e.thumb) : '<span class="ch">–</span>'}</button>`; }).join('');
+        <div class="ct cname${f} ${cls}"><button class="cnamebtn" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '')}</span><span class="ch">${badge(e)}</span></button></div>
+        <button class="ct cinspo${f} ${cls}" data-calopen="${esc(e.id)}">${ids.slice(0, 4).map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`).join('') + (ids.length > 4 ? `<span class="ch">+${ids.length - 4}</span>` : '')}</button>
+        <button class="ct cthumb${f} ${cls}" data-calopen="${esc(e.id)}">${esc(e.thumb || '')}</button>`; }).join('');
     const add = own ? `<div class="ct cadd ${cls}"><button class="caladd" data-caladd="${iso}">＋ video</button></div>` : '';
     return list.length ? rows + add : dayCell(1) + (add.replace('ct cadd', 'ct cadd dfirst') || `<div class="ct cadd dfirst ${cls}"><span class="ch">–</span></div>`); };
   const later = all.filter(e => e.date > isoDay(days[13])).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
@@ -2263,22 +2322,25 @@ function calEditor(id, date, focusScript, edit = true) {
       <div class="ch">${esc(i?.t || '')}${i?.views ? ` · ${n(i.views)} zhl.` : ''}</div>${own ? `<button class="x" data-calunpick="${v}" title="Odebrat">✖</button>` : ''}</div>`; }).join('') || '<span class="ch">Zatím žádná.</span>';
   const ov = document.createElement('div'); ov.className = 'histov';
   const dt = e.date ? new Date(e.date + 'T12:00') : null;
-  ov.innerHTML = `<div class="histbox calbox ${own ? '' : 'calview'}"><button class="histx" title="Zavřít">✖</button>
+  // 👁 přehled je čistý: prázdné části (inspirace, miniatura, scénář, poznámky) se vůbec neukážou – všechno je v ✏️ úpravách
+  const showInspo = own || ytIds(e.inspo).length, showThumb = own || e.thumb, showScript = own || e.script;
+  const showNotes = own || !admin || calNotes(e.id).length, noteAdd = own || !admin;
+  ov.innerHTML = `<div class="histbox calbox ${own ? '' : 'calview'}"><button class="histx" title="Zavřít">✖</button>${admin && !own ? '<button class="histedit" data-caledit2 title="Upravit">✏️</button>' : ''}
     ${own ? `<input class="calin title" data-f="title" value="${esc(e.title)}" placeholder="Název videa">
       <div class="row"><label>📅 Vyjde <input type="date" class="calin" data-f="date" value="${esc(e.date)}"></label><button class="blockbtn" data-caldel>🗑 Smazat</button><button data-calview>👁 Hotovo – zobrazit přehled</button></div>`
-      : `<h2>${esc(e.title || 'Video')}</h2><div class="row"><span class="ch">📅 ${dt ? `${DOW[dt.getDay()]} ${dt.getDate()}. ${dt.getMonth() + 1}. ${dt.getFullYear()}` : ''}</span>${admin ? '<button class="primary" data-caledit2>✏️ Upravit</button>' : ''}</div>`}
-    <h4>💡 Inspirace (videa, ze kterých vycházím)</h4>
-    <div class="calinspo">${inspoHtml(e.inspo)}</div>
+      : `<h2>${esc(e.title || 'Video')}</h2><div class="row"><span class="ch">📅 ${dt ? `${DOW[dt.getDay()]} ${dt.getDate()}. ${dt.getMonth() + 1}. ${dt.getFullYear()}` : ''}</span></div>`}
+    ${showInspo ? `<h4>💡 Inspirace (videa, ze kterých vycházím)</h4>
+    <div class="calinspo">${inspoHtml(e.inspo)}</div>` : ''}
     ${own ? `<div class="row"><button data-calbrowse="star">⭐ Vybrat z oblíbených</button><button data-calbrowse="trend">🔥 Vybrat z trendů</button><button data-calbrowse="seen">👀 Naposledy viděné</button></div>
       <details><summary class="ch">✏️ Odkazy ručně</summary><textarea class="calin" data-f="inspo" rows="2" placeholder="Odkazy na videa z YouTube (každý na řádek)">${esc(e.inspo)}</textarea></details>` : ''}
-    <h4>🖼️ Co chci na miniatuře <span class="ch">(pro grafika)</span></h4>
-    ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea>` : `<div class="caltxt">${esc(e.thumb) || '<span class="ch">Zatím nic.</span>'}</div>`}
-    <h4>📝 Scénář <button data-calfull title="Samostatné okno – posuneš si ho kamkoli, i na druhý monitor">🪟 Otevřít v okně</button>${own ? ' <button data-caltext>📥 Vložit z uložených</button>' : ''}</h4>
+    ${showThumb ? `<h4>🖼️ Co chci na miniatuře <span class="ch">(pro grafika)</span></h4>
+    ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea>` : `<div class="caltxt">${esc(e.thumb)}</div>`}` : ''}
+    ${showScript ? `<h4>📝 Scénář <button data-calfull title="Samostatné okno – posuneš si ho kamkoli, i na druhý monitor">🪟 Otevřít v okně</button>${own ? ' <button data-caltext>📥 Vložit z uložených</button>' : ''}</h4>
     ${own ? `<label class="chkopt"><input type="checkbox" data-f="checks" ${e.checks ? 'checked' : ''}> ☑️ Fajfkování řádků v okně scénáře <span class="ch">(každý řádek si při natáčení odškrtneš)</span>${(e.done || []).length ? ` <button type="button" data-calundone>↺ Zrušit fajfky (${e.done.length})</button>` : ''}</label>` : ''}
-    ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt script">${esc(e.script) || '<span class="ch">Zatím nic.</span>'}</div>`}
-    <h4>🎨 Poznámky (grafik a ostatní)</h4>
-    <div class="calnotes">${notes()}</div>
-    <div class="addch"><input data-calnote placeholder="Např. miniatury, ze kterých si půjčím (odkaz na YouTube), nápad…"><button data-calnoteadd>➕ Přidat</button></div>
+    ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt script">${esc(e.script)}</div>`}` : ''}
+    ${showNotes ? `<h4>🎨 Poznámky (grafik a ostatní)</h4>
+    <div class="calnotes">${notes()}</div>` : ''}
+    ${noteAdd ? '<div class="addch"><input data-calnote placeholder="Např. miniatury, ze kterých si půjčím (odkaz na YouTube), nápad…"><button data-calnoteadd>➕ Přidat</button></div>' : ''}
     ${own ? '<div class="ch">Ukládá se samo při psaní.</div>' : ''}</div>`;
   let timer = null;
   const save = () => { clearTimeout(timer); timer = setTimeout(() => { calSave(e); renderMain(); }, 600); };
@@ -2486,7 +2548,7 @@ async function dropFolder() {
   return DRIVE.drop = (await dList(`name='prenos' and '${DRIVE.folder}' in parents and ${mime}`))[0]?.id || await dFolder('prenos', DRIVE.folder);
 }
 function dropAdd(item) {
-  ss(dropKey(), [{...item, f:curFold('drop')}, ...ls(dropKey(), [])]); // do kolekce, kterou máš zrovna vybranou
+  ss(dropKey(), [{...item, fs:curFolds('drop')}, ...ls(dropKey(), [])]); // do kolekce, kterou máš zrovna otevřenou
   if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); } // hned na Disk, ať to druhé zařízení vidí
   logEvent(item.kind === 'text' ? `📤 poslal text ${shortT(item.text)}` : `📤 poslal soubor ${item.name}`);
   renderMain();
@@ -2594,26 +2656,28 @@ async function fillDropPreviews() {
 }
 function renderDrop(tabs, who) {
   const all = [...ls(dropKey(who), [])].sort(byOrd);
-  tabs += foldBar('drop', who, all);
-  const mine = who === meWho(), list = foldFilter(all, 'drop', who), drive = REMOTE === DRIVE_BACKEND;
+  const head = foldHead('drop', who, all);
+  const mine = who === meWho(), list = foldSplit(all, 'drop', who), drive = REMOTE === DRIVE_BACKEND;
   const size = b => b > 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' kB';
   const row = it => `<div class="drop" data-at="${it.at}"${mine ? ` draggable="true" data-drag="drop" data-id="${it.at}"` : ''}>
-    <div class="ch droph"><span>${it.dev || ''} ${fmtDate(it.at)}</span>${mine ? foldSelect('drop', 'drop', it.at, it.f) + ordBtns('drop', it.at) : ''}</div>
+    <div class="ch droph"><span>${it.dev || ''} ${fmtDate(it.at)}</span>${mine ? foldBtn('drop', 'drop', it.at, it) + ordBtns('drop', it.at) : ''}</div>
     ${it.kind === 'text' ? `<pre class="droptext">${esc(it.text)}</pre>
       <div class="actions"><button data-dropcopy="${it.at}">📋 Kopírovat text</button>${isOwner() ? `<button data-dropcal="${it.at}">🗓️ Do scénáře</button>` : ''}${mine ? `<button class="blockbtn" data-dropdel="${it.at}" title="Smazat">✖</button>` : ''}</div>`
     : `<div class="dropfile">${/^image\//.test(it.mime) ? `<img data-dropimg="${esc(it.fid)}" alt="">` : `<span class="dropicon">${/^video\//.test(it.mime) ? '🎬' : /pdf/.test(it.mime) ? '📄' : '📦'}</span>`}
         <div><b>${esc(it.name)}</b><div class="ch">${size(it.size)}</div></div></div>
       <div class="actions"><button data-dropdl="${it.at}">⬇ Stáhnout</button>${/^image\//.test(it.mime) ? `<button data-dropimgcopy="${it.at}">📋 Kopírovat</button>` : ''}${mine ? `<button class="blockbtn" data-dropdel="${it.at}" title="Smazat i z Disku">✖</button>` : ''}</div>`}
   </div>`;
-  $('#main').innerHTML = tabs + `<div class="summary"><h3>📤 Přenos – ${esc(whoLabel(who))} – ${list.length}</h3>
-    <div class="row ch">Pošli si text, fotku nebo soubor z jednoho zařízení a hned si ho stáhni / zkopíruj na druhém (PC ↔ mobil ↔ Mac). Jde to přes tvůj Google Disk, nic se neposílá jinam.</div></div>
-    ${!drive ? '<div class="drivegate">☁️ <b>Přenos funguje přes Google Disk</b> – nejdřív ho připoj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : ''}
+  const inFoldView = !!openFold('drop', who);
+  $('#main').innerHTML = tabs + (inFoldView ? head : `<div class="summary"><h3>📤 Přenos – ${esc(whoLabel(who))} – ${all.length}</h3>
+    <div class="row ch">Pošli si text, fotku nebo soubor z jednoho zařízení a hned si ho stáhni / zkopíruj na druhém (PC ↔ mobil ↔ Mac). Jde to přes tvůj Google Disk, nic se neposílá jinam.</div></div>`)
+    + `${!drive ? '<div class="drivegate">☁️ <b>Přenos funguje přes Google Disk</b> – nejdřív ho připoj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : ''}
     ${mine && drive ? `<div class="dropbox" id="dropZone">
       <textarea id="dropText" rows="3" placeholder="Napiš nebo vlož text (odkaz, název, poznámku…)"></textarea>
       <div class="actions"><button class="primary" id="btnDropText">📤 Poslat text</button>
         <label class="filebtn">📎 Poslat fotku / soubor<input type="file" id="dropFile" multiple hidden></label>
         <span class="ch">nebo sem přetáhni soubor / vlož obrázek Ctrl+V</span></div></div>` : ''}
-    ${list.length ? `<div class="droplist">${list.map(row).join('')}</div>` : '<div class="empty">Zatím nic.</div>'}`;
+    ${inFoldView ? '' : head}
+    ${list.length ? `<div class="droplist">${list.map(row).join('')}</div>` : `<div class="empty">${inFoldView ? 'Kolekce je zatím prázdná – u položky klikni na 📁 a přidej ji sem.' : 'Zatím nic.'}</div>`}`;
   if (drive) fillDropPreviews();
 }
 function renderStars() {
@@ -2631,27 +2695,29 @@ function renderStars() {
   let tabs = `<div class="mixbar"><span class="seg"><button data-startab="drop">📤 Přenos</button><button data-startab="videos" class="${!ideas ? 'on' : ''}">⭐ Videa</button><button data-startab="ideas" class="${ideas ? 'on' : ''}">💡 Nápady</button></span>
     <span class="seg">${collections(base).map(w => `<button data-starwho="${w}" class="${w === who ? 'on' : ''}">${w === meWho() ? '👤 ' : '👥 '}${esc(whoLabel(w))} (${count(base, w)})</button>`).join('')}</span></div>`;
   if (ideas) {
-    $('#main').innerHTML = tabs + foldBar('ideas', who, coll) + `<div class="summary"><h3>💡 Uložené nápady – ${esc(whoLabel(who))} – ${foldFilter(coll, 'ideas', who).length}</h3>
-      <div class="row ch">${mine ? 'Vlastní nápady a kombinace z 🎲 Míchače. Text můžeš kdykoli upravit, ukládá se rovnou.' : 'Nápady druhého člověka – jen ke čtení.'}</div></div>
-      ${mine ? `<div class="dropbox"><textarea id="ideaText" rows="2" placeholder="✍️ Napiš nápad na video – třeba „Hraju jen za brawlery, které vybere chat“"></textarea>
+    const head = foldHead('ideas', who, coll), inF = !!openFold('ideas', who);
+    $('#main').innerHTML = tabs + (inF ? head : `<div class="summary"><h3>💡 Uložené nápady – ${esc(whoLabel(who))} – ${coll.length}</h3>
+      <div class="row ch">${mine ? 'Vlastní nápady a kombinace z 🎲 Míchače. Text můžeš kdykoli upravit, ukládá se rovnou.' : 'Nápady druhého člověka – jen ke čtení.'}</div></div>`)
+      + `${mine ? `<div class="dropbox"><textarea id="ideaText" rows="2" placeholder="✍️ Napiš nápad na video – třeba „Hraju jen za brawlery, které vybere chat“"></textarea>
         <div class="actions"><button class="primary" id="btnIdeaSave">💡 Uložit nápad</button></div></div>` : ''}
-      ${savedIdeasHtml(who) || '<div class="empty">Zatím nic. Napiš nápad výš, nebo v 💡 Nápadech → 🎲 Míchač spoj dvě videa.</div>'}`;
+      ${inF ? '' : head}
+      ${savedIdeasHtml(who) || `<div class="empty">${inF ? 'Kolekce je zatím prázdná – u nápadu klikni na 📁 a přidej ho sem.' : 'Zatím nic. Napiš nápad výš, nebo v 💡 Nápadech → 🎲 Míchač spoj dvě videa.'}</div>`}`;
     return;
   }
-  // lišta kolekcí se počítá ze všech uložených videí, seznam jen z vybrané kolekce
+  // karty kolekcí se počítají ze všech uložených videí, mřížka jen z otevřené kolekce (nebo bez kolekce)
   const allVids = Object.entries(coll).map(([id, s]) => ({...s, id: s.id || id}));
-  tabs += foldBar('videos', who, allVids);
-  const list = foldFilter(Object.values(coll), 'videos', who).sort(byOrd).map(s => enrich(s, C(s.cid)))
+  const head = foldHead('videos', who, allVids), inF = !!openFold('videos', who);
+  const list = foldSplit(allVids, 'videos', who).sort(byOrd).map(s => enrich(s, C(s.cid)))
     .filter(it => S.type === 'all' || (S.type === 'short' ? it.short : !it.short)).filter(matchQ);
-  $('#main').innerHTML = tabs + `<div class="summary"><h3>⭐ Uložená videa – ${esc(whoLabel(who))} – ${list.length}</h3>
+  $('#main').innerHTML = tabs + (inF ? head : `<div class="summary"><h3>⭐ Uložená videa – ${esc(whoLabel(who))} – ${allVids.length}</h3>
     ${mine ? '' : '<div class="row ch">Kolekce druhého člověka. ☆ u videa ho uloží do tvé kolekce.</div>'}
-    <div class="row ch">Naposledy uložené jsou vždy první. Hvězdičkou ☆ v rohu miniatury video uložíš, ★ ho zase odebereš. Uložená videa nemizí ani když vypadnou z Novinek a Týdne.</div>
-    <div class="row ch">🖼️ U uložených videí se každých 30 min hlídá miniatura – když ji youtuber změní (třeba po A/B testu), uloží se nová verze do sdílené složky. Hlídá ten, komu zrovna stránka běží, a verze vidí všichni. Varianty, které YouTube během testu ukazuje jen části diváků, veřejně dostupné nejsou.
-      <button id="btnThumbsNow">Zkontrolovat miniatury teď</button></div></div>
-    ${list.length ? `<div class="grid">${list.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Zatím nic. Klikni na ☆ v rohu miniatury u videa, které se ti líbí.</div>'}`;
-  // ↕ vlastní kolekce: šipky pro posouvání (pořadí se uloží a uvidí ho všichni)
+    <div class="row ch">☆ v rohu miniatury video uloží, na ★ si vybereš kolekce nebo ho odebereš. Jedno video může být ve víc kolekcích.</div>
+    <div class="row ch">🖼️ U uložených videí se každých 30 min hlídá miniatura – když ji youtuber změní, uloží se nová verze. <button id="btnThumbsNow">Zkontrolovat miniatury teď</button></div></div>`)
+    + `${inF ? '' : head}
+    ${list.length ? `<div class="grid">${list.map((it, i) => card(it, i, true)).join('')}</div>` : `<div class="empty">${inF ? 'Kolekce je zatím prázdná – na ★ u videa ji vyber.' : folds('videos', who).length ? 'Všechna videa jsou v kolekcích.' : 'Zatím nic. Klikni na ☆ v rohu miniatury u videa, které se ti líbí.'}</div>`}`;
+  // 📁 u videa: ve kterých kolekcích je (klik = změnit)
   if (mine) document.querySelectorAll('#main .grid .card').forEach(el => {
-    el.querySelector('.actions')?.insertAdjacentHTML('beforebegin', foldSelect('videos', 'star', el.dataset.id, STARS[el.dataset.id]?.f));
+    el.querySelector('.actions')?.insertAdjacentHTML('beforebegin', foldBtn('videos', 'star', el.dataset.id, STARS[el.dataset.id] || {}));
   });
   if (mine && !S.q.trim()) document.querySelectorAll('#main .grid .card').forEach(el => {
     el.querySelector('.actions')?.insertAdjacentHTML('afterbegin', ordBtns('star', el.dataset.id));
@@ -2792,7 +2858,7 @@ function card(it, i, showCountry) {
   }
   const ai = aiBadge(it); if (ai) tags.unshift(ai);
   return `<article class="card" data-id="${esc(it.id)}">
-    <a class="thumb" href="${ytUrl(it.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(thumb(it))}" alt=""><span class="rank">#${i + 1}</span><span class="dur">${dur(it.dur)}</span><button class="star ${STARS[it.id] ? 'on' : ''}" data-star title="${STARS[it.id] ? 'Odebrat z uložených' : 'Uložit do ⭐ Uložené'}">${STARS[it.id] ? '★' : '☆'}</button>${isOwner() ? '<button class="tocal" data-tocal title="Přidat do 🗓️ kalendáře">🗓️</button>' : ''}</a>
+    <a class="thumb" href="${ytUrl(it.id)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(thumb(it))}" alt=""><span class="rank">#${i + 1}</span><span class="dur">${dur(it.dur)}</span><button class="star ${STARS[it.id] ? 'on' : ''}" data-star title="${STARS[it.id] ? 'Uložené – kolekce, nebo odebrat' : 'Uložit do ⭐ Uložené'}">${STARS[it.id] ? '★' : '☆'}</button>${isOwner() ? '<button class="tocal" data-tocal title="Přidat do 🗓️ kalendáře">🗓️</button>' : ''}</a>
     <div class="body">
       <a class="title" href="${ytUrl(it.id)}" target="_blank" rel="noopener" title="${esc(it.t)}" data-orig="${esc(it.t)}" data-lang="${langOk(it, it.c) ? it.c.lang : 'auto'}">${esc(S.trAuto && TR[it.t] ? TR[it.t] : it.t)}</a>
       <div class="ch"><a class="chlink" href="https://www.youtube.com/channel/${esc(it.chId)}/videos" target="_blank" rel="noopener" title="Otevřít kanál na YouTube">${esc(it.ch)}</a> · ${n(it.subs)} odběr.</div>
@@ -3301,14 +3367,14 @@ function mixSection() {
 // seznam uložených nápadů (zobrazuje se v ⭐ Uložené → 💡 Nápady)
 function savedIdeasHtml(who = meWho()) {
   const saved = ls(mixKey(who), []), ro = who !== meWho(); // cizí nápady jen ke čtení
-  const show = new Set(foldFilter(saved, 'ideas', who)); // index i zůstává podle celého seznamu (mazání, poznámka)
+  const show = new Set(foldSplit(saved, 'ideas', who)); // index i zůstává podle celého seznamu (mazání, poznámka)
   const rows = saved.map((s, i) => !show.has(s) ? '' : `<div class="brow"${ro ? '' : ` draggable="true" data-drag="idea" data-id="${s.at}"`}>
       ${s.a && s.b ? `<a href="${ytUrl(s.a.id)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${esc(s.a.id)}/default.jpg" width="64" alt=""></a><span class="plus">+</span><a href="${ytUrl(s.b.id)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${esc(s.b.id)}/default.jpg" width="64" alt=""></a>`
         : '<span class="ideaicon" title="Vlastní nápad">✍️</span>'}
       <div class="grow"><div class="ch">${s.a && s.b ? `${esc(s.a.t)} <b>+</b> ${esc(s.b.t)} · ` : 'Vlastní nápad · '}${fmtDate(s.at)}</div>
         ${s.a && s.b ? `<input class="mixnote" ${ro ? 'disabled' : `data-mixnote="${i}"`} value="${esc(s.note)}" placeholder="${ro ? '' : 'Můj nápad…'}">`
           : `<textarea class="mixnote" rows="2" ${ro ? 'disabled' : `data-mixnote="${i}"`}>${esc(s.note)}</textarea>`}</div>
-      ${ro ? '' : foldSelect('ideas', 'idea', s.at, s.f)}${isOwner() ? `<button data-mixcal="${i}" title="Do scénáře v kalendáři">🗓️</button>` : ''}${ro ? '' : ordBtns('idea', s.at) + `<button data-mixdel="${i}" title="Smazat">✖</button>`}</div>`).join('');
+      ${ro ? '' : foldBtn('ideas', 'idea', s.at, s)}${isOwner() ? `<button data-mixcal="${i}" title="Do scénáře v kalendáři">🗓️</button>` : ''}${ro ? '' : ordBtns('idea', s.at) + `<button data-mixdel="${i}" title="Smazat">✖</button>`}</div>`).join('');
   return rows ? `<div class="blist">${rows}</div>` : '';
 }
 async function myLoadUI(b) {
@@ -3675,27 +3741,27 @@ setInterval(() => {
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   // 📁 vlastní kolekce v Uložených
-  if (b.dataset.fsel !== undefined) { FSEL[foldTab()] = b.dataset.fsel; ss('bt_foldsel', FSEL); renderMain(); return; }
+  if (b.dataset.fopen !== undefined) { FSEL[foldTab()] = b.dataset.fopen; ss('bt_foldsel', FSEL); renderMain(); scrollTo(0, 0); return; } // otevřít kolekci / zpět na přehled
   if (b.hasAttribute('data-fnew')) {
     const tab = foldTab();
-    askText('📁 Nová kolekce – název', '', 'Vytvořit').then(n => { if (!n) return; const id = 'f' + Date.now().toString(36);
-      saveFolds(tab, [...folds(tab), {id, n}]); FSEL[tab] = id; ss('bt_foldsel', FSEL); logEvent(`📁 nová kolekce „${n}“`); renderMain(); });
+    foldEditor().then(d => { if (!d) return; saveFolds(tab, [...folds(tab), {id:'f' + Date.now().toString(36), ...d}]); logEvent(`📁 nová kolekce „${d.n}“`); renderMain(); });
     return;
   }
-  if (b.dataset.fren) {
-    const tab = foldTab(), d = folds(tab).find(x => x.id === b.dataset.fren); if (!d) return;
-    askText('✏️ Přejmenovat kolekci', d.n).then(n => { if (!n) return; saveFolds(tab, folds(tab).map(x => x.id === d.id ? {...x, n} : x)); renderMain(); });
+  if (b.dataset.fedit) {
+    const tab = foldTab(), old = folds(tab).find(x => x.id === b.dataset.fedit); if (!old) return;
+    foldEditor(old).then(d => { if (!d) return; saveFolds(tab, folds(tab).map(x => x.id === old.id ? {...x, ...d} : x)); renderMain(); });
     return;
   }
   if (b.dataset.fdel) {
     const tab = foldTab(), d = folds(tab).find(x => x.id === b.dataset.fdel); if (!d) return;
-    askConfirm(`Smazat kolekci „${d.n}“? Položky v ní nezmizí – budou v „Bez kolekce“.`, '🗑 Smazat kolekci').then(yes => {
+    askConfirm(`Smazat kolekci „${d.n}“? Položky v ní nezmizí – vrátí se mezi ostatní (bez kolekce).`, '🗑 Smazat kolekci').then(yes => {
       if (!yes) return; saveFolds(tab, folds(tab).filter(x => x.id !== d.id)); FSEL[tab] = ''; ss('bt_foldsel', FSEL); renderMain(); });
     return;
   }
+  if (b.dataset.fitem) { pickFolds(foldTab(), b.dataset.fitem, b.dataset.fkey); return; } // 📁 u položky
   if (b.id === 'btnIdeaSave') {
     const t = $('#ideaText').value.trim(); if (!t) return;
-    ss(mixKey(), [{note:t, at:Date.now(), f:curFold('ideas')}, ...ls(mixKey(), [])]);
+    ss(mixKey(), [{note:t, at:Date.now(), fs:curFolds('ideas')}, ...ls(mixKey(), [])]);
     if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
     logEvent(`💡 nový nápad: ${shortT(t)}`); renderMain(); return;
   }
@@ -3738,7 +3804,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.mixmode) { MIX.mode = b.dataset.mixmode; ss('bt_mixmode', MIX.mode); reroll(); renderMain(); }
   else if (b.id === 'btnMixSave') {
     if (!MIX.a || !MIX.b) return;
-    ss(mixKey(), [{a:slim(MIX.a), b:slim(MIX.b), note:$('#mixNote').value.trim(), at:Date.now(), f:curFold('ideas')}, ...ls(mixKey(), [])]);
+    ss(mixKey(), [{a:slim(MIX.a), b:slim(MIX.b), note:$('#mixNote').value.trim(), at:Date.now(), fs:curFolds('ideas')}, ...ls(mixKey(), [])]);
     logEvent(`💡 uložil nápad: ${shortT(MIX.a.t)} + ${shortT(MIX.b.t)}`);
     reroll(); renderMain();
   }
