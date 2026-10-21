@@ -164,6 +164,14 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
   /* nahoře: velké logo vlevo, vpravo v rohu jen emoji (☁️ 🚫 ⚙️), pod tím kvóta a stav */
   .top{gap:6px 8px}
   .logo{height:58px}
+  /* pořadí: logo, řazení, hledání – a pak záložky, období, státy (ty zůstanou při scrollu přilepené nahoře) */
+  header{display:flex;flex-direction:column}
+  header > .top{order:0}
+  #controls{order:1}
+  header > .search{order:2;margin-top:6px}
+  nav#tabs{order:3}
+  #periods{order:4}
+  #countries{order:5}
   /* mřížka: logo | ☁️ | 🚫 | ⚙️ v jednom řádku, pod tím kvóta a stav */
   .top{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:6px;align-items:center}
   .right{display:contents}
@@ -471,7 +479,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$)/;
-const APP_VERSION = '2026-10-21.51'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.52'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1480,7 +1488,7 @@ function renderSettings() {
   const NAV = [['set-show', '🔎 Hledání'], ['set-upd', '⟳ Aktualizace'], ['set-trash', '🗑️ Koš'], ['set-api', '🔑 API'], ['set-backup', '💾 Záloha'], ['set-share', '👥 Sdílení'], ['set-log', '📜 Protokol']];
   $('#controls').insertAdjacentHTML('beforeend', `<div class="setnav">${NAV.map(([id, l]) => `<button data-jump="${id}">${l}</button>`).join('')}</div>`);
   // na mobilu se nahoře lepí aspoň řádek se záložkami Nastavení (na PC se lepí celá hlavička)
-  if (matchMedia('(max-width:600px)').matches) { const hd = $('header'); hd.style.position = 'sticky'; hd.style.top = -($('.setnav').offsetTop - 4) + 'px'; }
+  STICK = '.setnav'; applyStick();
   $('#main').innerHTML = `<div class="settings">
     <div class="sec" id="set-show"><h2>🔎 Co se hledá a ukazuje</h2>
       ${chk('strict', 'Jen videa z daného státu', 'Bere kanál podle země, původního jazyka a překladů názvu. Když vypneš, uvidíš i cizí (hlavně anglická) videa, která YouTube k hledání přimíchá.')}
@@ -1876,12 +1884,11 @@ function renderCal() {
         ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div></div>
     <div class="caltable" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
-  // na mobilu se v kalendáři lepí nahoře aspoň řádek hlavních záložek (zbytek hlavičky odjede)
   const hd = $('header');
-  if (matchMedia('(max-width:600px)').matches) { hd.style.position = 'sticky'; hd.style.top = -($('#tabs').offsetTop - 4) + 'px'; }
   // sjet na dnešní den (pod lepící lištu a řádek DEN | NÁZEV …)
   if (S.calJump) {
     S.calJump = false;
+    scrollTo(0, 0); // z hodně sjeté stránky by se výpočet rozhodil
     requestAnimationFrame(() => {
       const el = $('#main .cday.today'); if (!el) return;
       // výška toho, co po sjetí zůstane nahoře přilepené
@@ -3274,12 +3281,24 @@ function rerender() {
   renderMain();
 }
 // jen obsah stránky (hlavičku s polem hledání nepřekreslujeme, ať se nepřeruší psaní)
+// 📱 mobil: hlavička se posune nahoru tak, aby přilepená zůstala jen část od prvku STICK dolů
+// (u videí záložky + období + státy, v Nastavení řádek jeho záložek). Přepočítá se při každé změně výšky hlavičky.
+let STICK = null;
+function applyStick() {
+  const hd = $('header'), el = STICK && $(STICK);
+  if (!el || !matchMedia('(max-width:600px)').matches) { hd.style.position = ''; hd.style.top = ''; return; }
+  hd.style.position = 'sticky';
+  hd.style.top = -(el.getBoundingClientRect().top - hd.getBoundingClientRect().top - 4) + 'px'; // vzdálenost od začátku hlavičky
+}
+new ResizeObserver(() => applyStick()).observe($('header'));
+addEventListener('resize', applyStick);
 function renderMain() {
-  $('header').style.position = ''; $('header').style.top = ''; // mobilní lepení si nastaví kalendář / Nastavení samy
-  if (S.view === 'blocked') return renderBlocked();
-  if (S.view === 'settings') return renderSettings();
+  STICK = S.view ? null : '#tabs'; // Nastavení si nastaví '.setnav' samo
   // v kalendáři vyhledávání nic nedělá → schovat
   $('header .search').style.display = S.period === 'cal' && !S.view ? 'none' : '';
+  applyStick();
+  if (S.view === 'blocked') return renderBlocked();
+  if (S.view === 'settings') return renderSettings();
   if (S.period !== 'cal' && S.q.trim() && (S.qScope === 'all' || S.period === 'ideas')) return renderSearchAll();
   if (S.period === 'ideas') renderIdeas();
   else if (S.period === 'cal') renderCal();
