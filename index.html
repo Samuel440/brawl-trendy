@@ -389,8 +389,14 @@ button.danger{background:var(--hot);border-color:var(--hot);color:#fff;font-weig
 .trashrow .blockbtn{color:var(--hot)}
 /* 📈 Google Trends pod kalendářem */
 #trendsSec{padding:0 16px 24px;max-width:1500px;margin:0 auto}
-.gtbox{background:#fff;border-radius:10px;overflow:hidden;margin:8px 0;min-height:60px;color:#333}
-.gtbox iframe{width:100% !important;display:block}
+/* Google graf je jen světlý → obarvíme ho do tmava (invert + otočení barev, ať modrá čára zůstane modrá);
+   dokud se nenačte, je schovaný a místo bílé plochy svítí tmavé „Načítám…“ */
+.gtbox{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:8px 0;min-height:120px}
+.gtbox iframe{width:100% !important;display:block;filter:invert(.92) hue-rotate(180deg);opacity:0;transition:opacity .4s}
+.gtbox.ready iframe{opacity:1}
+.gtbox .gtwait{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;color:var(--muted);font-size:13px}
+.gtbox:not(.ready) > div:not(.gtwait){height:120px;overflow:hidden} /* skryté okno Googlu nezabírá místo */
+.gtbox.ready .gtwait{display:none}
 #gtLink{color:var(--accent)}
 @media (max-width:600px){#trendsSec{padding:0 12px 20px}}
 .blockmenu{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;background:rgba(255,79,109,.08);border:1px solid rgba(255,79,109,.35);border-radius:8px;padding:8px}
@@ -503,7 +509,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$)/;
-const APP_VERSION = '2026-10-21.59'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.60'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3431,12 +3437,27 @@ async function renderTrends() {
   sec.querySelectorAll('[data-gtprop]').forEach(b => b.classList.toggle('on', b.dataset.gtprop === GT.prop));
   $('#gtLink').href = 'https://trends.google.com/trends/explore?' + gtQuery();
   const key = GT.per + '|' + GT.prop; if (GT.shown === key) return; GT.shown = key;
-  const box = $('#gtrends'); box.innerHTML = '<div class="ch" style="padding:20px">Načítám graf z Google Trends…</div>';
-  try { await gtLoader(); } catch { box.innerHTML = '<div class="ch" style="padding:20px">Google Trends se nepodařilo načíst – otevři odkaz níž.</div>'; return; }
+  const box = $('#gtrends'), wait = '<div class="gtwait">📈 Načítám graf z Google Trends…</div>';
+  box.classList.remove('ready'); box.innerHTML = wait;
+  try { await gtLoader(); } catch { box.innerHTML = '<div class="gtwait">Google Trends se nepodařilo načíst – otevři odkaz níž.</div>'; return; }
   if (GT.shown !== key) return; // mezitím přepnuto
-  box.innerHTML = '';
-  trends.embed.renderExploreWidgetTo(box, 'TIMESERIES', {comparisonItem:[{keyword:'brawl stars', geo:'', time:GT.per}], category:0, property:GT.prop},
+  box.innerHTML = wait;
+  const holder = document.createElement('div'); box.append(holder);
+  trends.embed.renderExploreWidgetTo(holder, 'TIMESERIES', {comparisonItem:[{keyword:'brawl stars', geo:'', time:GT.per}], category:0, property:GT.prop},
     {exploreQuery:gtQuery(), guestPath:'https://trends.google.com:443/trends/embed/'});
+  // graf ukázat, až přijdou data – Google pak okno zvětší z prázdných 150 px na celý graf; do té doby tmavé „Načítám…“
+  let ro = null;
+  const hook = () => {
+    const f = holder.querySelector('iframe'); if (!f) return false;
+    ro = new ResizeObserver(() => { if (f.offsetHeight > 200 && GT.shown === key) { setTimeout(() => box.classList.add('ready'), 300); ro.disconnect(); } });
+    ro.observe(f); return true;
+  };
+  if (!hook()) { const watch = new MutationObserver(() => { if (hook()) watch.disconnect(); }); watch.observe(holder, {childList:true, subtree:true}); }
+  // data do 10 s nepřišla (Google omezuje počet načtení) → místo prázdné plochy vysvětlení
+  setTimeout(() => {
+    if (GT.shown !== key || box.classList.contains('ready')) return;
+    box.querySelector('.gtwait').innerHTML = 'Google Trends teď graf neposlal (omezuje počet načtení).<br>Zkus to za chvíli znovu, nebo ho otevři odkazem níž.';
+  }, 10000);
 }
 // 📱 mobil: hlavička se posune nahoru tak, aby přilepená zůstala jen část od prvku STICK dolů
 // (u videí záložky + období + státy, v Nastavení řádek jeho záložek). Přepočítá se při každé změně výšky hlavičky.
