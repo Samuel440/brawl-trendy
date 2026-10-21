@@ -113,8 +113,8 @@ details summary{cursor:pointer}
 .thumb .star.on{color:var(--accent)}
 .thumb .tocal{position:absolute;right:44px;top:6px;width:32px;height:32px;border-radius:50%;border:0;padding:0;font-size:16px;line-height:32px;background:rgba(0,0,0,.6);cursor:pointer}
 .thumb .tocal:hover{background:rgba(0,0,0,.85)}
-.calpickvid{display:flex;gap:10px;align-items:center;margin-bottom:8px}
-.calpickvid img{width:140px;border-radius:6px}
+.calpickvid{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.calpickvid img{width:140px;max-width:42%;border-radius:6px}
 .daypick{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:10px;max-height:60vh;overflow:auto}
 .dayopt{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:5px}
 .dayopt.weekend{border-color:color-mix(in srgb,var(--line) 60%,var(--accent) 40%)}
@@ -548,7 +548,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-22.69'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.70'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2308,6 +2308,38 @@ function calPickScript(text) {
   });
   document.body.append(ov);
 }
+// 💡 nápad z míchače do kalendáře: nápad = NÁZEV videa (další řádky do scénáře), obě videa = 💡 inspirace
+function calPickIdea(s) {
+  const lines = String(s.note || '').trim().split('\n'), title = lines[0].trim(), rest = lines.slice(1).join('\n').trim();
+  const vids = [s.a?.id, s.b?.id].filter(Boolean);
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const days = Array.from({length:21}, (_, i) => { const d = new Date(t); d.setDate(t.getDate() + i); return d; });
+  const all = Object.values(ls(calKey(), {}));
+  const ov = document.createElement('div'); ov.className = 'histov';
+  ov.innerHTML = `<div class="histbox pickbox"><button class="histx" title="Zavřít">✖</button>
+    <h3>🗓️ Nápad do kalendáře</h3>
+    <div class="calpickvid">${vids.map(v => `<img src="https://i.ytimg.com/vi/${esc(v)}/mqdefault.jpg" alt="">`).join('')}<div><b>${esc(title || 'Nápad bez názvu')}</b>${rest ? `<div class="ch">${esc(rest)}</div>` : ''}</div></div>
+    <div class="ch">Vyber den – nápad bude název videa${vids.length ? ' a obě videa 💡 inspirace' : ''}. U videa, které už ten den máš, se jen doplní inspirace.</div>
+    <div class="daypick">${days.map(d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => calCreated(a) - calCreated(b));
+      return `<div class="dayopt ${d.getDay() % 6 === 0 ? 'weekend' : ''}"><div class="dayh"><b>${DOW[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}.</b>${iso === isoDay(t) ? ' <span class="tag hot">dnes</span>' : ''}</div>
+        ${list.map(e => `<button data-cpto="${esc(e.id)}" title="Doplnit k tomuto videu">💡 ${esc(e.title || 'video')}</button>`).join('')}
+        <button class="primary" data-cpnew="${iso}">＋ nové video</button></div>`; }).join('')}</div></div>`;
+  const addInspo = e => { const have = ytIds(e.inspo); e.inspo = [e.inspo, ...vids.filter(v => !have.includes(v)).map(ytUrl)].filter(Boolean).join('\n'); };
+  ov.addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (bgClick(ev, ov) || b?.classList.contains('histx')) return ov.remove();
+    if (b?.dataset.cpto) {
+      const e = ls(calKey(), {})[b.dataset.cpto]; if (!e) return;
+      addInspo(e); if (!e.title) e.title = title; if (rest) e.script = [e.script, rest].filter(Boolean).join('\n\n');
+      calSave(e); ov.remove(); calEditor(e.id);
+    }
+    if (b?.dataset.cpnew) {
+      const e = {id:'v' + Date.now().toString(36), date:b.dataset.cpnew, title, script:rest, thumb:'', inspo:''};
+      addInspo(e); calSave(e); logEvent(`📅 naplánoval ${shortT(title || 'nápad')} na ${e.date}`); ov.remove(); calEditor(e.id);
+    }
+  });
+  document.body.append(ov);
+}
 // 📥 text do scénáře z uložených: nápady z míchače (i s poznámkou) a texty z Přenosu
 function textPicker(insert) {
   const ideas = ls(mixKey(), []).map(s => ({k:'💡 Nápad', text:[s.note, s.a && `(${s.a.t || ''} + ${s.b?.t || ''})`].filter(Boolean).join('\n')}));
@@ -3398,7 +3430,7 @@ function savedIdeasHtml(who = meWho()) {
       <div class="grow"><div class="ch">${s.a && s.b ? `${esc(s.a.t)} <b>+</b> ${esc(s.b.t)} · ` : 'Vlastní nápad · '}${fmtDate(s.at)}</div>
         ${s.a && s.b ? `<input class="mixnote" ${ro ? 'disabled' : `data-mixnote="${i}"`} value="${esc(s.note)}" placeholder="${ro ? '' : 'Můj nápad…'}">`
           : `<textarea class="mixnote" rows="2" ${ro ? 'disabled' : `data-mixnote="${i}"`}>${esc(s.note)}</textarea>`}</div>
-      ${ro ? '' : foldBtn('ideas', 'idea', s.at, s)}${isOwner() ? `<button data-mixcal="${i}" title="Do scénáře v kalendáři">🗓️</button>` : ''}${ro ? '' : ordBtns('idea', s.at) + `<button data-mixdel="${i}" title="Smazat">✖</button>`}</div>`).join('');
+      ${ro ? '' : foldBtn('ideas', 'idea', s.at, s)}${isOwner() ? `<button data-mixcal="${i}" title="Do kalendáře (nápad = název, videa = inspirace)">🗓️</button>` : ''}${ro ? '' : ordBtns('idea', s.at) + `<button data-mixdel="${i}" title="Smazat">✖</button>`}</div>`).join('');
   return rows ? `<div class="blist">${rows}</div>` : '';
 }
 async function myLoadUI(b) {
@@ -3873,7 +3905,7 @@ document.addEventListener('click', e => {
   else if (b.id === 'btnDropText') { const t = $('#dropText').value.trim(); if (t) dropAdd({at:Date.now(), kind:'text', text:t, dev:devIcon()}); }
   else if (b.dataset.dropcopy) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropcopy); navigator.clipboard?.writeText(it?.text || '').then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.dataset.dropcal) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropcal); if (it?.text) calPickScript(it.text); }
-  else if (b.dataset.mixcal !== undefined) { const s = ls(mixKey(S.starWho ?? meWho()), [])[+b.dataset.mixcal]; if (s) calPickScript([s.note, s.a && `(inspirace: ${s.a.t || ''} + ${s.b?.t || ''})`].filter(Boolean).join('\n')); }
+  else if (b.dataset.mixcal !== undefined) { const s = ls(mixKey(S.starWho ?? meWho()), [])[+b.dataset.mixcal]; if (s) calPickIdea(s); }
   else if (b.dataset.dropdl) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropdl); if (it) dropDownload(it, b); }
   else if (b.dataset.dropimgcopy) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropimgcopy); if (it) dropCopyImage(it, b); }
   else if (b.dataset.dropdel) dropDelete(+b.dataset.dropdel);
