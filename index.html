@@ -362,6 +362,15 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 .search input{flex:1;min-width:0;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
 .search input:focus{outline:none;border-color:var(--accent)}
 .actions .blockbtn{margin-left:auto;color:var(--hot)}
+/* ❓ potvrzení smazání a 🗑️ koš */
+.askbox{width:min(420px,100%)}
+.askbox h3{margin:0 0 6px;font-size:17px;line-height:1.35;overflow-wrap:anywhere}
+.askbox .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+button.danger{background:var(--hot);border-color:var(--hot);color:#fff;font-weight:800}
+.trashlist{display:flex;flex-direction:column;gap:6px}
+.trashrow{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;flex-wrap:wrap}
+.trashrow .grow{flex:1;min-width:180px;overflow-wrap:anywhere}
+.trashrow .blockbtn{color:var(--hot)}
 .blockmenu{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;background:rgba(255,79,109,.08);border:1px solid rgba(255,79,109,.35);border-radius:8px;padding:8px}
 .blockmenu[hidden]{display:none}
 .blockmenu button{font-size:12px;padding:4px 8px}
@@ -461,8 +470,8 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
-const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.49'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$)/;
+const APP_VERSION = '2026-10-21.50'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -556,7 +565,7 @@ const $ = s => document.querySelector(s);
 // Úložiště (REMOTE): ☁️ Google Disk (po přihlášení – funguje i na mobilu bez PC), jinak server.py na PC, jinak nic.
 var SHARED_RX = KV_RX;
 // ⭐, nápady a blokace: smazání se zapíše do bt_tomb (klíč|id → kdy), aby se při slučování smazané nevrátilo
-const TOMB_RX = /^bt_(star|mixsaved|drop)(_g_[a-z0-9_]+)?$|^bt_block$|^bt_cal$/;
+const TOMB_RX = /^bt_(star|mixsaved|drop)(_g_[a-z0-9_]+)?$|^bt_block$|^bt_cal$|^bt_trash$/;
 function tomb(k, id) { const t = ls('bt_tomb', {}); t[k + '|' + id] = Date.now(); ss('bt_tomb', t); }
 function applyTomb(k, v) {
   const t = ls('bt_tomb', {}), dead = (key, at) => (t[key] || 0) >= (at || 0);
@@ -1432,7 +1441,7 @@ function mergeKey(k, mine, theirs) {
 function mergeKey0(k, mine, theirs) {
   if (typeof mine === 'number') return Math.max(mine, +theirs || 0); // časy (bt_autoAt…) – platí pozdější
   if (/^bt_h_/.test(k)) { const out = {...theirs}; for (const [id, p] of Object.entries(mine)) out[id] = out[id] ? thinPts([...out[id], ...p]) : p; return out; }
-  if (k === 'bt_qs' || k === 'bt_disc' || k === 'bt_cal') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
+  if (k === 'bt_qs' || k === 'bt_disc' || k === 'bt_cal' || k === 'bt_trash') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
   if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
   if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), items:capItems(byId(mine.items, theirs.items))};
@@ -1464,9 +1473,11 @@ function renderSettings() {
   pageHeader('⚙️ Nastavení', 'Změny se ukládají hned.');
   const chk = (k, title, desc) => `<label class="setrow"><input type="checkbox" data-set="${k}" ${S[k] ? 'checked' : ''}><span><b>${title}</b><span class="ch">${desc}</span></span></label>`;
   const opt = (v, l) => `<option value="${v}" ${S.interval === v ? 'selected' : ''}>${l}</option>`;
-  const q = ls('bt_quota', {used:0});
+  // kvóta: jeden součet za všechna moje zařízení dnes
+  const q = Object.values(ls('bt_qs', {})).filter(e => e.d === ptDate() && (e.who || '') === meWho()).reduce((a, e) => ({s:a.s + (e.s || 0), q:a.q + (e.q || 0)}), {s:0, q:0});
+  trashExpire();
   // tlačítka nahoře v liště: skok rovnou na danou část Nastavení
-  const NAV = [['set-show', '🔎 Hledání'], ['set-upd', '⟳ Aktualizace'], ['set-api', '🔑 API'], ['set-backup', '💾 Záloha'], ['set-share', '👥 Sdílení'], ['set-log', '📜 Protokol']];
+  const NAV = [['set-show', '🔎 Hledání'], ['set-upd', '⟳ Aktualizace'], ['set-trash', '🗑️ Koš'], ['set-api', '🔑 API'], ['set-backup', '💾 Záloha'], ['set-share', '👥 Sdílení'], ['set-log', '📜 Protokol']];
   $('#controls').insertAdjacentHTML('beforeend', `<div class="setnav">${NAV.map(([id, l]) => `<button data-jump="${id}">${l}</button>`).join('')}</div>`);
   $('#main').innerHTML = `<div class="settings">
     <div class="sec" id="set-show"><h2>🔎 Co se hledá a ukazuje</h2>
@@ -1485,8 +1496,12 @@ function renderSettings() {
       <label class="setrow"><select data-set="severy">${SEARCH_EVERY_OPTS.map(h => `<option value="${h}" ${S.severy === h ? 'selected' : ''}>jednou za ${h} h</option>`).join('')}</select><span><b>Plné hledání nových videí</b><span class="ch">Hledání jsou to vzácné (100 denně pro všechna zařízení). Každý stát a období se plně prohledá nejvýš takhle často – a když už to mezitím udělal někdo jiný (mobil, grafik), nehledá se znova. Mezitím jen levná obnova.</span></span></label>
       ${TIME_PERIODS.includes(S.period) ? `<div class="setrow"><button id="btnRefresh">⟳ Aktualizovat teď</button><span><b>${esc(C(S.country).name)} – ${PERIODS[S.period].label}</b><span class="ch">Plné hledání hned teď (1–2 hledání ze 100 denních), bez čekání na časomíru. Pak se vrátíš na seznam.</span></span></div>` : ''}
     </div>
+    <div class="sec" id="set-trash"><h2>🗑️ Koš</h2>
+      <p class="hint">Smazaná videa z kalendáře (i se scénářem), texty a soubory z Přenosu a nápady tu jsou ${TRASH_DAYS} dní, pak se smažou nadobro. ♻️ Vrátit je dá zpátky na stejné místo.</p>
+      <div id="trashBox">${trashHtml()}</div>
+    </div>
     <div class="sec" id="set-api"><h2>🔑 YouTube API</h2>
-      <div class="setrow"><span><b>Hledání dnes: ${q.s || 0} / ${S.slimit}${searchBlocked() ? ' – došla' : ''} · ostatní dotazy: ${(q.q || 0).toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}</b><span class="ch">Google dává na jeden API klíč 100 hledání a 10 000 ostatních dotazů denně, obnoví se kolem 9:00. Hledání je to vzácné: plné načtení státu stojí 1–2 hledání; obnova zhlédnutí a nová videa ze sledovaných kanálů hledání nestojí. Číslo tady je jen za tohle zařízení – Google sčítá všechna zařízení s tvým klíčem.</span></span></div>
+      <div class="setrow"><span><b>Hledání dnes: ${q.s} / ${S.slimit}${searchBlocked() ? ' – došla' : ''} · ostatní dotazy: ${q.q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}</b><span class="ch">Součet za všechna tvoje zařízení. Google dává na jeden API klíč 100 hledání a 10 000 ostatních dotazů denně, obnoví se kolem 9:00.</span></span></div>
       <label class="setrow"><input type="number" min="1" max="100" step="1" data-set="slimit" value="${S.slimit}" style="width:70px"><span><b>Můj denní limit hledání</b><span class="ch">Nad tenhle počet hledání denně stránka už nehledá (ostatní jede dál). Grafikovi s vlastním klíčem klidně nech 100, jinak třeba 20.</span></span></label>
       <div class="setrow"><button id="btnKey">Změnit API klíč</button><span class="ch">Každý člověk má mít svůj vlastní klíč – pak si navzájem kvótu neberete.</span></div>
     </div>
@@ -1822,9 +1837,12 @@ function calSave(e) {
   if (!isOwner()) return;
   const all = ls(calKey(), {}); all[e.id] = {...e, created:e.created || calCreated(e), at:Date.now()}; ss(calKey(), all);
 }
-function calDelete(id) {
+// trash = video se zeptá a půjde do 🗑️ koše (prázdné záznamy, které se uklízí samy, ne)
+function calDelete(id, trash) {
   if (!isOwner()) return;
-  const all = ls(calKey(), {}), e = all[id]; delete all[id]; tomb(calKey(), id); ss(calKey(), all);
+  const all = ls(calKey(), {}), e = all[id];
+  if (trash && e) toTrash('cal', calKey(), e, '🗓️ ' + (e.title || 'video bez názvu'));
+  delete all[id]; tomb(calKey(), id); ss(calKey(), all);
   if (e) logEvent(`📅 smazal z kalendáře ${shortT(e.title || 'video')}`);
   if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
 }
@@ -2061,7 +2079,13 @@ function calEditor(id, date, focusScript, edit = true) {
     });
     if (bgClick(ev, ov) || b?.classList.contains('histx')) { clearTimeout(timer); if (own && (e.title || e.script || e.thumb || e.inspo)) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || 'video')} na ${e.date}`); } ov.remove(); renderMain(); return; }
     if (!b) return;
-    if (b.matches('[data-caldel]')) { calDelete(e.id); ov.remove(); renderMain(); }
+    if (b.matches('[data-caldel]')) {
+      askConfirm(`Smazat video „${e.title || 'bez názvu'}“${e.script ? ' i se scénářem' : ''}?`).then(yes => {
+        if (!yes) return;
+        clearTimeout(timer); if (e.title || e.script || e.thumb || e.inspo) calSave(e); // do koše i s neuloženými úpravami
+        calDelete(e.id, true); ov.remove(); renderMain();
+      });
+    }
     else if (b.matches('[data-caledit2]')) { ov.remove(); calEditor(e.id); }
     else if (b.matches('[data-calview]')) { clearTimeout(timer); if (e.title || e.script || e.thumb || e.inspo) calSave(e); ov.remove(); renderMain(); calEditor(e.id, null, false, false); }
     else if (b.matches('[data-calfull]')) scriptWindow(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title);
@@ -2246,12 +2270,62 @@ async function dropCopyImage(it, b) {
     b.textContent = '✔ Zkopírováno';
   } catch (e) { b.textContent = '📋 Kopírovat'; status('Obrázek se nepodařilo zkopírovat – použij ⬇ Stáhnout.', true); }
 }
-function dropDelete(at) {
+async function dropDelete(at) {
   const k = dropKey(), list = ls(k, []), it = list.find(x => x.at === at);
-  if (it?.fid) dDel(it.fid);
+  if (!it || !await askConfirm(`Smazat ${it.kind === 'text' ? `text „${shortT(it.text)}“` : `soubor ${it.name}`}?`)) return;
+  toTrash('drop', k, it, it.kind === 'text' ? '📤 ' + shortT(it.text) : '📎 ' + it.name); // soubor na Disku zůstane, smaže se až z koše
   tomb(k, at); ss(k, list.filter(x => x.at !== at));
   if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
   renderMain();
+}
+// ---------- ❓ Potvrzení a 🗑️ Koš ----------
+// Mazání se vždy jednou potvrdí. Smazané (video v kalendáři i se scénářem, text/soubor z Přenosu, nápad)
+// leží 15 dní v koši (⚙️ Nastavení → 🗑️ Koš), jde vrátit; pak se smaže nadobro. Koš se sdílí přes Disk.
+const TRASH_DAYS = 15;
+function askConfirm(msg, ok = '🗑 Smazat') {
+  return new Promise(res => {
+    const ov = document.createElement('div'); ov.className = 'histov'; ov.style.zIndex = 70;
+    ov.innerHTML = `<div class="histbox askbox"><h3>${esc(msg)}</h3><div class="ch">Zůstane ${TRASH_DAYS} dní v koši (⚙️ Nastavení → 🗑️ Koš), odkud ho můžeš vrátit.</div>
+      <div class="row"><button data-no>Ne, nechat</button><button class="danger" data-yes>${ok}</button></div></div>`;
+    const done = v => { ov.remove(); document.removeEventListener('keydown', key, true); res(v); };
+    const key = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    ov.addEventListener('click', e => { const b = e.target.closest('button'); if (b?.hasAttribute('data-yes')) done(true); else if (b?.hasAttribute('data-no') || bgClick(e, ov)) done(false); });
+    document.addEventListener('keydown', key, true);
+    document.body.append(ov); ov.querySelector('[data-no]').focus();
+  });
+}
+function toTrash(kind, key, data, label) {
+  const t = ls('bt_trash', {}), id = kind + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  t[id] = {id, kind, key, data, label, by:meWho(), at:Date.now()}; ss('bt_trash', t);
+}
+function trashList() { return Object.values(ls('bt_trash', {})).sort((a, b) => b.at - a.at); }
+// po 15 dnech pryč nadobro (soubor z Přenosu se teprve teď smaže z Disku)
+function trashPurge(id) {
+  const t = ls('bt_trash', {}), e = t[id]; if (!e) return;
+  if (e.kind === 'drop' && e.data.fid && REMOTE === DRIVE_BACKEND) dDel(e.data.fid);
+  delete t[id]; tomb('bt_trash', id); ss('bt_trash', t);
+}
+function trashExpire() {
+  if (REMOTE !== DRIVE_BACKEND && Object.values(ls('bt_trash', {})).some(e => e.data?.fid)) return; // soubory mazat jen s Diskem
+  for (const e of trashList()) if (Date.now() - e.at > TRASH_DAYS * 864e5) trashPurge(e.id);
+}
+// vrátit zpět – dostane nový čas, ať ho starý záznam o smazání (bt_tomb) nepřebije; pořadí zůstane
+function trashRestore(id) {
+  const t = ls('bt_trash', {}), e = t[id]; if (!e) return;
+  const now = Date.now();
+  if (e.kind === 'cal') { const all = ls(calKey(), {}); all[e.data.id] = {...e.data, at:now}; ss(calKey(), all); }
+  else { const it = {...e.data, ord:e.data.ord ?? e.data.at, at:now}; ss(e.key, [it, ...ls(e.key, [])].sort(byOrd)); }
+  delete t[id]; tomb('bt_trash', id); ss('bt_trash', t);
+  if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
+  logEvent(`♻️ vrátil z koše ${e.label}`);
+}
+function trashHtml() {
+  const list = trashList();
+  if (!list.length) return '<div class="ch">Koš je prázdný.</div>';
+  const left = e => Math.max(0, Math.ceil((e.at + TRASH_DAYS * 864e5 - Date.now()) / 864e5));
+  return `<div class="trashlist">${list.map(e => `<div class="trashrow"><div class="grow"><b>${esc(e.label || '')}</b>
+      <div class="ch">${e.kind === 'cal' ? `🗓️ ${esc(e.data.date || '')}${e.data.script ? ' · 📝 se scénářem' : ''} · ` : ''}smazáno ${fmtDate(e.at)}${e.by ? ' · ' + esc(whoLabel(e.by)) : ''} · nadobro za ${left(e)} ${left(e) === 1 ? 'den' : left(e) < 5 ? 'dny' : 'dní'}</div></div>
+      <button class="primary" data-trashback="${esc(e.id)}">♻️ Vrátit</button><button class="blockbtn" data-trashdel="${esc(e.id)}" title="Smazat nadobro">✖</button></div>`).join('')}</div>`;
 }
 async function fillDropPreviews() {
   for (const img of document.querySelectorAll('img[data-dropimg]')) {
@@ -3232,6 +3306,7 @@ async function autoRefresh() {
 setInterval(() => {
   updateUpdated();
   if (!document.hidden) checkAllThumbs(); // sama si hlídá interval 30 min
+  if (Date.now() - (trashExpire.at || 0) > 36e5) { trashExpire.at = Date.now(); trashExpire(); } // 🗑️ koš: co je starší 15 dní, pryč
   if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || driveGate()) return;
   if (Date.now() >= nextDue()) autoRefresh();
 }, 1000);
@@ -3277,7 +3352,17 @@ document.addEventListener('click', e => {
     logEvent(`💡 uložil nápad: ${shortT(MIX.a.t)} + ${shortT(MIX.b.t)}`);
     reroll(); renderMain();
   }
-  else if (b.dataset.mixdel !== undefined) { const s = ls(mixKey(), []); const [d] = s.splice(+b.dataset.mixdel, 1); if (d) tomb(mixKey(), d.at); ss(mixKey(), s); if (d) logEvent(`✖ smazal nápad: ${shortT(d.a?.t || '')}`); renderMain(); }
+  else if (b.dataset.mixdel !== undefined) {
+    const d = ls(mixKey(), [])[+b.dataset.mixdel]; if (!d) return;
+    askConfirm(`Smazat nápad „${shortT(d.note || d.a?.t || '')}“?`).then(yes => {
+      if (!yes) return;
+      toTrash('idea', mixKey(), d, '💡 ' + shortT(d.note || `${d.a?.t || ''} + ${d.b?.t || ''}`));
+      tomb(mixKey(), d.at); ss(mixKey(), ls(mixKey(), []).filter(x => x.at !== d.at));
+      logEvent(`✖ smazal nápad: ${shortT(d.a?.t || '')}`); renderMain();
+    });
+  }
+  else if (b.dataset.trashback) { trashRestore(b.dataset.trashback); $('#trashBox').innerHTML = trashHtml(); status('♻️ Vráceno zpátky na své místo.'); }
+  else if (b.dataset.trashdel) { askConfirm('Smazat nadobro? Tohle už nepůjde vrátit.', '✖ Smazat nadobro').then(yes => { if (yes) { trashPurge(b.dataset.trashdel); $('#trashBox').innerHTML = trashHtml(); } }); }
   else if (b.dataset.tver !== undefined) showVersions(b);
   else if (b.dataset.vdl !== undefined) downloadVersion(b);
   else if (b.id === 'btnThumbsNow') { b.textContent = 'Kontroluju…'; checkAllThumbs(true).then(() => { b.textContent = '✔ Hotovo'; fillVersions(); }); }
