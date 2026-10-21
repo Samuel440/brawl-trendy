@@ -45,7 +45,9 @@ def thin(p):
 def bucket(vid): return 'bt_h_' + format(ord(vid[0]) % 16, 'x')
 
 def main():
-    key = os.environ['YT_API_KEY']
+    key = os.environ.get('YT_API_KEY', '')
+    if not key or not os.environ.get('GDRIVE_SA_JSON'):
+        log('Chybí tajné hodnoty YT_API_KEY / GDRIVE_SA_JSON (Settings → Secrets → Actions) – zatím nic nedělám.'); return
     s, sa_email = drive_session()
     folders = dlist(s, f"name='{FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false")
     if not folders: sys.exit(f'Složka „{FOLDER}“ není nasdílená servisnímu účtu {sa_email} – nasdílej ji jako Editor.')
