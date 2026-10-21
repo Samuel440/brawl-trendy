@@ -509,7 +509,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$)/;
-const APP_VERSION = '2026-10-21.60'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.61'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -775,14 +775,34 @@ const DRIVE_BACKEND = {
       DRIVE.mine[k] = r.id; DRIVE.cache[r.id] = {mt:r.modifiedTime, name, e:doc};
     }
   },
-  async listVers(id) {
+  async listVersAll(id) {
     return (await dList(`'${DRIVE.thumbs}' in parents and name contains '${dEsc(id)}~' and trashed=false`))
       .filter(f => f.name.startsWith(id + '~')).sort((a, b) => a.name < b.name ? -1 : 1)
       .map(f => { const [, t, hash] = f.name.replace(/\.jpg$/, '').split('~'); return {at:+t, hash, src:{drive:f.id}, fid:f.id}; });
   },
+  // jednorázová oprava starých verzí: otisky se dřív počítaly z jiného (menšího) obrázku, než jaký se uložil,
+  // takže stejné miniatury vypadaly jako různé. Přepočítá otisk z uloženého obrázku, kopie smaže, ostatní přejmenuje.
+  async fixVers(id) {
+    const all = await this.listVersAll(id); if (all.length < 2) return;
+    const keep = [];
+    for (const v of all) {
+      let h; try { h = await thumbHash(await verBlob(v)); } catch { continue; }
+      if (keep.some(k => hamHex(k.h, h) <= THUMB_SAME)) { await dDel(v.fid).catch(() => {}); continue; }
+      keep.push({v, h});
+      if (h !== v.hash) { await dUpload(`${id}~${v.at}~${h}.jpg`, DRIVE.thumbs, await verBlob(v)); await dDel(v.fid).catch(() => {}); }
+    }
+  },
+  async listVers(id) {
+    const all = await this.listVersAll(id);
+    // stejné miniatury uložené víckrát (PC, mobil a grafik ji zkontrolovali naráz) → ukázat jen jednou a kopie smazat
+    const out = [], dup = [];
+    for (const v of all) (out.some(o => hamHex(o.hash, v.hash) <= THUMB_SAME) ? dup : out).push(v);
+    if (dup.length && DRIVE.owner) dup.forEach(v => dDel(v.fid).catch(() => {}));
+    return out;
+  },
   async saveVer(id, at, hash, blob) {
     const vers = await this.listVers(id);
-    if (vers.length && hamHex(vers[vers.length - 1].hash, hash) <= 6) return; // stejnou změnu už uložil někdo jiný
+    if (vers.some(v => hamHex(v.hash, hash) <= THUMB_SAME)) return; // tahle miniatura už uložená je (i kdyby se k ní youtuber vrátil)
     await dUpload(`${id}~${at}~${hash}.jpg`, DRIVE.thumbs, blob);
     for (const old of [...vers, {}].slice(1, -(MAX_VERS - 1))) if (old.fid) await dDel(old.fid); // nechat první a posledních 5
   },
@@ -1841,6 +1861,7 @@ async function getVers(id) {
 async function saveVer(id, at, hash, blob) {
   if (REMOTE) { try { return await REMOTE.saveVer(id, at, hash, blob); } catch {} }
   const vers = await idbGet(id);
+  if (vers.some(v => hamHex(toHex(v.hash), hash) <= THUMB_SAME)) return;
   vers.push({at, hash, blob});
   await idb('readwrite', st => st.put(vers.length > MAX_VERS ? [vers[0], ...vers.slice(-(MAX_VERS - 1))] : vers, id));
 }
@@ -1863,26 +1884,35 @@ async function verUrl(v) { return typeof v.src === 'string' ? v.src : URL.create
 async function thumbHash(blob) {
   const bmp = await createImageBitmap(blob), cv = document.createElement('canvas');
   cv.width = 16; cv.height = 9;
-  const cx = cv.getContext('2d'); cx.drawImage(bmp, 0, 0, 16, 9);
+  // hq/sd verze jsou 4:3 s černými pruhy nahoře a dole → bere se jen prostředek 16:9 (otisk pak sedí s mq/maxres)
+  const sh = Math.min(bmp.height, bmp.width * 9 / 16), sy = (bmp.height - sh) / 2;
+  const cx = cv.getContext('2d'); cx.drawImage(bmp, 0, sy, bmp.width, sh, 0, 0, 16, 9);
   const d = cx.getImageData(0, 0, 16, 9).data, g = [];
   for (let i = 0; i < d.length; i += 4) g.push(d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11);
   const avg = g.reduce((a, b) => a + b, 0) / g.length;
   return toHex(g.map(v => v > avg ? 1 : 0).join(''));
 }
 async function fetchBlob(url) { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.blob(); }
-async function bestThumb(id) {
-  for (const s of ['maxresdefault', 'sddefault', 'hqdefault']) { try { return await fetchBlob(`https://i.ytimg.com/vi/${id}/${s}.jpg`); } catch {} }
+async function bestThumb(id, fresh) {
+  // fresh = obejít mezipaměť prohlížeče (jinak by kontrola mohla dostat starý obrázek)
+  for (const s of ['maxresdefault', 'sddefault', 'hqdefault']) { try { return await fetchBlob(`https://i.ytimg.com/vi/${id}/${s}.jpg${fresh ? '?t=' + Date.now() : ''}`); } catch {} }
   throw new Error('miniatura nedostupná');
 }
 const MAX_VERS = 6;
+const THUMB_SAME = 8; // do kolika rozdílných bodů otisku (ze 144) jde o stejnou miniaturu (JPEG šum, jiná velikost)
 // vrátí true, když přibyla nová verze
 async function checkThumb(id) {
-  const h = await thumbHash(await fetchBlob(`https://i.ytimg.com/vi/${id}/mqdefault.jpg?t=${Date.now()}`));
+  // otisk z TÉHOŽ obrázku, který se uloží (dřív z menší verze → stejné miniatury vypadaly jako různé)
+  const blob = await bestThumb(id, true), h = await thumbHash(blob);
   await migrateLocalVers(id);
-  const vers = await getVers(id), last = vers[vers.length - 1];
-  // stejný obrázek = 0 rozdílných bodů, různé miniatury v testu 38+ ze 144; 6 zachytí i menší úpravu (jiný text, barva)
-  if (last && hamHex(h, last.hash) <= 6) return false;
-  await saveVer(id, Date.now(), h, await bestThumb(id));
+  // jednou za zařízení opravit staré verze (jen majitel – smí mazat)
+  const fixed = ls('bt_vfix', {});
+  if (REMOTE === DRIVE_BACKEND && DRIVE.owner && !fixed[id]) { await REMOTE.fixVers(id).catch(() => {}); fixed[id] = 1; ss('bt_vfix', fixed); }
+  const vers = await getVers(id);
+  // stejný obrázek = 0–2 rozdílné body, různé miniatury 38+ ze 144; porovnává se se VŠEMI verzemi
+  // (když se youtuber vrátí ke staré miniatuře, není to nová verze)
+  if (vers.some(v => hamHex(h, v.hash) <= THUMB_SAME)) return false;
+  await saveVer(id, Date.now(), h, blob);
   return true;
 }
 let thumbsRunning = false;
