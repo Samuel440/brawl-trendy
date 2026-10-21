@@ -260,7 +260,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$)/;
-const APP_VERSION = '2026-10-21.17'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.18'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2310,18 +2310,27 @@ function renderMain() {
   else if (S.period === 'star') renderStars();
   else renderCountry(S.period === 'arch' ? getArchive(S.country) : getSet(S.country, S.period), C(S.country), S.period);
 }
+// Kdy je další obnova: počítá se VŽDY z času poslední obnovy uložené v datech (sdílí se přes Disk) –
+// takže odpočet pokračuje i po obnovení stránky, aktualizaci nebo na jiném zařízení. Po chybě se zkusí až za interval.
+const nextDue = () => Math.max((getSet(S.country, S.period)?.ts || 0) + S.interval * 60e3, S.retry?.k === S.country + S.period ? S.retry.at : 0);
+let AUTO_BUSY = false;
 function updateUpdated() {
   const el = $('#updated'); if (!el) return;
   const set = getSet(S.country, S.period);
   let t = set ? `Aktualizováno ${ago((Date.now() - set.ts) / 3600e3)}` : '';
-  if (S.auto) { const s = Math.max(0, Math.round((S.nextAuto - Date.now()) / 1000)); t += ` · další za ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}${REMOTE === DRIVE_BACKEND ? ' (společná pro všechna zařízení)' : ''}`; }
+  if (S.auto && set) { const s = Math.max(0, Math.round((nextDue() - Date.now()) / 1000)); t += ` · další za ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}${REMOTE === DRIVE_BACKEND ? ' (společná pro všechna zařízení)' : ''}`; }
   el.textContent = t;
+}
+async function autoRefresh() {
+  if (AUTO_BUSY) return; AUTO_BUSY = true;
+  try { await showCountry(false); } finally { AUTO_BUSY = false; }
+  if (Date.now() >= nextDue()) S.retry = {k:S.country + S.period, at:Date.now() + S.interval * 60e3}; // nepovedlo se (chyba / došla kvóta) → zkusit až za interval
 }
 setInterval(() => {
   updateUpdated();
   if (!document.hidden) checkAllThumbs(); // sama si hlídá interval 30 min
-  if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || !S.nextAuto || driveGate()) return;
-  if (Date.now() >= S.nextAuto) { S.nextAuto = Date.now() + S.interval * 60e3; showCountry(false); }
+  if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || driveGate() || !getSet(S.country, S.period)) return;
+  if (Date.now() >= nextDue()) autoRefresh();
 }, 1000);
 
 document.addEventListener('click', e => {
@@ -2418,10 +2427,7 @@ document.addEventListener('change', e => {
 });
 // Když je stránka schovaná (jiná karta / minimalizováno), nic se nestahuje; po návratu se hned aktualizuje, pokud už uplynul interval
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && S.key && S.auto && S.period !== 'ideas' && !PERIODS[S.period].local && S.nextAuto && Date.now() >= S.nextAuto) {
-    S.nextAuto = Date.now() + S.interval * 60e3;
-    showCountry(false);
-  }
+  if (!document.hidden && S.key && S.auto && S.period !== 'ideas' && !PERIODS[S.period].local && !driveGate() && getSet(S.country, S.period) && Date.now() >= nextDue()) autoRefresh();
 });
 // Jednorázová oprava: kanály naučené ve státě jen kvůli přeloženému názvu z AI dabingu přestaneme sledovat
 // (necháme ruční a ty, které mají v tom státě aspoň jedno video, které tam opravdu patří)
