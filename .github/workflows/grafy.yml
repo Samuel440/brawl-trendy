@@ -1,0 +1,28 @@
+# 🤖 Sběr bodů do grafů zhlédnutí každých 30 minut – i když jsou všechna zařízení vypnutá.
+# Potřebuje v Settings → Secrets and variables → Actions dvě tajné hodnoty:
+#   YT_API_KEY      – YouTube API klíč BEZ omezení na weby (jen na YouTube Data API v3)
+#   GDRIVE_SA_JSON  – celý obsah JSON klíče servisního účtu Googlu (složka „Brawl Trendy – data“ mu je nasdílená jako Editor)
+name: Grafy zhlédnutí
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: grafy
+  cancel-in-progress: false
+jobs:
+  sber:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install google-auth==2.35.0 requests==2.32.3
+      - run: python tools/hist.py
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          GDRIVE_SA_JSON: ${{ secrets.GDRIVE_SA_JSON }}
