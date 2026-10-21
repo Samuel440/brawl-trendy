@@ -193,13 +193,20 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .dragging{opacity:.4}
 .dragover{outline:3px dashed var(--accent);outline-offset:3px}
 /* 📅 kalendář */
-.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
-@media (max-width:900px){.calgrid{grid-template-columns:1fr}}
-.calday{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px;min-height:110px;min-width:0}
-.calday.today{border-color:var(--accent)}
-.calday.past{opacity:.6}
-.caldh{display:flex;justify-content:space-between;align-items:center;gap:4px;font-size:13px}
-.calvid{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:6px 8px;font-size:12.5px;line-height:1.3;white-space:normal;overflow-wrap:anywhere}
+/* dny pod sebou: vlevo datum, vpravo videa toho dne vedle sebe */
+.calgrid{display:flex;flex-direction:column;gap:6px}
+.calday{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-width:0}
+.calday.today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.calday.past{opacity:.55}
+.calday.weekend{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 4%)}
+.caldh{display:flex;flex-direction:column;gap:2px;width:92px;flex:none;font-size:13px}
+.calvids{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0;align-items:center}
+.calsep{height:6px}
+.calvid{display:flex;gap:8px;align-items:center;text-align:left;padding:5px 5px 5px 10px;font-size:13px;line-height:1.3;white-space:normal;overflow-wrap:anywhere;max-width:560px}
+.calvid > span{flex:1;min-width:0}
+.calvid img{width:80px;border-radius:5px;flex:none}
+.calvid .ch{font-size:11.5px}
+@media (max-width:600px){.caldh{width:100%;flex-direction:row;gap:8px}}
 .caladd{font-size:12px;opacity:.7}
 .caladd:hover{opacity:1}
 .calbox{width:min(820px,100%)}
@@ -208,8 +215,25 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .calin.title{font-size:18px;font-weight:700;margin:0 36px 8px 0;width:calc(100% - 40px)}
 .calin[type=date]{width:auto}
 .calin.script{min-height:220px;resize:vertical}
-.calinspo,.calnote{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px}
-.calinspo img,.calnote img{width:150px;border-radius:6px}
+.calinspo,.calnote{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;margin-bottom:6px}
+.calnote img{width:150px;border-radius:6px}
+.inspoitem{position:relative;width:170px;display:flex;flex-direction:column;gap:3px}
+.inspoitem img{width:100%;border-radius:6px}
+.inspoitem .ch{font-size:11.5px;line-height:1.3}
+.inspoitem .x{position:absolute;top:4px;right:4px;width:26px;height:26px;padding:0;border-radius:50%;background:rgba(0,0,0,.75);color:#fff;border:none;font-size:13px}
+.inspoitem .x:hover{background:var(--hot)}
+.calstrip{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
+.calpick,.pickvid{position:relative;padding:0;border-radius:7px;overflow:hidden;flex:none;border:2px solid transparent}
+.calpick img{width:120px;display:block}
+.calpick.on,.pickvid.on{border-color:var(--accent)}
+.tick{position:absolute;top:4px;left:4px;background:var(--accent);color:#000;border-radius:50%;width:22px;height:22px;display:grid;place-items:center;font-size:13px;font-weight:800}
+.pickbox{width:min(980px,100%)}
+.pickgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;max-height:60vh;overflow:auto}
+.pickvid{display:flex;flex-direction:column;text-align:left;background:var(--bg);font-size:12px;line-height:1.3}
+.pickvid img{width:100%;aspect-ratio:16/9;object-fit:cover}
+.pickvid .pt,.pickvid .ch{padding:3px 6px}
+.picktexts{display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto;margin-top:8px}
+.picktext{display:flex;flex-direction:column;gap:3px;text-align:left;white-space:pre-wrap;padding:8px 10px}
 .caltxt{white-space:pre-wrap;overflow-wrap:anywhere;flex-basis:100%}
 .calnote{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
 /* 🖥️ scénář na celou obrazovku */
@@ -330,7 +354,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-21.32'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-21.33'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1700,10 +1724,11 @@ function renderCal() {
   const today = isoDay(t);
   const badge = e => [e.script ? '📝' : '', e.thumb ? '🖼️' : '', ytIds(e.inspo).length ? `💡${ytIds(e.inspo).length}` : '', calNotes(e.id).length ? `🎨${calNotes(e.id).length}` : ''].filter(Boolean).join(' ');
   const day = d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => a.at - b.at);
-    return `<div class="calday ${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''}">
+    return `${d.getDay() === 1 && iso !== isoDay(days[0]) ? '<div class="calsep"></div>' : ''}<div class="calday ${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''} ${d.getDay() % 6 === 0 ? 'weekend' : ''}">
       <div class="caldh"><b>${DOW[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}.</b>${iso === today ? '<span class="tag hot">dnes</span>' : ''}</div>
-      ${list.map(e => `<button class="calvid" data-calopen="${esc(e.id)}"><span>${esc(e.title || '(bez názvu)')}</span><span class="ch">${badge(e)}</span></button>`).join('')}
-      ${own ? `<button class="caladd" data-caladd="${iso}">＋ video</button>` : ''}</div>`; };
+      <div class="calvids">${list.map(e => { const ths = ytIds(e.inspo).slice(0, 3);
+        return `<button class="calvid" data-calopen="${esc(e.id)}"><span><b>${esc(e.title || '(bez názvu)')}</b><br><span class="ch">${badge(e) || 'zatím jen název'}</span></span>${ths.map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="" title="Inspirace">`).join('')}</button>`; }).join('')}
+      ${own ? `<button class="caladd" data-caladd="${iso}">＋ video</button>` : list.length ? '' : '<span class="ch">–</span>'}</div></div>`; };
   const later = all.filter(e => e.date > isoDay(days[13])).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
   $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>
       <div class="row"><button data-calshift="-1">◀ Týden zpět</button><button data-calshift="0">Dnes</button><button data-calshift="1">Týden dál ▶</button>
@@ -1711,14 +1736,66 @@ function renderCal() {
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div></div>
     <div class="calgrid">${days.map(day).join('')}</div>`;
 }
+// název / počty videa podle ID (uložené, nebo cokoli, co bylo na stránce vidět)
+const vidInfo = id => STARS[id] || CARD_ITEMS.get(id) || null;
+// 🔍 hezký výběr videí: záložky ⭐ Uložené / 👀 Naposledy viděné / 🔥 Trendy týdne + hledání; klik = přidat/odebrat
+function videoPicker(selected, toggle) {
+  const sources = {
+    star: () => Object.entries(STARS).sort((a, b) => byOrd(a[1], b[1])).map(([id, s]) => ({...s, id})),
+    seen: () => [...CARD_ITEMS.values()].reverse(),
+    week: () => [...gather('week').list].sort((a, b) => b.vph - a.vph).slice(0, 300),
+  };
+  let tab = Object.keys(STARS).length ? 'star' : 'seen', q = '';
+  const ov = document.createElement('div'); ov.className = 'histov';
+  const draw = () => {
+    const f = fold(q).trim(), seen = new Set();
+    const list = sources[tab]().filter(it => it?.id && !seen.has(it.id) && seen.add(it.id)).filter(it => !f || fold((it.t || '') + ' ' + (it.ch || '')).includes(f)).slice(0, 200);
+    ov.querySelector('.pickgrid').innerHTML = list.map(it => `<button class="pickvid ${selected().has(it.id) ? 'on' : ''}" data-pv="${esc(it.id)}">
+        <img src="https://i.ytimg.com/vi/${esc(it.id)}/mqdefault.jpg" alt="">${selected().has(it.id) ? '<span class="tick">✔</span>' : ''}
+        <span class="pt">${esc(it.t || '')}</span><span class="ch">${esc(it.ch || '')}${it.views ? ' · ' + n(it.views) : ''}</span></button>`).join('') || '<div class="ch">Nic.</div>';
+    ov.querySelectorAll('[data-ptab]').forEach(b => b.classList.toggle('on', b.dataset.ptab === tab));
+  };
+  ov.innerHTML = `<div class="histbox pickbox"><button class="histx" title="Hotovo">✖</button><h3>🔍 Vyber inspiraci</h3>
+    <div class="row"><span class="seg"><button data-ptab="star">⭐ Uložené</button><button data-ptab="seen">👀 Naposledy viděné</button><button data-ptab="week">🔥 Trendy týdne</button></span></div>
+    <div class="search" style="margin:8px 0"><input data-pq placeholder="Hledat podle názvu nebo kanálu…"></div>
+    <div class="pickgrid"></div><div class="row"><button class="primary" data-pdone>Hotovo</button></div></div>`;
+  ov.addEventListener('input', ev => { if (ev.target.matches('[data-pq]')) { q = ev.target.value; draw(); } });
+  ov.addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (ev.target === ov || b?.classList.contains('histx') || b?.hasAttribute('data-pdone')) return ov.remove();
+    if (b?.dataset.ptab) { tab = b.dataset.ptab; draw(); }
+    if (b?.dataset.pv) { toggle(b.dataset.pv); draw(); }
+  });
+  document.body.append(ov); draw(); ov.querySelector('[data-pq]').focus();
+}
+// 📥 text do scénáře z uložených: nápady z míchače (i s poznámkou) a texty z Přenosu
+function textPicker(insert) {
+  const ideas = ls(mixKey(), []).map(s => ({k:'💡 Nápad', text:[s.note, `(${s.a?.t || ''} + ${s.b?.t || ''})`].filter(Boolean).join('\n')}));
+  const drops = ls(dropKey(), []).filter(x => x.kind === 'text').map(x => ({k:'📤 Přenos', text:x.text}));
+  const items = [...drops, ...ideas];
+  const ov = document.createElement('div'); ov.className = 'histov';
+  ov.innerHTML = `<div class="histbox pickbox"><button class="histx" title="Zavřít">✖</button><h3>📥 Vložit do scénáře</h3>
+    <div class="ch">Klikni na text – vloží se tam, kde máš ve scénáři kurzor.</div>
+    <div class="picktexts">${items.map((x, i) => `<button class="picktext" data-pt="${i}"><span class="ch">${x.k}</span><span>${esc(x.text)}</span></button>`).join('') || '<div class="ch">Nemáš uložené žádné texty – ulož si je v ⭐ Uložené → 📤 Přenos nebo v míchači nápadů.</div>'}</div></div>`;
+  ov.addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (ev.target === ov || b?.classList.contains('histx')) return ov.remove();
+    if (b?.dataset.pt) { insert(items[+b.dataset.pt].text); ov.remove(); }
+  });
+  document.body.append(ov);
+}
 function calEditor(id, date) {
   const own = isOwner(), all = ls(calKey(), {});
   const e = all[id] || {id:'v' + Date.now().toString(36), date, title:'', script:'', thumb:'', inspo:''};
-  const starOpts = Object.entries(STARS).sort((a, b) => byOrd(a[1], b[1])).map(([vid, s]) => `<option value="${esc(vid)}">${esc((s.t || '').slice(0, 70))}</option>`).join('');
+  const stars = Object.entries(STARS).sort((a, b) => byOrd(a[1], b[1]));
+  const sel = () => new Set(ytIds(e.inspo));
+  const strip = () => stars.length ? stars.map(([vid, s]) => `<button class="calpick ${sel().has(vid) ? 'on' : ''}" data-calpick="${esc(vid)}" title="${esc(s.t || '')}"><img src="https://i.ytimg.com/vi/${esc(vid)}/mqdefault.jpg" alt="">${sel().has(vid) ? '<span class="tick">✔</span>' : ''}</button>`).join('') : '<span class="ch">Zatím nemáš žádná ⭐ uložená videa.</span>';
   const notes = () => calNotes(e.id).map(n => `<div class="calnote"><b>${esc(whoLabel(n.w))}</b> <span class="ch">${fmtDate(n.at)}</span>
       ${ytIds(n.text).map(v => `<a href="${ytUrl(v)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt=""></a>`).join('')}
       <div class="caltxt">${esc(n.text)}</div></div>`).join('') || '<div class="ch">Zatím žádné.</div>';
-  const inspoHtml = s => ytIds(s).map(v => `<a href="${ytUrl(v)}" target="_blank" rel="noopener" title="Otevřít na YouTube"><img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt=""></a>`).join('');
+  const inspoHtml = s => ytIds(s).map(v => { const i = vidInfo(v);
+    return `<div class="inspoitem"><a href="${ytUrl(v)}" target="_blank" rel="noopener" title="Otevřít na YouTube"><img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt=""></a>
+      <div class="ch">${esc(i?.t || '')}${i?.views ? ` · ${n(i.views)} zhl.` : ''}</div>${own ? `<button class="x" data-calunpick="${v}" title="Odebrat">✖</button>` : ''}</div>`; }).join('') || '<span class="ch">Zatím žádná.</span>';
   const ov = document.createElement('div'); ov.className = 'histov';
   ov.innerHTML = `<div class="histbox calbox"><button class="histx" title="Zavřít">✖</button>
     ${own ? `<input class="calin title" data-f="title" value="${esc(e.title)}" placeholder="Název videa">
@@ -1726,11 +1803,13 @@ function calEditor(id, date) {
       : `<h3>${esc(e.title || '(bez názvu)')}</h3><div class="ch">📅 ${esc(e.date)}</div>`}
     <h4>💡 Inspirace (videa, ze kterých vycházím)</h4>
     <div class="calinspo">${inspoHtml(e.inspo)}</div>
-    ${own ? `<textarea class="calin" data-f="inspo" rows="2" placeholder="Odkazy na videa z YouTube (každý na řádek)">${esc(e.inspo)}</textarea>
-      ${starOpts ? `<select data-calstar><option value="">⭐ přidat video z Uložených…</option>${starOpts}</select>` : ''}` : ''}
+    ${own ? `<div class="ch" style="margin:8px 0 4px">⭐ Tvoje uložená – klikni pro přidání / odebrání:</div>
+      <div class="calstrip">${strip()}</div>
+      <div class="row"><button data-calbrowse>🔍 Vybrat z dalších videí…</button></div>
+      <details><summary class="ch">✏️ Odkazy ručně</summary><textarea class="calin" data-f="inspo" rows="2" placeholder="Odkazy na videa z YouTube (každý na řádek)">${esc(e.inspo)}</textarea></details>` : ''}
     <h4>🖼️ Co chci na miniatuře <span class="ch">(pro grafika)</span></h4>
     ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea>` : `<div class="caltxt">${esc(e.thumb) || '<span class="ch">Zatím nic.</span>'}</div>`}
-    <h4>📝 Scénář <button data-calfull>🖥️ Na celou obrazovku</button></h4>
+    <h4>📝 Scénář <button data-calfull>🖥️ Na celou obrazovku</button>${own ? ' <button data-caltext>📥 Vložit z uložených</button>' : ''}</h4>
     ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt">${esc(e.script) || '<span class="ch">Zatím nic.</span>'}</div>`}
     <h4>🎨 Poznámky (grafik a ostatní)</h4>
     <div class="calnotes">${notes()}</div>
@@ -1743,14 +1822,25 @@ function calEditor(id, date) {
     e[f] = ev.target.value; if (f === 'inspo') ov.querySelector('.calinspo').innerHTML = inspoHtml(e.inspo);
     save();
   });
-  ov.addEventListener('change', ev => {
-    if (ev.target.matches('[data-calstar]') && ev.target.value) {
-      const ta = ov.querySelector('[data-f="inspo"]'); ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + ytUrl(ev.target.value);
-      e.inspo = ta.value; ov.querySelector('.calinspo').innerHTML = inspoHtml(e.inspo); ev.target.value = ''; save();
-    }
-  });
+  // přidat / odebrat video z inspirace (z lišty uložených, z výběru, křížkem)
+  const toggleInspo = vid => {
+    const lines = String(e.inspo || '').split('\n').filter(Boolean);
+    e.inspo = sel().has(vid) ? lines.filter(l => !l.includes(vid)).join('\n') : [...lines, ytUrl(vid)].join('\n');
+    const ta = ov.querySelector('[data-f="inspo"]'); if (ta) ta.value = e.inspo;
+    ov.querySelector('.calinspo').innerHTML = inspoHtml(e.inspo);
+    const st = ov.querySelector('.calstrip'); if (st) st.innerHTML = strip();
+    save();
+  };
   ov.addEventListener('click', ev => {
     const b = ev.target.closest('button');
+    if (b?.dataset.calpick) return toggleInspo(b.dataset.calpick);
+    if (b?.dataset.calunpick) return toggleInspo(b.dataset.calunpick);
+    if (b?.hasAttribute('data-calbrowse')) return videoPicker(sel, toggleInspo);
+    if (b?.hasAttribute('data-caltext')) return textPicker(txt => {
+      const ta = ov.querySelector('[data-f="script"]'), p = ta.selectionStart ?? ta.value.length;
+      ta.value = ta.value.slice(0, p) + (p && ta.value[p - 1] !== '\n' ? '\n' : '') + txt + '\n' + ta.value.slice(p);
+      e.script = ta.value; save(); ta.focus();
+    });
     if (ev.target === ov || b?.classList.contains('histx')) { clearTimeout(timer); if (own && (e.title || e.script || e.thumb || e.inspo)) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || '(bez názvu)')} na ${e.date}`); } ov.remove(); renderMain(); return; }
     if (!b) return;
     if (b.matches('[data-caldel]')) { calDelete(e.id); ov.remove(); renderMain(); }
