@@ -555,7 +555,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.77'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.78'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3862,7 +3862,15 @@ function renderMain() {
   if (S.period === 'ideas') renderIdeas();
   else if (S.period === 'cal') renderCal();
   else if (S.period === 'star') renderStars();
-  else renderCountry(S.period === 'arch' ? getArchive(S.country) : getSet(S.country, S.period), C(S.country), S.period);
+  else renderCountry(S.period === 'arch' ? getArchive(S.country) : S.period === 'all' ? allTimeSet(S.country) : getSet(S.country, S.period), C(S.country), S.period);
+}
+// 🏆 Celá doba: hledání „nejsledovanější všech dob“ vrací hlavně oficiální anglická videa Brawl Stars (u Itálie 103 ze 107
+// skrytých jako jiný jazyk → prázdná stránka). Proto se přidají i nejsledovanější videa té země, která už máme
+// uložená (Archiv + Měsíc) – kvótu to nestojí.
+function allTimeSet(cid) {
+  const s = getSet(cid, 'all'), a = getArchive(cid), m = getSet(cid, 'month');
+  if (!s && !a && !m) return null;
+  return {...(s || {}), ts:s?.ts || 0, items:byId(byId(s?.items || [], a?.items || []), m?.items || [])};
 }
 // Kdy je další obnova: počítá se VŽDY z času poslední obnovy uložené v datech (sdílí se přes Disk) –
 // takže odpočet pokračuje i po obnovení stránky, aktualizaci nebo na jiném zařízení. Po chybě se zkusí až za interval.
