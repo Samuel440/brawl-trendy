@@ -555,7 +555,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.78'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.79'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -935,7 +935,13 @@ function driveLost() {
 }
 
 // stáhne, co mezitím načetli ostatní (novější vyhrává), a pošle, co máme novější my
+// jen jedno stahování najednou – dřív se překrývalo (interval + nahrávání + značka „načítám já“) a práce se násobila
 async function syncPull(noPush) {
+  if (SYNC.inPull) return SYNC.inPull;
+  SYNC.inPull = syncPullInner(noPush).finally(() => { SYNC.inPull = null; });
+  return SYNC.inPull;
+}
+async function syncPullInner(noPush) {
   let remote;
   if (!REMOTE) { try { remote = await SERVER_BACKEND.getAll(); REMOTE = SERVER_BACKEND; } catch { SYNC.ok = false; return false; } }
   else { try { remote = await REMOTE.getAll(); } catch (e) { SYNC.ok = false; if (e.message === 'auth') driveLost(); return false; } }
@@ -944,6 +950,8 @@ async function syncPull(noPush) {
   SYNC.pulling = true;
   // záznamy o smazání nejdřív, ať se podle nich řídí slučování ostatního
   for (const [k, e] of Object.entries(remote).sort(([a], [b]) => (b === 'bt_tomb') - (a === 'bt_tomb'))) {
+    // (nerozbalovat celý klíč jen kvůli kontrole – 115 klíčů / 19 MB při každém stažení)
+    if (!SHARED_RX.test(k) || (kvRaw(k) !== null && seen[k] === e.t)) continue;
     const mine = ls(k, null);
     // když u nás data chybí (nové zařízení, smazaný prohlížeč), bereme z Disku vždycky.
     // Jinak slučujeme, kdykoli se soubor na Disku ZMĚNIL od posledně – i když jsme mezitím něco změnili i my
@@ -4123,8 +4131,7 @@ async function pullShared() {
   if (upd) status(`✅ Aktualizace proběhla – nová verze ${APP_VERSION}${REMOTE === DRIVE_BACKEND ? ', Disk zůstal připojený' : ''}.`);
 })();
 // co minutu (když je stránka vidět) se podívat, jestli ostatní nenačetli něco nového – nic to nestojí
-// (co 15 s – stažení seznamu souborů je levné a změny z mobilu, třeba „Turecko už je načtené“, se na PC ukážou skoro hned)
-setInterval(() => { if (!document.hidden && SYNC.ok && !SYNC.pushing) pullShared(); }, 15e3);
+setInterval(() => { if (!document.hidden && SYNC.ok && !SYNC.pushing && !SYNC.inPull) pullShared(); }, 30e3);
 // 📤 Přenos: obrázek vložený Ctrl+V nebo soubor přetažený na stránku se rovnou pošle (jen na záložce Přenos, ve vlastní kolekci)
 const onDropTab = () => S.period === 'star' && S.starTab === 'drop' && !S.view && (S.starWho ?? meWho()) === meWho();
 document.addEventListener('paste', e => {
