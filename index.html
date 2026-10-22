@@ -47,6 +47,10 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 #countries::before{content:"🌍 Stát:"}
 .cats button{white-space:nowrap;border-radius:999px;padding:4px 10px;font-size:12.5px}
 .cats button.on{background:transparent;border-color:var(--accent);color:var(--accent);font-weight:700}
+/* 🗄️ Archiv v řadě období: oddělený a jemně jiný (čárkovaný, tlumený) – není to časové období, ale uložená data */
+.cats button.archbtn{margin-left:6px;border-style:dashed;border-radius:8px;color:var(--muted);position:relative}
+.cats button.archbtn::before{content:"";position:absolute;left:-7px;top:15%;bottom:15%;border-left:1px solid var(--line)}
+.cats button.archbtn.on{color:var(--accent);border-style:solid}
 /* 🔑 kvóta: jeden součet za všechna zařízení + bar, kolik z maxima je pryč */
 #quota .qp{display:inline-flex;gap:8px;align-items:center;white-space:nowrap}
 #quota .qi{display:inline-flex;gap:4px;align-items:center}
@@ -281,8 +285,8 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)}
 .ct.cday{flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;font-size:13px}
 .ct.cadd{grid-column:2 / -1}
-.cday .dplus{font-size:11px;color:var(--muted);opacity:0;transition:opacity .15s}
-button.cday:hover .dplus{opacity:1}
+.cday .caladd{margin-top:auto;padding:2px 8px;font-size:11.5px;border-radius:999px;color:var(--muted)}
+.cday .caladd:hover{color:var(--text)}
 .ct.today{background:color-mix(in srgb,var(--panel) 88%,var(--accent) 12%)}
 .ct.weekend{background:color-mix(in srgb,var(--panel) 92%,#fff 3%)}
 .ct.past{opacity:.55}
@@ -306,6 +310,9 @@ button.cday:hover .dplus{opacity:1}
   .ct.cday{grid-row:auto !important;flex-direction:row;background:var(--bg);font-size:14px}
   .ct.cadd{grid-column:auto}
   .ct{border-radius:8px}
+  /* 📱 prázdná inspirace / miniatura / prázdný den = žádné mini obdélníčky */
+  .ct.cinspo:empty,.ct.cthumb:empty,.ct.cadd:empty{display:none}
+  .cday .caladd{margin:0 0 0 auto}
 }
 /* dny pod sebou: vlevo datum, vpravo videa toho dne vedle sebe */
 .calgrid{display:flex;flex-direction:column;gap:6px}
@@ -548,7 +555,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-22.71'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.73'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -588,7 +595,8 @@ const ss = (k, v) => { kvSetRaw(k, JSON.stringify(v)); if (k.startsWith('bt_ch_'
 const S = {
   key: ls('bt_key', ''),
   country: ls('bt_country', 'it'),
-  period: ls('bt_period', 'day'),
+  // 🗓️ stránka vždy začíná v Kalendáři (jen obnova téže karty – třeba po aktualizaci – zůstane, kde byla)
+  period: (() => { try { return sessionStorage.getItem('bt_period_s'); } catch { return null; } })() || 'cal',
   sort: ls('bt_sort', 'views'),
   type: ls('bt_type', 'all'),
   strict: ls('bt_strict', true),
@@ -2176,16 +2184,14 @@ function renderCal() {
   // tabulka jako v Google Tabulkách: DEN | NÁZEV (největší) | INSPIRACE | POPIS K MINIATUŘE – každé video jeden řádek; scénář až po rozkliknutí
   const day = d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => calCreated(a) - calCreated(b));
     const cls = `${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''} ${d.getDay() % 6 === 0 ? 'weekend' : ''} ${d.getDay() === 1 && iso !== isoDay(days[0]) ? 'weekstart' : ''}`;
-    // den s videem: „＋ video“ už se nepřidává pod něj (čistší) – další video přidáš kliknutím na den
-    const tag = own && list.length ? 'button' : 'div', addAttr = tag === 'button' ? ` data-caladd="${iso}" title="Přidat další video na tento den"` : '';
-    const dayCell = (n) => `<${tag} class="ct cday dfirst ${cls}"${addAttr}${n > 1 ? ` style="grid-row:span ${n}"` : ''}><b>${DOW[d.getDay()]}</b> ${d.getDate()}. ${d.getMonth() + 1}.${iso === today ? '<span class="tag hot">dnes</span>' : ''}${tag === 'button' ? '<span class="dplus">＋ video</span>' : ''}</${tag}>`;
+    // „＋ video“ je u každého dne na konci buňky s datem; řádky vedle zůstávají čisté (prázdný den = prázdný řádek)
+    const dayCell = (n) => `<div class="ct cday dfirst ${cls}"${n > 1 ? ` style="grid-row:span ${n}"` : ''}><b>${DOW[d.getDay()]}</b> ${d.getDate()}. ${d.getMonth() + 1}.${iso === today ? '<span class="tag hot">dnes</span>' : ''}${own ? `<button class="caladd" data-caladd="${iso}" title="Přidat video na tento den">＋ video</button>` : ''}</div>`;
     const rows = list.map((e, i) => { const ids = ytIds(e.inspo), f = i === 0 ? ' dfirst' : '';
       return `${i === 0 ? dayCell(list.length) : ''}
         <div class="ct cname${f} ${cls}"><button class="cnamebtn" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '')}</span><span class="ch">${badge(e)}</span></button></div>
         <button class="ct cinspo${f} ${cls}" data-calopen="${esc(e.id)}">${ids.slice(0, 4).map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`).join('') + (ids.length > 4 ? `<span class="ch">+${ids.length - 4}</span>` : '')}</button>
         <button class="ct cthumb${f} ${cls}" data-calopen="${esc(e.id)}">${esc(e.thumb || '')}</button>`; }).join('');
-    const add = own ? `<div class="ct cadd ${cls}"><button class="caladd" data-caladd="${iso}">＋ video</button></div>` : '';
-    return list.length ? rows : dayCell(1) + (add.replace('ct cadd', 'ct cadd dfirst') || `<div class="ct cadd dfirst ${cls}"><span class="ch">–</span></div>`); };
+    return list.length ? rows : dayCell(1) + `<div class="ct cadd dfirst ${cls}"></div>`; };
   const later = all.filter(e => e.date > isoDay(days[13])).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
   $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>
       <div class="row"><button data-calshift="-1">◀ Týden zpět</button><button data-calshift="0">Dnes</button><button data-calshift="1">Týden dál ▶</button>
@@ -2969,10 +2975,43 @@ function rows(t) {
   return out;
 }
 const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+// 🤖 AI běží v samostatném vlákně (Web Worker) – výpočet jedné miniatury trvá na mobilu i vteřinu a v hlavním
+// vlákně by po tu dobu zamrzlo scrollování. Když worker nejde (starý prohlížeč), jede to postaru v hlavním vlákně.
+const AI_WORKER_SRC = `
+let T, proc, vis;
+const rows = t => { const [nr, d] = t.dims, out = []; for (let i = 0; i < nr; i++) { const v = Array.from(t.data.slice(i * d, i * d + d)); let s = 0; for (const x of v) s += x * x; s = Math.sqrt(s); out.push(v.map(x => x / s)); } return out; };
+onmessage = async ({data:m}) => {
+  try {
+    if (m.init) {
+      T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
+      const M = 'Xenova/clip-vit-base-patch32';
+      let tok, txt; [proc, vis, tok, txt] = await Promise.all([
+        T.AutoProcessor.from_pretrained(M), T.CLIPVisionModelWithProjection.from_pretrained(M, {dtype:'q8'}),
+        T.AutoTokenizer.from_pretrained(M), T.CLIPTextModelWithProjection.from_pretrained(M, {dtype:'q8'})]);
+      postMessage({id:m.id, text:rows((await txt(tok(m.init, {padding:true, truncation:true}))).text_embeds)});
+    } else {
+      const img = await T.RawImage.read(m.url);
+      postMessage({id:m.id, e:rows((await vis(await proc(img))).image_embeds)[0]});
+    }
+  } catch (e) { postMessage({id:m.id, err:String(e && e.message || e)}); }
+};`;
+function aiWorkerCall(msg) {
+  return new Promise((res, rej) => {
+    const id = (AI.seq = (AI.seq || 0) + 1);
+    AI.wait = AI.wait || {}; AI.wait[id] = {res, rej};
+    AI.worker.postMessage({...msg, id});
+  });
+}
 function aiInit() {
   if (AI.ready) return AI.ready;
   AI.ready = (async () => {
     status('🤖 Stahuju AI model (poprvé asi 150 MB, pak je uložený v prohlížeči)…');
+    try {
+      AI.worker = new Worker(URL.createObjectURL(new Blob([AI_WORKER_SRC], {type:'text/javascript'})), {type:'module'});
+      AI.worker.onmessage = ({data:d}) => { const w = AI.wait[d.id]; if (!w) return; delete AI.wait[d.id]; d.err ? w.rej(new Error(d.err)) : w.res(d); };
+      AI.text = (await aiWorkerCall({init:[...AI_YES, ...AI_NO]})).text;
+      status(''); return;
+    } catch (e) { console.warn('AI ve workeru nejde, jedu v hlavním vlákně', e); AI.worker?.terminate(); AI.worker = null; }
     const T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
     const M = 'Xenova/clip-vit-base-patch32';
     const [proc, vis, tok, txt] = await Promise.all([
@@ -2986,6 +3025,7 @@ function aiInit() {
   return AI.ready;
 }
 async function embed(url) {
+  if (AI.worker) return (await aiWorkerCall({url})).e;
   const img = await AI.T.RawImage.read(url);
   return rows((await AI.vis(await AI.proc(img))).image_embeds)[0];
 }
@@ -3163,12 +3203,12 @@ function renderHeader() {
   const tab = k => `<button data-period="${k}" class="${S.period === k ? 'on' : costAttr(openCost(C(S.country), k))}">${PERIODS[k].label}</button>`;
   // v Uložených / Kalendáři / Nápadech místo výběru období jen „🎬 Všechna videa“ → vrátí na poslední vybrané období
   // nahoře hlavní části stránky (🎬 Videa / Archiv / Uložené / Kalendář / Nápady), pod nimi menší kategorie: období a stát
-  const inVideos = TIME_PERIODS.includes(S.period);
-  const lastP = TIME_PERIODS.includes(ls('bt_lastp', 'week')) ? ls('bt_lastp', 'week') : 'week';
-  $('#tabs').innerHTML = `<button data-period="${inVideos ? S.period : lastP}" class="${inVideos ? 'on' : ''}">🎬 Videa</button>` +
-    Object.keys(PERIODS).filter(k => !TIME_PERIODS.includes(k)).map(tab).join('');
+  // pořadí: 🗓️ Kalendář (začíná se na něm) · 🎬 Videa · ⭐ Uložené · 💡 Nápady; 🗄️ Archiv je v řadě období (trochu jinak vypadá)
+  const inVideos = TIME_PERIODS.includes(S.period) || S.period === 'arch';
+  const lastP = [...TIME_PERIODS, 'arch'].includes(ls('bt_lastp', 'week')) ? ls('bt_lastp', 'week') : 'week';
+  $('#tabs').innerHTML = tab('cal') + `<button data-period="${inVideos ? S.period : lastP}" class="${inVideos ? 'on' : ''}">🎬 Videa</button>` + tab('star') + tab('ideas');
   $('#periods').style.display = inVideos ? 'flex' : 'none';
-  $('#periods').innerHTML = TIME_PERIODS.map(tab).join('');
+  $('#periods').innerHTML = TIME_PERIODS.map(tab).join('') + `<button data-period="arch" class="archbtn ${S.period === 'arch' ? 'on' : ''}" title="Archiv – jen z uložených dat, kvótu nebere">${PERIODS.arch.label}</button>`;
   STICK = stickFor(); setTimeout(applyStick); // 📱 přilepit záložky (stránka se někdy kreslí bez renderMain)
   $('#countries').style.display = S.period === 'ideas' || S.period === 'star' || S.period === 'cal' ? 'none' : 'flex';
   $('#countries').innerHTML = COUNTRIES.map(c => `<button data-country="${c.id}" class="${S.country === c.id ? 'on' : costAttr(openCost(c, S.period))}">${flag(c)}${esc(c.name)}</button>`).join('');
@@ -3844,7 +3884,7 @@ document.addEventListener('click', e => {
   if (b.dataset.period || b.dataset.country) S.showN = SHOW_STEP;
   if (b.dataset.period === 'star' && !b.dataset.startab) { S.starTab = 'drop'; S.starWho = null; }
   if (b.dataset.period === 'cal') { S.calOff = 0; S.calJump = true; } // 🗓️ otevřít vždy na dnešku
-  if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); if (TIME_PERIODS.includes(S.period) || S.period === 'arch') ss('bt_lastp', S.period); show(); }
+  if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); try { sessionStorage.setItem('bt_period_s', S.period); } catch {} if (TIME_PERIODS.includes(S.period) || S.period === 'arch') ss('bt_lastp', S.period); show(); }
   else if (b.dataset.startab) renderMain();
   else if (b.id === 'btnExport') exportData();
   else if (b.id === 'btnDrive') driveConnect(false);
