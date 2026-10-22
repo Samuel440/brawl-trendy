@@ -253,6 +253,11 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .rankrow .rv{flex:none;font-weight:700}
 .rankrow button,.rankrow .rkplay{flex:none;width:30px;height:30px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;text-decoration:none;border:1px solid var(--line);background:var(--panel2);color:var(--text)}
 .rankrow .rkplay:hover,.rankrow button:hover{border-color:var(--accent)}
+.rankrow.sel{outline:2px solid var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent)}
+.rankrow.sel [data-rankhist]{background:var(--blue);border-color:var(--blue)}
+.cmpkey{font-size:12.5px;margin:4px 0;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmpkey b{color:var(--text)}
+.cmpdot{display:inline-block;width:18px;height:3px;border-radius:2px;background:var(--blue);vertical-align:middle;margin-right:4px}
 .setnav{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:8px}
 .brow[hidden]{display:none}
 .brow{flex-wrap:wrap}
@@ -569,7 +574,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.85'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.86'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2920,7 +2925,8 @@ const histOf = it => { const p = histDb(histKey(it.id))[it.id] || []; const pub 
 const PEER_MIN = 5;
 const viewsAt = (pts, age) => { // zhlédnutí v daném stáří (mezi měřeními dopočítané), null = graf tak daleko nesahá
   const pub = pts[0][0], t = pub + age; if (pts.length < 3 || pts[pts.length - 1][0] < t) return null;
-  const i = pts.findIndex(p => p[0] >= t), a = pts[i - 1] || pts[0], b = pts[i];
+  const i = pts.findIndex(p => p[0] >= t); if (i < 0) return null;
+  const a = pts[i - 1] || pts[0], b = pts[i];
   // mezi měřeními moc velká mezera (třeba první měření až po dni) = dopočet by lhal → raději nepočítat
   if (b[0] - a[0] > Math.max(3 * 3600e3, age * .6)) return null;
   return Math.round(a[1] + (b[1] - a[1]) * (b[0] === a[0] ? 1 : (t - a[0]) / (b[0] - a[0])));
@@ -2945,8 +2951,9 @@ function peerBand(pts, peers, steps = 48) {
   return band;
 }
 // SVG graf: x = čas od zveřejnění, y = zhlédnutí (band = šedé pásmo typického výkonu kanálu)
-function histSvg(pts, w, h, big, band = []) {
-  const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]), ...band.map(b => b[3]));
+// (cmpPts = vybrané video z žebříčku kanálu jako modrá čára, posunuté na stejný čas od zveřejnění)
+function histSvg(pts, w, h, big, band = [], cmpPts = null) {
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]), ...band.map(b => b[3]), ...(cmpPts || []).map(p => p[1]));
   const pad = big ? 54 : 2, X = t => pad + (t - t0) / Math.max(1, t1 - t0) * (w - pad - (big ? 10 : 2)), Y = v => h - (big ? 24 : 2) - v / v1 * (h - (big ? 34 : 4));
   const line = pts.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ');
   let ax = '';
@@ -2959,7 +2966,8 @@ function histSvg(pts, w, h, big, band = []) {
   }
   const gray = band.length ? `<polygon points="${[...band.map(b => `${X(b[0]).toFixed(1)},${Y(b[3]).toFixed(1)}`), ...band.slice().reverse().map(b => `${X(b[0]).toFixed(1)},${Y(b[1]).toFixed(1)}`)].join(' ')}" fill="var(--muted)" opacity=".18"/>
     <polyline points="${band.map(b => `${X(b[0]).toFixed(1)},${Y(b[2]).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="5 4" opacity=".75" vector-effect="non-scaling-stroke"/>` : '';
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" class="hist">${gray}${ax}<polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="${big ? 2.5 : 1.6}" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+  const cmpLine = cmpPts ? `<polyline points="${cmpPts.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--blue)" stroke-width="2.2" vector-effect="non-scaling-stroke" stroke-linejoin="round" opacity=".9"/>` : '';
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" class="hist">${gray}${ax}${cmpLine}<polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="${big ? 2.5 : 1.6}" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
 }
 function showHistory(it) {
   const pts = histOf(it), rows = pts.slice(1).map((p, i) => { const prev = pts[i]; const dh = (p[0] - prev[0]) / 3600e3;
@@ -2970,7 +2978,7 @@ function showHistory(it) {
   const GW = Math.round(Math.min(640, document.documentElement.clientWidth - 66));
   // 📊 srovnání s ostatními Brawl videi kanálu ve STEJNÉM stáří (šedé pásmo + pořadí X/10)
   const peers = channelPeers(it), band = peerBand(pts, peers), age = pts[pts.length - 1][0] - pts[0][0];
-  const cmp = peers.map(p => ({it:p.it, v:viewsAt(p.pts, age)})).filter(p => p.v != null);
+  const cmp = peers.map(p => ({it:p.it, v:viewsAt(p.pts, age), pts:p.pts})).filter(p => p.v != null);
   let rankHtml = '', listHtml = '', rankAll = [];
   if (cmp.length >= PEER_MIN) {
     const me = pts[pts.length - 1][1], all = [...cmp, {it, v:me, me:true}].sort((a, b) => b.v - a.v);
@@ -2978,25 +2986,40 @@ function showHistory(it) {
     rankHtml = `<button class="rankbtn r${score <= 3 ? 'good' : score >= 8 ? 'bad' : 'mid'}" data-rank title="Pořadí mezi ${all.length} Brawl videi kanálu ve stejném stáří (${ageTxt} od zveřejnění) – klikni pro seznam">🏅 ${score}/10 · ${pos}. z ${all.length} po ${ageTxt}</button>`;
     listHtml = `<div class="ranklist" hidden><div class="ch">Brawl videa kanálu ${esc(it.ch)} podle zhlédnutí ${ageTxt} od zveřejnění (nejlepší nahoře):</div>
       ${all.map((x, i) => `<div class="rankrow${x.me ? ' me' : ''}"><b>${i + 1}.</b><img src="https://i.ytimg.com/vi/${esc(x.it.id)}/mqdefault.jpg" alt="" loading="lazy"><span class="rt" title="${esc(x.it.t)}">${esc(x.it.t)}</span><span class="rv">${n(x.v)}</span>
-        ${x.me ? '' : `<button data-rankhist="${i}" title="Graf a statistika tohohle videa">📈</button>`}<a class="rkplay" href="${ytUrl(x.it.id)}" target="_blank" rel="noopener" title="Pustit na YouTube">▶</a></div>`).join('')}</div>`;
+        ${x.me ? '' : `<button data-rankhist="${i}" title="Porovnat v grafu (modrá čára) – znovu kliknout = schovat">📈</button>`}<a class="rkplay" href="${ytUrl(x.it.id)}" target="_blank" rel="noopener" title="Pustit na YouTube">▶</a></div>`).join('')}</div>`;
     rankAll = all;
   } else if (peers.length) rankHtml = `<span class="ch" title="Srovnání s kanálem se ukáže, až bude mít aspoň ${PEER_MIN} Brawl videí s grafem v tomhle stáří">📊 srovnání s kanálem: ${cmp.length}/${PEER_MIN} videí s grafem</span>`;
   const ov = document.createElement('div'); ov.className = 'histov';
   ov.innerHTML = `<div class="histbox"><button class="histx" title="Zavřít">✖</button>
     <h3>📈 ${esc(it.t)}</h3><div class="ch">${esc(it.ch)} · ${n(it.views)} zhlédnutí · ${pts.length - 1} ${pts.length - 1 === 1 ? 'měření' : 'měření'}${pts.length <= 3 ? ' – víc bodů přibude s každou obnovou (na všech zařízeních)' : ''}</div>
     ${rankHtml ? `<div class="row">${rankHtml}${band.length ? '<span class="ch"><span class="bandkey"></span> typický výkon kanálu (šedě)</span>' : ''}</div>` : ''}${listHtml}
-    ${histSvg(pts, GW, 260, true, band)}
+    <div class="cmpkey" hidden></div><div class="histchart"></div>
     <table class="histtab"><tr><th>Kdy</th><th>Od zveřejnění</th><th>Zhlédnutí</th><th>Přírůstek</th><th>Rychlost</th></tr>${rows.join('')}</table></div>`;
   ov.addEventListener('click', e => {
     if (e.target.closest('[data-rank]')) { const l = ov.querySelector('.ranklist'); l.hidden = !l.hidden; return; }
-    const rh = e.target.closest('[data-rankhist]'); // 📈 graf jiného videa z žebříčku (otevře se nad tímhle)
-    if (rh) { const x = rankAll[+rh.dataset.rankhist]; if (x) showHistory({...x.it, c:it.c}); return; }
+    // 📈 u videa z žebříčku: jen ho VYBRAT – v tomhle grafu se ukáže jako modrá čára do stejného času od zveřejnění
+    const rh = e.target.closest('[data-rankhist]');
+    if (rh) { const i = +rh.dataset.rankhist; sel = sel === i ? null : i;
+      ov.querySelectorAll('.rankrow').forEach((r, j) => r.classList.toggle('sel', j === sel)); mount(); return; }
     if (bgClick(e, ov) || e.target.closest('.histx')) ov.remove();
   });
   document.body.append(ov);
+  let sel = null;
+  // vybrané video posunuté na čas zveřejnění tohohle videa, useknuté na stejné stáří (konec dopočítaný)
+  const cmpOf = x => { const p0 = x.pts[0][0], out = x.pts.filter(p => p[0] - p0 <= age).map(p => [pts[0][0] + p[0] - p0, p[1]]);
+    if (x.v != null && out[out.length - 1][0] < pts[pts.length - 1][0]) out.push([pts[pts.length - 1][0], x.v]); return out; };
+  const W = GW, Hh = 260, pad = 54, t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+  function mount() {
+    const x = sel != null ? rankAll[sel] : null, cp = x ? cmpOf(x) : null;
+    const key = ov.querySelector('.cmpkey'); key.hidden = !x;
+    if (x) key.innerHTML = `<span class="cmpdot"></span> porovnání: <b>${esc(x.it.t)}</b> · ${n(x.v)} po stejné době (${rankAll.indexOf(x) + 1}. místo)`;
+    ov.querySelector('.histchart').innerHTML = histSvg(pts, GW, 260, true, band, cp);
+    hover(ov.querySelector('svg.hist'), cp, x);
+  }
+  mount();
   // najetí myší (nebo prstem) na graf: svislá čára + přesný počet zhlédnutí v tu chvíli (mezi měřeními dopočítaný)
-  const svg = ov.querySelector('svg.hist'), W = GW, Hh = 260, pad = 54;
-  const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]), ...band.map(b => b[3]));
+  function hover(svg, cp, cx) {
+  const v1 = Math.max(1, ...pts.map(p => p[1]), ...band.map(b => b[3]), ...(cp || []).map(p => p[1]));
   const X = t => pad + (t - t0) / Math.max(1, t1 - t0) * (W - pad - 10), Y = v => Hh - 24 - v / v1 * (Hh - 34);
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g'); g.style.display = 'none'; g.style.pointerEvents = 'none';
   g.innerHTML = `<line y1="6" y2="${Hh - 24}" stroke="currentColor" opacity=".35" stroke-dasharray="3 3"/><circle r="5" fill="var(--accent)" stroke="var(--panel)" stroke-width="2"/>
@@ -3015,7 +3038,9 @@ function showHistory(it) {
     const label = `${vv.toLocaleString('cs')} zhlédnutí${exact ? '' : ' (odhad)'}`, sub = `${fmtDate(tt)} · ${ago((tt - t0) / 3600e3).replace('před ', '+')} od zveřejnění`;
     // šedé pásmo v tom čase: typické rozmezí kanálu (25–75 % jeho Brawl videí)
     const bb = band.length ? band.reduce((a, b) => Math.abs(b[0] - tt) < Math.abs(a[0] - tt) ? b : a) : null;
-    const typ = bb && Math.abs(bb[0] - tt) < (t1 - t0) / 20 + 1 ? `typicky ${n(Math.round(bb[1]))}–${n(Math.round(bb[3]))} (z ${bb[4]} videí)` : '';
+    let typ = bb && Math.abs(bb[0] - tt) < (t1 - t0) / 20 + 1 ? `typicky ${n(Math.round(bb[1]))}–${n(Math.round(bb[3]))} (z ${bb[4]} videí)` : '';
+    // vybrané video z žebříčku: kolik mělo ve stejné chvíli od zveřejnění
+    if (cp) { const cv = viewsAt([[t0, 0], ...cp.filter(p => p[0] > t0)], tt - t0); if (cv != null) typ = `modrá ${n(cv)}` + (typ ? ' · ' + typ : ''); }
     const w = Math.max(label.length, sub.length, typ.length) * 6.4 + 16;
     // bublina vpravo od čáry, když se nevejde, tak vlevo – a nikdy přes okraj grafu
     const bx = Math.max(2, Math.min(W - w - 2, X(tt) + w + 12 > W ? X(tt) - w - 10 : X(tt) + 10)), by = Math.max(4, Math.min(Hh - (typ ? 80 : 66), y - 46));
@@ -3026,6 +3051,7 @@ function showHistory(it) {
   };
   svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move);
   svg.addEventListener('pointerleave', () => { g.style.display = 'none'; });
+  }
 }
 function card(it, i, showCountry) {
   CARD_ITEMS.set(it.id, it);
