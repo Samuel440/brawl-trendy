@@ -554,8 +554,8 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Velká data (videa, kanály, archiv, ⭐, nápady, překlady…) jsou v IndexedDB – unese stovky MB, ne jen 5 MB jako localStorage.
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
-const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-22.75'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
+const APP_VERSION = '2026-10-22.76'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1393,12 +1393,28 @@ function costFor(c, p, extra) {
   if (!searchLeft()) return 0; // hledání došla → stejně proběhne jen lehká aktualizace
   return extra && needsDateSearch(c) ? 2 : 1;
 }
-// Kolik by stálo otevřít tenhle stát/období (stejná pravidla jako showCountry); 0 = jsou uložená čerstvá data
+// Kolik by stálo otevřít tenhle stát/období (stejná pravidla jako showCountry); 0 = jsou uložená čerstvá data.
+// Počítá i hledání „nejnovějších“ – dřív tlačítko nesvítilo bíle, a stejně hledání stálo.
 function openCost(c, p) {
-  if (!TIME_PERIODS.includes(p)) return 0;
+  if (!TIME_PERIODS.includes(p) || busyElsewhere(c.id)) return 0;
   const set = getSet(c.id, p);
   const maxAge = (S.auto && p !== 'all' ? S.interval : PERIODS[p].ttl) * 60e3;
-  return set && Date.now() - set.ts < maxAge ? 0 : costFor(c, p, true);
+  const full = set && Date.now() - set.ts < maxAge ? 0 : costFor(c, p, true);
+  const nw = !full && set && (p === 'day' || p === 'week') && newestDue(c) && searchLeft() && searchesToday() < NEWEST_CAP ? 1 : 0;
+  return full || nw;
+}
+// 🔒 „tenhle stát teď načítám já“ – malá značka na Disku, nahraje se hned (velká data z pomalého mobilu můžou trvat).
+// Druhé zařízení ji uvidí a místo vlastního hledání počká na data z Disku.
+const BUSY_MS = 3 * 60e3;
+const busyElsewhere = cid => { const e = ls('bt_busy', {})[cid]; return !!e && e.dev !== DEV_ID && Date.now() - e.at < BUSY_MS; };
+async function claimSearch(cid) {
+  if (REMOTE !== DRIVE_BACKEND) return true;
+  if (busyElsewhere(cid)) return false;
+  const b = ls('bt_busy', {}), now = Date.now();
+  for (const [k, e] of Object.entries(b)) if (now - e.at > 3600e3) delete b[k];
+  b[cid] = {at:now, dev:DEV_ID}; ss('bt_busy', b);
+  try { const t = syncMeta().bt_busy; await REMOTE.put({bt_busy:{v:b, t}}); delete SYNC.dirty.bt_busy; syncSeen().bt_busy = t; saveSeen(); } catch {}
+  return true;
 }
 const costAttr = cost => cost ? ` costly" title="⚡ Ještě nenačtené – kliknutí stojí ${cost} ${cost === 1 ? 'hledání' : 'hledání'} ze 100 denních` : '';
 
@@ -1652,7 +1668,7 @@ function mergeKey(k, mine, theirs) {
 function mergeKey0(k, mine, theirs) {
   if (typeof mine === 'number') return Math.max(mine, +theirs || 0); // časy (bt_autoAt…) – platí pozdější
   if (/^bt_h_/.test(k)) { const out = {...theirs}; for (const [id, p] of Object.entries(mine)) out[id] = out[id] ? thinPts([...out[id], ...p]) : p; return out; }
-  if (k === 'bt_qs' || k === 'bt_disc' || k === 'bt_cal' || k === 'bt_trash') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
+  if (k === 'bt_qs' || k === 'bt_disc' || k === 'bt_cal' || k === 'bt_trash' || k === 'bt_busy') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
   if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
   if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), newTs:Math.max(mine.newTs || 0, theirs.newTs || 0), items:capItems(byId(mine.items, theirs.items))};
@@ -3273,6 +3289,19 @@ async function showCountry(force) {
   }
   if (!S.key) { renderMain(); return; } // 👀 bez klíče jen data z Disku – stahují ostatní
   if (S.auto && due && p !== 'all' && !force) ss('bt_autoAt', Date.now()); // odpočet jede znovu od teď – pro všechny záložky i zařízení
+  // 🔒 bude se hledat (stojí kvótu)? → ještě jednou čerstvě Disk + značka „načítám já“; když to právě načítá
+  // jiné zařízení (třeba mobil před 10 s na pomalém internetu), nehledat a počkat na jeho data
+  const willSearch = () => (needs() && costFor(c, p, true) > 0) || ((p === 'day' || p === 'week') && newestDue(c) && searchLeft());
+  if (REMOTE === DRIVE_BACKEND && willSearch()) {
+    if (await syncPull(true).catch(() => false)) reloadMemory();
+    set = getSet(c.id, p);
+    if (token !== S.loadToken) return;
+    if (willSearch() && !await claimSearch(c.id)) {
+      status(`📱 ${c.name} právě načítá jiné zařízení – vezmu jeho data z Disku (kvótu nebere).`);
+      for (const s of [15, 35, 70]) setTimeout(() => pullShared().catch(() => {}), s * 1000);
+      renderMain(); return;
+    }
+  }
   if (needs()) {
     status(`Načítám ${c.name} – ${PERIODS[p].label}…`);
     try { set = await ensureSet(c, p, true, !force, true); status(''); }
@@ -4076,7 +4105,8 @@ async function pullShared() {
   if (upd) status(`✅ Aktualizace proběhla – nová verze ${APP_VERSION}${REMOTE === DRIVE_BACKEND ? ', Disk zůstal připojený' : ''}.`);
 })();
 // co minutu (když je stránka vidět) se podívat, jestli ostatní nenačetli něco nového – nic to nestojí
-setInterval(() => { if (!document.hidden && SYNC.ok) pullShared(); }, 30e3);
+// (co 15 s – stažení seznamu souborů je levné a změny z mobilu, třeba „Turecko už je načtené“, se na PC ukážou skoro hned)
+setInterval(() => { if (!document.hidden && SYNC.ok && !SYNC.pushing) pullShared(); }, 15e3);
 // 📤 Přenos: obrázek vložený Ctrl+V nebo soubor přetažený na stránku se rovnou pošle (jen na záložce Přenos, ve vlastní kolekci)
 const onDropTab = () => S.period === 'star' && S.starTab === 'drop' && !S.view && (S.starWho ?? meWho()) === meWho();
 document.addEventListener('paste', e => {
