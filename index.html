@@ -221,6 +221,8 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
   .thumb .star::before{right:-10px}
 }
 .drivegate{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:rgba(79,163,255,.1);border:1px solid rgba(79,163,255,.4);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.ghint{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:100%}
+.ghint input{min-width:0;width:220px;max-width:100%;padding:6px 8px}
 .chip{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:var(--ok)}
 .pagehead{display:flex;align-items:center;gap:12px;width:100%}
 .pagehead h2{margin:0;font-size:20px;color:var(--text)}
@@ -574,7 +576,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.88'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.89'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -924,11 +926,24 @@ function driveSwitch() {
   ss('bt_gemail', '');
   driveConnect(false, true);
 }
+// ✉️ přihlášení NAPSANÝM e-mailem: Google dostane e-mail předem (login_hint) a rovnou nabídne ten účet –
+// na mobilu se tak obejde výběr účtů, který chce účet přidat do telefonu a „synchronizace“ se nedokončí
+const hintBox = () => `<span class="ghint"><input id="gHint" type="email" inputmode="email" autocomplete="email" placeholder="nebo napiš e-mail účtu" value="${esc(ls('bt_gemail', ''))}"><button id="btnDriveHint">✉️ Přihlásit tímhle e-mailem</button></span>`;
+function driveHint() {
+  const email = ($('#gHint')?.value || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { status('Napiš celou e-mailovou adresu (např. jmeno@gmail.com).', true); $('#gHint')?.focus(); return; }
+  if (DRIVE.token && DRIVE.email && DRIVE.email !== email && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(DRIVE.token, () => {});
+  try { sessionStorage.removeItem('bt_tok'); } catch {}
+  Object.assign(DRIVE, {token:null, exp:0, email:'', folder:null, thumbs:null, cache:{}, mine:{}, owner:undefined, state:'off'});
+  REMOTE = null; DRIVE_BACKEND.ready = false; SYNC.ok = false;
+  ss('bt_gemail', email); // → login_hint
+  driveConnect(false, false);
+}
 // Přihlašovací okno Googlu jde otevřít jen po kliknutí → když už Disk používáš, připojí ho samo
 // tvoje první kliknutí kamkoli na stránce (a po hodině, kdy přihlášení vyprší, zase další kliknutí)
 document.addEventListener('click', e => {
   if (!hasAccess() || !gClientId() || !ls('bt_gdrive', false) || REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.state === 'nofolder') return;
-  if (e.target.closest('#btnDrive, #btnDriveCreate, #btnDriveOff, #btnDriveSwitch, #btnNoDrive, #btnClose')) return;
+  if (e.target.closest('#btnDrive, #btnDriveCreate, #btnDriveOff, #btnDriveSwitch, #btnDriveHint, #gHint, #btnNoDrive, #btnClose')) return;
   driveConnect(false);
 }, true);
 async function driveConnectInner(create, pick) {
@@ -1790,9 +1805,11 @@ function renderSettings() {
         <span class="ch">Videa, kanály, archiv, ⭐ uložené, blokace, nápady, překlady i verze miniatur se ukládají na Google Disk do složky „${DRIVE_FOLDER}“. Kdo ji má nasdílenou a připojí se, vidí totéž – na PC, Macu i mobilu, i když ostatní mají vypnuté počítače.${SYNC.last ? ` Poslední synchronizace ${ago((Date.now() - SYNC.last) / 3600e3)}.` : ''}</span></span></div>
       ${REMOTE === DRIVE_BACKEND
         ? '<div class="setrow"><button id="btnDriveOff">Odpojit Disk</button><span class="ch">Data v prohlížeči zůstanou, jen se přestanou sdílet.</span></div>'
-          + `<div class="setrow"><button id="btnDriveSwitch">🔄 Změnit Google účet</button><span class="ch">Teď: <b>${esc(DRIVE.email)}</b>. Odhlásí tenhle účet ze stránky a nechá tě vybrat jiný (třeba ten, kterému patří složka „${DRIVE_FOLDER}“).</span></div>`
+          + `<div class="setrow"><button id="btnDriveSwitch">🔄 Změnit Google účet</button><span class="ch">Teď: <b>${esc(DRIVE.email)}</b>. Odhlásí tenhle účet ze stránky a nechá tě vybrat jiný (třeba ten, kterému patří složka „${DRIVE_FOLDER}“).</span></div>
+          <div class="setrow">${hintBox()}<span class="ch">Na mobilu, když výběr účtu nejde: napiš e-mail a Google rovnou nabídne ten účet.</span></div>`
         : gClientId() ? `<div class="setrow"><button class="primary" id="btnDrive">☁️ Připojit Google Disk</button><span class="ch">Přihlášení Googlem. Platí hodinu, pak stačí kliknout znovu (nahoře se ukáže tlačítko).</span></div>
           <div class="setrow"><button id="btnDriveSwitch">🔄 Přihlásit jiným účtem</button><span class="ch">${ls('bt_gemail', '') ? `Naposledy: <b>${esc(ls('bt_gemail', ''))}</b>. ` : ''}Otevře výběr Google účtu – když se omylem přihlašuje špatný.</span></div>
+          <div class="setrow">${hintBox()}<span class="ch">Na mobilu, když výběr účtu nejde: napiš e-mail a Google rovnou nabídne ten účet.</span></div>
           ${DRIVE.state === 'nofolder' ? `<div class="setrow"><button id="btnDriveCreate">Založit složku „${DRIVE_FOLDER}“</button><span class="ch">Jen pro toho, kdo sdílení zakládá (ty). Grafik ji nezakládá – počká, až mu ji nasdílíš, jinak by měl vlastní, oddělenou.</span></div>` : ''}` : ''}
       <label class="setrow"><input id="gcidInput" value="${esc(gClientId())}" placeholder="…apps.googleusercontent.com" style="flex:1;min-width:0"><span><b>Client ID pro přihlášení Googlem</b><span class="ch">Z Google Cloud (OAuth klient typu Webová aplikace). Stačí vyplnit jednou; když je doplněný přímo ve stránce, nemusíš nic.</span></span></label>
     </div>
@@ -3373,7 +3390,7 @@ const hasAccess = () => !!S.key || ls('bt_viewer', false); // vlastní klíč, n
 const driveUsedHere = () => !!ls('bt_gemail', '') || ls('bt_gdrive', false);
 const driveGate = () => !!gClientId() && REMOTE !== DRIVE_BACKEND && (!ls('bt_nodrive', false) || driveUsedHere());
 const driveGateHtml = () => `<div class="drivegate">☁️ <b>Nejdřív připoj Google Disk.</b> Co už načetla jiná zařízení, se stáhne zdarma a z YouTube se bude stahovat jen to, co chybí.
-  <button class="primary" id="btnDrive">Připojit Disk</button>${driveUsedHere() ? '' : '<button id="btnNoDrive" title="Každé zařízení si pak stahuje samo a bere kvótu – jen když Disk vůbec nechceš">Používat bez Disku (bere kvótu)</button>'}</div>`;
+  <button class="primary" id="btnDrive">Připojit Disk</button>${hintBox()}${driveUsedHere() ? '' : '<button id="btnNoDrive" title="Každé zařízení si pak stahuje samo a bere kvótu – jen když Disk vůbec nechceš">Používat bez Disku (bere kvótu)</button>'}</div>`;
 async function showCountry(force) {
   const token = ++S.loadToken, c = C(S.country), p = S.period;
   if (p === 'arch' || p === 'star' || p === 'cal') { renderMain(); return; }
@@ -4051,6 +4068,7 @@ document.addEventListener('click', e => {
   else if (b.id === 'btnNoDrive') { ss('bt_nodrive', true); showCountry(false); }
   else if (b.id === 'btnDriveCreate') driveConnect(true);
   else if (b.id === 'btnDriveSwitch') driveSwitch();
+  else if (b.id === 'btnDriveHint') driveHint();
   else if (b.id === 'btnDriveOff') { try { sessionStorage.removeItem('bt_tok'); } catch {} REMOTE = null; DRIVE.token = null; DRIVE.state = 'off'; ss('bt_gdrive', false); SYNC.ok = false; pullShared(); rerender(); }
   else if (b.dataset.country) { S.view = null; S.country = b.dataset.country; ss('bt_country', S.country); show(); }
   else if (b.dataset.loadall) loadAll(b.dataset.loadall);
