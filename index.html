@@ -222,6 +222,10 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 }
 .drivegate{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:rgba(79,163,255,.1);border:1px solid rgba(79,163,255,.4);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 /* upozornění drží dole na obrazovce – kalendář se po otevření sám posune na dnešek, nahoře by zmizelo */
+.pickfolds{display:flex;flex-wrap:wrap;gap:6px;width:100%}
+.pickfolds button{border-radius:999px;padding:4px 11px;font-size:12.5px}
+.pickfolds button[style]{border:2px solid var(--fc)}
+.pickfolds button.on{background:var(--fc,var(--accent));color:#111;font-weight:800;border-color:var(--fc,var(--accent))}
 .calwarn{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:60;width:max-content;max-width:calc(100% - 24px);
   display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;padding:9px 14px;border-radius:12px;background:var(--panel2);border:1px solid var(--accent);box-shadow:0 6px 24px rgba(0,0,0,.5);font-size:13.5px}
 .ghint{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:100%}
@@ -311,6 +315,8 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 .ct.cadd{grid-column:2 / -1}
 .cday .caladd{margin-top:auto;padding:2px 8px;font-size:11.5px;border-radius:999px;color:var(--muted)}
 .cday .caladd:hover{color:var(--text)}
+/* s myší: „＋ video“ jen po najetí na den (na mobilu bez myši zůstává vidět, jinak by nešlo kliknout) */
+@media (hover:hover) and (pointer:fine){.cday .caladd{opacity:0;transition:opacity .15s}.ct.cday:hover .caladd,.cday .caladd:focus{opacity:1}}
 .ct.today{background:color-mix(in srgb,var(--panel) 88%,var(--accent) 12%)}
 .ct.weekend{background:color-mix(in srgb,var(--panel) 92%,#fff 3%)}
 .ct.past{opacity:.55}
@@ -321,6 +327,9 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 .cnamebtn{border:0;border-radius:0;margin:0;background:transparent;color:var(--text);padding:8px 10px 4px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;flex:1;text-align:left;white-space:normal}
 .cname:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)}
 .histedit{position:absolute;top:10px;right:50px;width:32px;height:32px;border-radius:50%;padding:0}
+.histshare{position:absolute;top:10px;right:90px;width:32px;height:32px;border-radius:50%;padding:0}
+.histshare.solo{right:50px}
+.calview h2{padding-right:124px}
 .calview h2{padding-right:84px}
 .calview h2{margin:0 40px 2px 0;font-size:clamp(20px,2.4vw,28px);line-height:1.2;text-wrap:balance}
 .calview .caltxt{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
@@ -579,7 +588,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.92'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.94'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -755,7 +764,7 @@ const OAUTH_REDIRECT = 'https://samuel440.github.io/brawl-trendy/'; // musí bý
 const useRedirect = () => location.href.startsWith(OAUTH_REDIRECT) && matchMedia('(pointer:coarse)').matches;
 function driveRedirect(email, pick) {
   const st = Math.random().toString(36).slice(2);
-  try { sessionStorage.setItem('bt_oauth_st', st); sessionStorage.setItem('bt_period_s', S.period); } catch {}
+  try { sessionStorage.setItem('bt_oauth_st', st); sessionStorage.setItem('bt_period_s', S.period); if (CAL_LINK) sessionStorage.setItem('bt_callink', CAL_LINK); } catch {}
   const p = {client_id:gClientId(), redirect_uri:OAUTH_REDIRECT, response_type:'token', scope:'https://www.googleapis.com/auth/drive', include_granted_scopes:'true', state:st};
   if (email) p.login_hint = email;
   if (pick) p.prompt = 'select_account';
@@ -2330,6 +2339,7 @@ function renderCal() {
         ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div></div>
     <div class="caltable" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
+  if (CAL_LINK) setTimeout(openCalLink); // 🔗 přišel odkaz na video z kalendáře
   const hd = $('header');
   // sjet na dnešní den (pod lepící lištu a řádek DEN | NÁZEV …)
   if (S.calJump) {
@@ -2355,7 +2365,7 @@ const vidInfo = id => STARS[id] || CARD_ITEMS.get(id) || null;
 // 🔍 hezký výběr videí: záložky ⭐ Uložené / 👀 Naposledy viděné / 🔥 Trendy týdne + hledání; klik = přidat/odebrat
 // 🔍 výběr videí do inspirace: ⭐ Oblíbené (čí kolekce, řazení) / 🔥 Trendy (stát, období, řazení) / 👀 Naposledy viděné + hledání
 function videoPicker(selected, toggle, startTab) {
-  const P = {tab:startTab || (Object.keys(STARS).length ? 'star' : 'trend'), q:'', who:meWho(), starSort:'ord', cid:'*', per:'week', sort:'views'};
+  const P = {tab:startTab || (Object.keys(STARS).length ? 'star' : 'trend'), q:'', who:meWho(), starSort:'ord', cid:'*', per:'week', sort:'views', fold:'*'};
   const sorts = {views:(a, b) => b.views - a.views, vph:(a, b) => (b.vph || 0) - (a.vph || 0), new:(a, b) => new Date(b.pub) - new Date(a.pub), banger:(a, b) => bangerScore(b) - bangerScore(a)};
   const trendList = () => {
     const per = P.per, cs = P.cid === '*' ? COUNTRIES : [C(P.cid)];
@@ -2364,14 +2374,18 @@ function videoPicker(selected, toggle, startTab) {
   };
   const sources = {
     star: () => { const coll = P.who === meWho() ? STARS : ls(starKey(P.who), {});
-      const l = Object.entries(coll).map(([id, s]) => ({...s, id})); return P.starSort === 'ord' ? l.sort(byOrd) : l.sort(sorts[P.starSort]); },
+      // 📁 kolekce: '*' = všechna, '-' = bez kolekce, jinak id kolekce
+      const fs = folds('videos', P.who), inFold = s => itemFolds(s).filter(id => fs.some(d => d.id === id));
+      const l = Object.entries(coll).map(([id, s]) => ({...s, id})).filter(s => P.fold === '*' || (P.fold === '-' ? !inFold(s).length : inFold(s).includes(P.fold)));
+      return P.starSort === 'ord' ? l.sort(byOrd) : l.sort(sorts[P.starSort]); },
     trend: trendList,
     seen: () => [...CARD_ITEMS.values()].reverse(),
   };
   const opt = (v, cur, l) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`;
   const filters = () => P.tab === 'star'
     ? `<select data-pf="who">${collections('bt_star').map(w => opt(w, P.who, (w === meWho() ? '👤 ' : '👥 ') + whoLabel(w))).join('')}</select>
-       <select data-pf="starSort">${opt('ord', P.starSort, 'Moje pořadí')}${opt('views', P.starSort, 'Nejvíc zhlédnutí')}${opt('new', P.starSort, 'Nejnovější')}</select>`
+       <select data-pf="starSort">${opt('ord', P.starSort, 'Moje pořadí')}${opt('views', P.starSort, 'Nejvíc zhlédnutí')}${opt('new', P.starSort, 'Nejnovější')}</select>
+       ${folds('videos', P.who).length ? `<span class="pickfolds"><button data-pfold="*" class="${P.fold === '*' ? 'on' : ''}">Všechna</button>${folds('videos', P.who).map(d => `<button data-pfold="${d.id}" class="${P.fold === d.id ? 'on' : ''}" style="--fc:${d.c || FOLD_COLORS[0]}">📁 ${esc(d.n)}</button>`).join('')}<button data-pfold="-" class="${P.fold === '-' ? 'on' : ''}">Bez kolekce</button></span>` : ''}`
     : P.tab === 'trend'
     ? `<select data-pf="cid">${opt('*', P.cid, '🌍 Všechny státy')}${COUNTRIES.map(c => opt(c.id, P.cid, c.name)).join('')}</select>
        <select data-pf="per">${['day', 'week', 'month', 'all', 'arch'].map(p => opt(p, P.per, PERIODS[p].label)).join('')}</select>
@@ -2382,7 +2396,7 @@ function videoPicker(selected, toggle, startTab) {
     const list = sources[P.tab]().filter(it => it?.id && !seen.has(it.id) && seen.add(it.id)).filter(it => !f || fold((it.t || '') + ' ' + (it.ch || '') + ' ' + (TR[it.t] || '')).includes(f)).slice(0, 240);
     ov.querySelector('.pickgrid').innerHTML = list.map(it => `<button class="pickvid ${selected().has(it.id) ? 'on' : ''}" data-pv="${esc(it.id)}">
         <img src="https://i.ytimg.com/vi/${esc(it.id)}/mqdefault.jpg" alt="">${selected().has(it.id) ? '<span class="tick">✔</span>' : ''}
-        <span class="pt">${esc(it.t || '')}</span><span class="ch">${esc(it.ch || '')}${it.views ? ' · ' + n(it.views) : ''}${it.c ? ' · ' + esc(it.c.name) : ''}</span></button>`).join('') || '<div class="ch">Nic – zkus jiný stát / období, nebo ho nejdřív načti.</div>';
+        <span class="pt">${esc(trT(it.t || ''))}</span><span class="ch">${esc(it.ch || '')}${it.views ? ' · ' + n(it.views) : ''}${it.c ? ' · ' + esc(it.c.name) : ''}</span></button>`).join('') || '<div class="ch">Nic – zkus jiný stát / období, nebo ho nejdřív načti.</div>';
     ov.querySelectorAll('[data-ptab]').forEach(b => b.classList.toggle('on', b.dataset.ptab === P.tab));
     ov.querySelector('.pickfilters').innerHTML = filters();
   };
@@ -2392,11 +2406,12 @@ function videoPicker(selected, toggle, startTab) {
     <div class="search" style="margin:8px 0"><input data-pq placeholder="Hledat podle názvu nebo kanálu…"></div>
     <div class="pickgrid"></div><div class="row"><button class="primary" data-pdone>Hotovo</button></div></div>`;
   ov.addEventListener('input', ev => { if (ev.target.matches('[data-pq]')) { P.q = ev.target.value; draw(); } });
-  ov.addEventListener('change', ev => { const k = ev.target.dataset?.pf; if (k) { P[k] = ev.target.value; draw(); } });
+  ov.addEventListener('change', ev => { const k = ev.target.dataset?.pf; if (k) { P[k] = ev.target.value; if (k === 'who') P.fold = '*'; draw(); } });
   ov.addEventListener('click', ev => {
     const b = ev.target.closest('button');
     if (bgClick(ev, ov) || b?.classList.contains('histx') || b?.hasAttribute('data-pdone')) return ov.remove();
     if (b?.dataset.ptab) { P.tab = b.dataset.ptab; draw(); }
+    if (b?.dataset.pfold) { P.fold = b.dataset.pfold; draw(); }
     if (b?.dataset.pv) { toggle(b.dataset.pv); draw(); }
   });
   document.body.append(ov); draw(); ov.querySelector('[data-pq]').focus();
@@ -2507,6 +2522,32 @@ function textPicker(insert) {
   });
   document.body.append(ov);
 }
+// 🔗 Sdílení videa z kalendáře: odkaz …/#cal=<id> otevře stránku rovnou v kalendáři na přehledu toho videa
+const calLink = id => OAUTH_REDIRECT + '#cal=' + encodeURIComponent(id);
+async function shareCal(e, b) {
+  const url = calLink(e.id), title = `📅 ${e.title || 'Video'}${e.date ? ' – ' + e.date.split('-').reverse().slice(0, 2).join('. ') + '.' : ''}`;
+  try {
+    if (navigator.share && matchMedia('(pointer:coarse)').matches) { await navigator.share({title, url}); return; } // mobil: rovnou poslat (WhatsApp, Discord…)
+    await navigator.clipboard.writeText(url);
+    b.textContent = '✔'; setTimeout(() => { b.textContent = '🔗'; }, 1500);
+    status(`🔗 Odkaz na „${e.title || 'video'}“ zkopírovaný – pošli ho grafikovi (Ctrl+V).`);
+  } catch { window.prompt?.('Zkopíruj odkaz:', url); }
+}
+// otevřít video z odkazu, až je kalendář načtený (když ještě není v datech, počká se na Disk)
+let CAL_LINK = null;
+function readCalLink() {
+  const m = location.hash.match(/^#cal=([^&]+)/);
+  if (m) { CAL_LINK = decodeURIComponent(m[1]); history.replaceState(null, '', location.pathname + location.search); }
+  else try { CAL_LINK = sessionStorage.getItem('bt_callink') || CAL_LINK; sessionStorage.removeItem('bt_callink'); } catch {}
+  if (CAL_LINK) { S.period = 'cal'; S.view = null; try { sessionStorage.setItem('bt_period_s', 'cal'); } catch {} }
+}
+function openCalLink() {
+  if (!CAL_LINK) return;
+  const e = ls(calKey(), {})[CAL_LINK];
+  if (e) { CAL_LINK = null; document.querySelectorAll('.histov').forEach(x => x.remove()); calEditor(e.id, null, false, false); return; }
+  if (SYNC.calFresh || !driveUsedHere()) { status('🔗 Video z odkazu v kalendáři není – možná už bylo smazané nebo přesunuté.', true); CAL_LINK = null; }
+}
+addEventListener('hashchange', () => { readCalLink(); if (CAL_LINK) { show(); openCalLink(); } });
 // klik na video = 👁 přehled (jen ke čtení), ✏️ Upravit = úpravy (jen majitel)
 function calEditor(id, date, focusScript, edit = true) {
   const admin = isOwner(), own = admin && edit, all = ls(calKey(), {});
@@ -2525,7 +2566,7 @@ function calEditor(id, date, focusScript, edit = true) {
   // 👁 přehled je čistý: prázdné části (inspirace, miniatura, scénář, poznámky) se vůbec neukážou – všechno je v ✏️ úpravách
   const showInspo = own || ytIds(e.inspo).length, showThumb = own || e.thumb, showScript = own || e.script;
   const showNotes = own || !admin || calNotes(e.id).length, noteAdd = own || !admin;
-  ov.innerHTML = `<div class="histbox calbox ${own ? '' : 'calview'}"><button class="histx" title="Zavřít">✖</button>${admin && !own ? '<button class="histedit" data-caledit2 title="Upravit">✏️</button>' : ''}
+  ov.innerHTML = `<div class="histbox calbox ${own ? '' : 'calview'}"><button class="histx" title="Zavřít">✖</button>${admin && !own ? '<button class="histedit" data-caledit2 title="Upravit">✏️</button>' : ''}${!own && all[e.id] ? `<button class="histshare${admin ? '' : ' solo'}" data-calshare title="Sdílet – zkopíruje odkaz přímo na tohle video (třeba pro grafika)">🔗</button>` : ''}
     ${own ? `<input class="calin title" data-f="title" value="${esc(e.title)}" placeholder="Název videa">
       <div class="row"><label>📅 Vyjde <input type="date" class="calin" data-f="date" value="${esc(e.date)}"></label><button class="blockbtn" data-caldel>🗑 Smazat</button><button data-calview>👁 Hotovo – zobrazit přehled</button></div>`
       : `<h2>${esc(e.title || 'Video')}</h2><div class="row"><span class="ch">📅 ${dt ? `${DOW[dt.getDay()]} ${dt.getDate()}. ${dt.getMonth() + 1}. ${dt.getFullYear()}` : ''}</span></div>`}
@@ -2583,6 +2624,7 @@ function calEditor(id, date, focusScript, edit = true) {
       });
     }
     else if (b.matches('[data-caledit2]')) { ov.remove(); calEditor(e.id); }
+    else if (b.matches('[data-calshare]')) shareCal(e, b);
     else if (b.matches('[data-calview]')) { clearTimeout(timer); if (e.title || e.script || e.thumb || e.inspo) calSave(e); ov.remove(); renderMain(); calEditor(e.id, null, false, false); }
     else if (b.matches('[data-calfull]')) scriptWindow(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title, sOpts);
     else if (b.matches('[data-calundone]')) { sOpts.done.clear(); e.done = []; b.remove(); calSave(e); if (SCRIPT_OPTS === sOpts) scriptWindowSync(e.script, e.title); }
@@ -3015,6 +3057,7 @@ function peerBand(pts, peers, steps = 48) {
   }
   return band;
 }
+const trT = t => S.trAuto && TR[t] ? TR[t] : t; // název v češtině, když je zapnutý automatický překlad a už ho máme
 // SVG graf: x = čas od zveřejnění, y = zhlédnutí (band = šedé pásmo typického výkonu kanálu)
 // (cmpPts = vybrané video z žebříčku kanálu jako modrá čára, posunuté na stejný čas od zveřejnění)
 function histSvg(pts, w, h, big, band = [], cmpPts = null) {
@@ -3050,13 +3093,13 @@ function showHistory(it) {
     const pos = all.findIndex(x => x.me) + 1, score = Math.max(1, Math.ceil(pos / all.length * 10)), ageTxt = ago(age / 3600e3).replace('před ', '');
     rankHtml = `<button class="rankbtn r${score <= 3 ? 'good' : score >= 8 ? 'bad' : 'mid'}" data-rank title="Pořadí mezi ${all.length} Brawl videi kanálu ve stejném stáří (${ageTxt} od zveřejnění) – klikni pro seznam">🏅 ${score}/10 · ${pos}. z ${all.length} po ${ageTxt}</button>`;
     listHtml = `<div class="ranklist" hidden><div class="ch">Brawl videa kanálu ${esc(it.ch)} podle zhlédnutí ${ageTxt} od zveřejnění (nejlepší nahoře):</div>
-      ${all.map((x, i) => `<div class="rankrow${x.me ? ' me' : ''}"><b>${i + 1}.</b><img src="https://i.ytimg.com/vi/${esc(x.it.id)}/mqdefault.jpg" alt="" loading="lazy"><span class="rt" title="${esc(x.it.t)}">${esc(x.it.t)}</span><span class="rv">${n(x.v)}</span>
+      ${all.map((x, i) => `<div class="rankrow${x.me ? ' me' : ''}"><b>${i + 1}.</b><img src="https://i.ytimg.com/vi/${esc(x.it.id)}/mqdefault.jpg" alt="" loading="lazy"><span class="rt" title="${esc(x.it.t)}" data-orig="${esc(x.it.t)}">${esc(trT(x.it.t))}</span><span class="rv">${n(x.v)}</span>
         ${x.me ? '' : `<button data-rankhist="${i}" title="Porovnat v grafu (modrá čára) – znovu kliknout = schovat">📈</button>`}<a class="rkplay" href="${ytUrl(x.it.id)}" target="_blank" rel="noopener" title="Pustit na YouTube">▶</a></div>`).join('')}</div>`;
     rankAll = all;
   } else if (peers.length) rankHtml = `<span class="ch" title="Srovnání s kanálem se ukáže, až bude mít aspoň ${PEER_MIN} Brawl videí s grafem v tomhle stáří">📊 srovnání s kanálem: ${cmp.length}/${PEER_MIN} videí s grafem</span>`;
   const ov = document.createElement('div'); ov.className = 'histov';
   ov.innerHTML = `<div class="histbox"><button class="histx" title="Zavřít">✖</button>
-    <h3>📈 ${esc(it.t)}</h3><div class="ch">${esc(it.ch)} · ${n(it.views)} zhlédnutí · ${pts.length - 1} ${pts.length - 1 === 1 ? 'měření' : 'měření'}${pts.length <= 3 ? ' – víc bodů přibude s každou obnovou (na všech zařízeních)' : ''}</div>
+    <h3 data-orig="${esc(it.t)}">📈 ${esc(trT(it.t))}</h3><div class="ch">${esc(it.ch)} · ${n(it.views)} zhlédnutí · ${pts.length - 1} ${pts.length - 1 === 1 ? 'měření' : 'měření'}${pts.length <= 3 ? ' – víc bodů přibude s každou obnovou (na všech zařízeních)' : ''}</div>
     ${rankHtml ? `<div class="row">${rankHtml}${band.length ? '<span class="ch"><span class="bandkey"></span> typický výkon kanálu (šedě)</span>' : ''}</div>` : ''}${listHtml}
     <div class="cmpkey" hidden></div><div class="histchart"></div>
     <table class="histtab"><tr><th>Kdy</th><th>Od zveřejnění</th><th>Zhlédnutí</th><th>Přírůstek</th><th>Rychlost</th></tr>${rows.join('')}</table></div>`;
@@ -3069,6 +3112,13 @@ function showHistory(it) {
     if (bgClick(e, ov) || e.target.closest('.histx')) ov.remove();
   });
   document.body.append(ov);
+  // 🌐 automatický překlad (Nastavení) i pro název grafu a žebříček kanálu
+  if (S.trAuto) {
+    const els = [...ov.querySelectorAll('[data-orig]')], todo = [...new Set(els.map(e => e.dataset.orig).filter(t => !TR[t]))];
+    (todo.length ? translate(todo, it.c && langOk(it, it.c) ? it.c.lang : 'auto') : Promise.resolve()).then(() => {
+      for (const e of els) if (TR[e.dataset.orig]) e.textContent = (e.tagName === 'H3' ? '📈 ' : '') + TR[e.dataset.orig];
+    }).catch(() => {});
+  }
   let sel = null;
   // vybrané video posunuté na čas zveřejnění tohohle videa, useknuté na stejné stáří (konec dopočítaný)
   const cmpOf = x => { const p0 = x.pts[0][0], out = x.pts.filter(p => p[0] - p0 <= age).map(p => [pts[0][0] + p[0] - p0, p[1]]);
@@ -3077,7 +3127,7 @@ function showHistory(it) {
   function mount() {
     const x = sel != null ? rankAll[sel] : null, cp = x ? cmpOf(x) : null;
     const key = ov.querySelector('.cmpkey'); key.hidden = !x;
-    if (x) key.innerHTML = `<span class="cmpdot"></span> porovnání: <b>${esc(x.it.t)}</b> · ${n(x.v)} po stejné době (${rankAll.indexOf(x) + 1}. místo)`;
+    if (x) key.innerHTML = `<span class="cmpdot"></span> porovnání: <b>${esc(trT(x.it.t))}</b> · ${n(x.v)} po stejné době (${rankAll.indexOf(x) + 1}. místo)`;
     ov.querySelector('.histchart').innerHTML = histSvg(pts, GW, 260, true, band, cp);
     hover(ov.querySelector('svg.hist'), cp, x);
   }
@@ -4286,6 +4336,7 @@ async function pullShared() {
   let tok = null;
   try { tok = JSON.parse(sessionStorage.getItem('bt_tok') || 'null'); } catch {}
   if (tok && tok.exp - 60e3 > Date.now() && ls('bt_gdrive', false) && gClientId()) { DRIVE.token = tok.t; DRIVE.exp = tok.exp; }
+  readCalLink(); // 🔗 odkaz na video z kalendáře (…/#cal=…)
   show();
   if (DRIVE.token) await driveConnect(false); else pullShared();
   renderQuotaBar();
