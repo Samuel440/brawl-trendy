@@ -574,7 +574,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.87'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.88'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1959,7 +1959,7 @@ const RAW_KEYS = ['id', 't', 'ch', 'chId', 'pub', 'views', 'likes', 'com', 'dur'
 function toggleStar(it, b) {
   if (STARS[it.id]) { pickFolds('videos', 'star', it.id, {title:'★ Uložené video – kolekce', remove:() => unstar(it)}); return; }
   logEvent(`⭐ uložil video ${shortT(it.t)}`);
-  STARS[it.id] = {...Object.fromEntries(RAW_KEYS.filter(k => k in it).map(k => [k, it[k]])), cid:it.c.id, at:Date.now(), fs:curFolds('videos')};
+  STARS[it.id] = {...Object.fromEntries(RAW_KEYS.filter(k => k in it).map(k => [k, it[k]])), cid:it.c.id, at:Date.now()}; // do kolekce až po vlastním kliknutí ve výběru (nic se nezaškrtne samo)
   checkThumb(it.id).catch(() => {});
   starSaved(it);
   if (folds('videos').length) pickFolds('videos', 'star', it.id, {title:'⭐ Uloženo – do kterých kolekcí?', remove:() => unstar(it)});
