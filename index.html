@@ -576,7 +576,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.89'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.90'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -746,8 +746,31 @@ function loadGis() {
   });
 }
 // přihlašovací okno Googlu jde otevřít jen po kliknutí – proto se Disk připojuje tlačítkem
+// 📱 na mobilu se přihlašovací okno Googlu otevírá jako nová karta a často zůstane bílé → tam se místo okna
+// přesměruje celá stránka na přihlášení a Google ji pak vrátí sem s přístupem v adrese (#access_token=…)
+const OAUTH_REDIRECT = 'https://samuel440.github.io/brawl-trendy/'; // musí být povolená v Google Cloud (OAuth klient)
+const useRedirect = () => location.href.startsWith(OAUTH_REDIRECT) && matchMedia('(pointer:coarse)').matches;
+function driveRedirect(email, pick) {
+  const st = Math.random().toString(36).slice(2);
+  try { sessionStorage.setItem('bt_oauth_st', st); sessionStorage.setItem('bt_period_s', S.period); } catch {}
+  const p = {client_id:gClientId(), redirect_uri:OAUTH_REDIRECT, response_type:'token', scope:'https://www.googleapis.com/auth/drive', include_granted_scopes:'true', state:st};
+  if (email) p.login_hint = email;
+  if (pick) p.prompt = 'select_account';
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams(p);
+}
+// návrat z přihlášení: přístup z adresy uložit (jako po přihlášení oknem) a adresu uklidit
+(() => {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (!h.get('access_token') && !h.get('error')) return;
+  let st = null; try { st = sessionStorage.getItem('bt_oauth_st'); sessionStorage.removeItem('bt_oauth_st'); } catch {}
+  history.replaceState(null, '', location.pathname + location.search);
+  if (h.get('error') || !st || h.get('state') !== st) return;
+  try { sessionStorage.setItem('bt_tok', JSON.stringify({t:h.get('access_token'), exp:Date.now() + (+h.get('expires_in') || 3600) * 1000})); } catch {}
+  try { localStorage.setItem('bt_gdrive', 'true'); } catch {}
+})();
 async function driveSignIn(pick) {
   if (!gClientId()) throw new Error('Chybí Client ID pro přihlášení Googlem (⚙️ Nastavení).');
+  if (useRedirect()) { driveRedirect(pick ? '' : ls('bt_gemail', ''), pick); return new Promise(() => {}); } // stránka odchází
   await loadGis();
   await new Promise((res, rej) => {
     google.accounts.oauth2.initTokenClient({
@@ -943,6 +966,7 @@ function driveHint() {
 // tvoje první kliknutí kamkoli na stránce (a po hodině, kdy přihlášení vyprší, zase další kliknutí)
 document.addEventListener('click', e => {
   if (!hasAccess() || !gClientId() || !ls('bt_gdrive', false) || REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.state === 'nofolder') return;
+  if (useRedirect()) return; // mobil: přihlášení přesměruje celou stránku → jen tlačítkem, ne při náhodném ťuknutí
   if (e.target.closest('#btnDrive, #btnDriveCreate, #btnDriveOff, #btnDriveSwitch, #btnDriveHint, #gHint, #btnNoDrive, #btnClose')) return;
   driveConnect(false);
 }, true);
