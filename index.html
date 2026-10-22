@@ -574,7 +574,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.86'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.87'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2849,8 +2849,8 @@ function renderStars() {
   // karty kolekcí se počítají ze všech uložených videí, mřížka jen z otevřené kolekce (nebo bez kolekce)
   const allVids = Object.entries(coll).map(([id, s]) => ({...s, id: s.id || id}));
   const head = foldHead('videos', who, allVids), inF = !!openFold('videos', who);
-  const list = foldSplit(allVids, 'videos', who).sort(byOrd).map(s => enrich(s, C(s.cid)))
-    .filter(it => S.type === 'all' || (S.type === 'short' ? it.short : !it.short)).filter(matchQ);
+  // filtr Videa/Shorts tu NEPLATÍ – uložené ukázat vždy všechny (dřív zapnuté „Shorts“ schovalo dlouhá videa a kolekce vypadala prázdná)
+  const list = foldSplit(allVids, 'videos', who).sort(byOrd).map(s => enrich(s, C(s.cid))).filter(matchQ);
   $('#main').innerHTML = tabs + (inF ? head : `<div class="summary"><h3>⭐ Uložená videa – ${esc(whoLabel(who))} – ${allVids.length}</h3>
     ${mine ? '' : '<div class="row ch">Kolekce druhého člověka. ☆ u videa ho uloží do tvé kolekce.</div>'}
     <div class="row ch">☆ v rohu miniatury video uloží, na ★ si vybereš kolekce nebo ho odebereš. Jedno video může být ve víc kolekcích.</div>
@@ -3355,7 +3355,7 @@ function renderHeader() {
   } else if (S.period === 'ideas') {
     $('#controls').innerHTML = common;
   } else if (S.period === 'star') {
-    $('#controls').innerHTML = common + '<span>Uložená videa ze všech států.</span>';
+    $('#controls').innerHTML = '<span>Uložená videa ze všech států.</span>';
   } else if (S.period === 'arch') {
     $('#controls').innerHTML = sortSel + common + '<span>Archiv je jen z uložených dat – nic nestahuje a kvótu nebere.</span>';
   } else {
