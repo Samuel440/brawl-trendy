@@ -239,6 +239,18 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .histtab{width:100%;font-size:12.5px;border-collapse:collapse}
 .histtab td,.histtab th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
 .histtab tr.drop td{color:var(--hot)}
+/* 📊 srovnání s kanálem: pořadí X/10 + seznam jeho Brawl videí */
+.rankbtn{font-weight:800;border-radius:999px;padding:4px 12px}
+.rankbtn.rgood{border-color:var(--ok);color:var(--ok)}
+.rankbtn.rbad{border-color:var(--hot);color:var(--hot)}
+.bandkey{display:inline-block;width:18px;height:10px;border-radius:3px;background:var(--muted);opacity:.35;vertical-align:middle;margin-right:4px}
+.ranklist{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px;margin:6px 0;display:flex;flex-direction:column;gap:4px}
+.rankrow{display:flex;gap:8px;align-items:center;color:var(--text);text-decoration:none;padding:3px 6px;border-radius:6px;font-size:12.5px}
+.rankrow:hover{background:var(--panel2)}
+.rankrow.me{background:color-mix(in srgb,var(--accent) 22%,transparent);font-weight:700}
+.rankrow img{width:64px;border-radius:4px;flex:none}
+.rankrow .rt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rankrow .rv{flex:none;font-weight:700}
 .setnav{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:8px}
 .brow[hidden]{display:none}
 .brow{flex-wrap:wrap}
@@ -555,7 +567,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.82'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.83'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2901,9 +2913,36 @@ const histOf = it => { const p = histDb(histKey(it.id))[it.id] || []; const pub 
   const pts = [[pub, 0], ...p.filter(x => x[0] > pub)], last = pts[pts.length - 1], t = it.st || 0;
   if (p.length ? t > last[0] + 60e3 && it.views !== last[1] : true) pts.push([p.length ? t : Math.max(t, Date.now() - 1), it.views]);
   return pts; };
-// SVG graf: x = čas od zveřejnění, y = zhlédnutí
-function histSvg(pts, w, h, big) {
-  const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]));
+// 📊 Jak si video vede proti ostatním Brawl videím STEJNÉHO kanálu ve stejném stáří (jako „typický výkon“ v YouTube Studiu).
+// Bere jen videa s grafem, který to stáří pokrývá; shorty se srovnávají jen se shorty. Míň než 5 videí = ještě nic neukazovat.
+const PEER_MIN = 5;
+const viewsAt = (pts, age) => { // zhlédnutí v daném stáří (mezi měřeními dopočítané), null = graf tak daleko nesahá
+  const pub = pts[0][0], t = pub + age; if (pts.length < 3 || pts[pts.length - 1][0] < t) return null;
+  const i = pts.findIndex(p => p[0] >= t), a = pts[i - 1] || pts[0], b = pts[i];
+  return Math.round(a[1] + (b[1] - a[1]) * (b[0] === a[0] ? 1 : (t - a[0]) / (b[0] - a[0])));
+};
+function channelPeers(it) {
+  if (!it.chId) return [];
+  const cs = it.c?.id ? [it.c] : COUNTRIES, seen = new Set([it.id]), out = [];
+  for (const c of cs) for (const x of prepare([...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])], c)) {
+    if (seen.has(x.id) || x.chId !== it.chId || !!x.short !== !!it.short || otherGame(x) || (x.cand && !candOk(x))) continue;
+    seen.add(x.id); const pts = histOf(x); if (pts.length >= 3) out.push({it:x, pts});
+  }
+  return out;
+}
+const quant = (s, q) => { const i = (s.length - 1) * q, a = Math.floor(i); return s[a] + (s[Math.min(s.length - 1, a + 1)] - s[a]) * (i - a); };
+// šedé pásmo: pro každý čas grafu rozmezí 25–75 % (typické) a medián ostatních videí kanálu
+function peerBand(pts, peers, steps = 48) {
+  const t0 = pts[0][0], span = pts[pts.length - 1][0] - t0, band = [];
+  for (let s = 1; s <= steps; s++) {
+    const age = span * s / steps, vals = peers.map(p => viewsAt(p.pts, age)).filter(v => v != null).sort((a, b) => a - b);
+    if (vals.length >= PEER_MIN) band.push([t0 + age, quant(vals, .25), quant(vals, .5), quant(vals, .75), vals.length]);
+  }
+  return band;
+}
+// SVG graf: x = čas od zveřejnění, y = zhlédnutí (band = šedé pásmo typického výkonu kanálu)
+function histSvg(pts, w, h, big, band = []) {
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]), ...band.map(b => b[3]));
   const pad = big ? 54 : 2, X = t => pad + (t - t0) / Math.max(1, t1 - t0) * (w - pad - (big ? 10 : 2)), Y = v => h - (big ? 24 : 2) - v / v1 * (h - (big ? 34 : 4));
   const line = pts.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ');
   let ax = '';
@@ -2914,7 +2953,9 @@ function histSvg(pts, w, h, big) {
     ax += pts.slice(1).map((p, i) => { const drop = p[1] < pts[i][1];
       return `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${drop ? 5 : 3}" fill="${drop ? 'var(--hot)' : 'var(--accent)'}"><title>${fmtDate(p[0])}: ${n(p[1])} zhlédnutí${drop ? ' – YouTube odečetl neplatná zhlédnutí' : ''}</title></circle>`; }).join('');
   }
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" class="hist">${ax}<polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="${big ? 2.5 : 1.6}" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+  const gray = band.length ? `<polygon points="${[...band.map(b => `${X(b[0]).toFixed(1)},${Y(b[3]).toFixed(1)}`), ...band.slice().reverse().map(b => `${X(b[0]).toFixed(1)},${Y(b[1]).toFixed(1)}`)].join(' ')}" fill="var(--muted)" opacity=".18"/>
+    <polyline points="${band.map(b => `${X(b[0]).toFixed(1)},${Y(b[2]).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="5 4" opacity=".75" vector-effect="non-scaling-stroke"/>` : '';
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" class="hist">${gray}${ax}<polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="${big ? 2.5 : 1.6}" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
 }
 function showHistory(it) {
   const pts = histOf(it), rows = pts.slice(1).map((p, i) => { const prev = pts[i]; const dh = (p[0] - prev[0]) / 3600e3;
@@ -2923,20 +2964,35 @@ function showHistory(it) {
     return `<tr><td>${fmtDate(p[0])}</td><td>${ago((p[0] - pts[0][0]) / 3600e3).replace('před ', '+')}</td><td><b>${n(p[1])}</b></td><td>+${n(p[1] - prev[1])}</td><td>${n(Math.round((p[1] - prev[1]) / Math.max(dh, 0.01)))}/h</td></tr>`; }).reverse();
   // graf kreslit přesně v šířce okna – jinak se na mobilu text v bublině a popisky os zdeformují (smrsknou do šířky)
   const GW = Math.round(Math.min(640, document.documentElement.clientWidth - 66));
+  // 📊 srovnání s ostatními Brawl videi kanálu ve STEJNÉM stáří (šedé pásmo + pořadí X/10)
+  const peers = channelPeers(it), band = peerBand(pts, peers), age = pts[pts.length - 1][0] - pts[0][0];
+  const cmp = peers.map(p => ({it:p.it, v:viewsAt(p.pts, age)})).filter(p => p.v != null);
+  let rankHtml = '', listHtml = '';
+  if (cmp.length >= PEER_MIN) {
+    const me = pts[pts.length - 1][1], all = [...cmp, {it, v:me, me:true}].sort((a, b) => b.v - a.v);
+    const pos = all.findIndex(x => x.me) + 1, score = Math.max(1, Math.ceil(pos / all.length * 10)), ageTxt = ago(age / 3600e3).replace('před ', '');
+    rankHtml = `<button class="rankbtn r${score <= 3 ? 'good' : score >= 8 ? 'bad' : 'mid'}" data-rank title="Pořadí mezi ${all.length} Brawl videi kanálu ve stejném stáří (${ageTxt} od zveřejnění) – klikni pro seznam">🏅 ${score}/10 · ${pos}. z ${all.length} po ${ageTxt}</button>`;
+    listHtml = `<div class="ranklist" hidden><div class="ch">Brawl videa kanálu ${esc(it.ch)} podle zhlédnutí ${ageTxt} od zveřejnění (nejlepší nahoře):</div>
+      ${all.map((x, i) => `<a class="rankrow${x.me ? ' me' : ''}" href="${ytUrl(x.it.id)}" target="_blank" rel="noopener"><b>${i + 1}.</b><img src="https://i.ytimg.com/vi/${esc(x.it.id)}/mqdefault.jpg" alt="" loading="lazy"><span class="rt">${esc(x.it.t)}</span><span class="rv">${n(x.v)}</span></a>`).join('')}</div>`;
+  } else if (peers.length) rankHtml = `<span class="ch" title="Srovnání s kanálem se ukáže, až bude mít aspoň ${PEER_MIN} Brawl videí s grafem v tomhle stáří">📊 srovnání s kanálem: ${cmp.length}/${PEER_MIN} videí s grafem</span>`;
   const ov = document.createElement('div'); ov.className = 'histov';
   ov.innerHTML = `<div class="histbox"><button class="histx" title="Zavřít">✖</button>
     <h3>📈 ${esc(it.t)}</h3><div class="ch">${esc(it.ch)} · ${n(it.views)} zhlédnutí · ${pts.length - 1} ${pts.length - 1 === 1 ? 'měření' : 'měření'}${pts.length <= 3 ? ' – víc bodů přibude s každou obnovou (na všech zařízeních)' : ''}</div>
-    ${histSvg(pts, GW, 260, true)}
+    ${rankHtml ? `<div class="row">${rankHtml}${band.length ? '<span class="ch"><span class="bandkey"></span> typický výkon kanálu (šedě)</span>' : ''}</div>` : ''}${listHtml}
+    ${histSvg(pts, GW, 260, true, band)}
     <table class="histtab"><tr><th>Kdy</th><th>Od zveřejnění</th><th>Zhlédnutí</th><th>Přírůstek</th><th>Rychlost</th></tr>${rows.join('')}</table></div>`;
-  ov.addEventListener('click', e => { if (bgClick(e, ov) || e.target.closest('.histx')) ov.remove(); });
+  ov.addEventListener('click', e => {
+    if (e.target.closest('[data-rank]')) { const l = ov.querySelector('.ranklist'); l.hidden = !l.hidden; return; }
+    if (bgClick(e, ov) || e.target.closest('.histx')) ov.remove();
+  });
   document.body.append(ov);
   // najetí myší (nebo prstem) na graf: svislá čára + přesný počet zhlédnutí v tu chvíli (mezi měřeními dopočítaný)
   const svg = ov.querySelector('svg.hist'), W = GW, Hh = 260, pad = 54;
-  const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]));
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0], v1 = Math.max(1, ...pts.map(p => p[1]), ...band.map(b => b[3]));
   const X = t => pad + (t - t0) / Math.max(1, t1 - t0) * (W - pad - 10), Y = v => Hh - 24 - v / v1 * (Hh - 34);
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g'); g.style.display = 'none'; g.style.pointerEvents = 'none';
   g.innerHTML = `<line y1="6" y2="${Hh - 24}" stroke="currentColor" opacity=".35" stroke-dasharray="3 3"/><circle r="5" fill="var(--accent)" stroke="var(--panel)" stroke-width="2"/>
-    <rect rx="6" height="38" fill="var(--bg)" stroke="var(--line)"/><text font-size="12" fill="currentColor"><tspan class="a" font-weight="700"/><tspan class="b" opacity=".7"/></text>`;
+    <rect rx="6" height="38" fill="var(--bg)" stroke="var(--line)"/><text font-size="12" fill="currentColor"><tspan class="a" font-weight="700"/><tspan class="b" opacity=".7"/><tspan class="c" opacity=".7"/></text>`;
   svg.append(g);
   const move = e => {
     const r = svg.getBoundingClientRect(), x = Math.min(W - 10, Math.max(pad, (e.clientX - r.left) / r.width * W));
@@ -2949,13 +3005,16 @@ function showHistory(it) {
     g.querySelector('line').setAttribute('x1', X(tt)); g.querySelector('line').setAttribute('x2', X(tt));
     g.querySelector('circle').setAttribute('cx', X(tt)); g.querySelector('circle').setAttribute('cy', y);
     const label = `${vv.toLocaleString('cs')} zhlédnutí${exact ? '' : ' (odhad)'}`, sub = `${fmtDate(tt)} · ${ago((tt - t0) / 3600e3).replace('před ', '+')} od zveřejnění`;
-    const w = Math.max(label.length, sub.length) * 6.4 + 16;
+    // šedé pásmo v tom čase: typické rozmezí kanálu (25–75 % jeho Brawl videí)
+    const bb = band.length ? band.reduce((a, b) => Math.abs(b[0] - tt) < Math.abs(a[0] - tt) ? b : a) : null;
+    const typ = bb && Math.abs(bb[0] - tt) < (t1 - t0) / 20 + 1 ? `typicky ${n(Math.round(bb[1]))}–${n(Math.round(bb[3]))} (z ${bb[4]} videí)` : '';
+    const w = Math.max(label.length, sub.length, typ.length) * 6.4 + 16;
     // bublina vpravo od čáry, když se nevejde, tak vlevo – a nikdy přes okraj grafu
-    const bx = Math.max(2, Math.min(W - w - 2, X(tt) + w + 12 > W ? X(tt) - w - 10 : X(tt) + 10)), by = Math.max(4, Math.min(Hh - 66, y - 46));
-    const rect = g.querySelector('rect'); rect.setAttribute('x', bx); rect.setAttribute('y', by); rect.setAttribute('width', w);
+    const bx = Math.max(2, Math.min(W - w - 2, X(tt) + w + 12 > W ? X(tt) - w - 10 : X(tt) + 10)), by = Math.max(4, Math.min(Hh - (typ ? 80 : 66), y - 46));
+    const rect = g.querySelector('rect'); rect.setAttribute('x', bx); rect.setAttribute('y', by); rect.setAttribute('width', w); rect.setAttribute('height', typ ? 53 : 38);
     const txt = g.querySelector('text'); txt.setAttribute('x', bx + 8); txt.setAttribute('y', by + 16);
-    const ta = g.querySelector('.a'), tb = g.querySelector('.b'); ta.textContent = label; tb.textContent = sub;
-    tb.setAttribute('x', bx + 8); tb.setAttribute('dy', 15);
+    const ta = g.querySelector('.a'), tb = g.querySelector('.b'), tc = g.querySelector('.c'); ta.textContent = label; tb.textContent = sub; tc.textContent = typ;
+    tb.setAttribute('x', bx + 8); tb.setAttribute('dy', 15); tc.setAttribute('x', bx + 8); tc.setAttribute('dy', 15);
   };
   svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move);
   svg.addEventListener('pointerleave', () => { g.style.display = 'none'; });
