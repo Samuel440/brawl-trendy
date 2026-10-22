@@ -555,7 +555,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.81'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.82'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1005,7 +1005,8 @@ function renderQuotaBar() {
   const me = typeof meWho === 'function' ? meWho() : '';
   by[me] ||= [];
   const parts = Object.entries(by).sort(([a], [b]) => (b === me) - (a === me)).map(([who, list]) => {
-    const s = list.reduce((a, e) => a + e.s, 0), q = list.reduce((a, e) => a + e.q, 0);
+    // + hledání robota (stejný projekt Googlu = stejná stovka) – patří majiteli
+    const s = list.reduce((a, e) => a + e.s, 0) + (who === '' ? robotSearches() : 0), q = list.reduce((a, e) => a + e.q, 0);
     const lim = who === me ? S.slimit : SEARCH_MAX, hot = s >= lim * .85 || (who === me && searchBlocked());
     // jeden součet za všechna zařízení + bar, kolik z maxima je pryč
     const bar = (v, max) => `<span class="qm"><i style="width:${Math.min(100, Math.round(v / max * 100))}%"></i></span>`;
@@ -1016,7 +1017,7 @@ function renderQuotaBar() {
 }
 // když Google řekne, že hledání došla (i z jiného zařízení), do resetu už hledat nezkoušíme
 const searchBlocked = () => ls('bt_sq_block', '') === ptDate();
-const searchLeft = () => !searchBlocked() && quota().s < S.slimit;
+const searchLeft = () => !searchBlocked() && quota().s + (meWho() ? 0 : robotSearches()) < S.slimit;
 
 // ---------- YouTube API ----------
 async function api(endpoint, params) {
@@ -1135,11 +1136,15 @@ function newestEvery(c, d = new Date()) { // minut mezi hledáními, 0 = teď ne
   if (h < 7 || h >= 23) return 0;
   return (weekend ? h >= 8 && h < 17 : h >= 12 && h < 17) ? 60 : 120;
 }
-function newestDue(c) { const every = newestEvery(c); return !!every && Date.now() - (getSet(c.id, 'day')?.newTs || 0) >= every * 60e3 - 60e3; }
+// 🤖 nejnovější videa teď hledá robot na Googlu (každých 10 min podle místního času, i když nikdo nemá stránku otevřenou)
+// – stránka pak sama nehledá. Když robot přes 3 h neběží, převezme to zase stránka.
+function robotNS() { const r = ls('bt_new', {})._robot; return r && Date.now() - r.at < 3 * 3600e3 ? r : null; }
+function robotSearches() { try { const r = ls('bt_new', {})._robot; return r && r.d === ptDate() ? r.s || 0 : 0; } catch { return 0; } } // (volá se i při startu stránky)
+function newestDue(c) { if (robotNS()) return false; const every = newestEvery(c); return !!every && Date.now() - (getSet(c.id, 'day')?.newTs || 0) >= every * 60e3 - 60e3; }
 // pojistka: hledání nejnovějších smí brát jen do 70 hledání denně (součet všech mých zařízení) –
 // zbytek ze 100 zůstane na plná hledání a ruční „Načíst dalších“ (víc států proklikaných za hodinu by jinak vzalo všechno)
 const NEWEST_CAP = 70;
-const searchesToday = () => Object.values(ls('bt_qs', {})).filter(e => e.d === ptDate() && (e.who || '') === meWho()).reduce((a, e) => a + (e.s || 0), 0);
+const searchesToday = () => Object.values(ls('bt_qs', {})).filter(e => e.d === ptDate() && (e.who || '') === meWho()).reduce((a, e) => a + (e.s || 0), 0) + (meWho() ? 0 : robotSearches());
 async function newestSearch(c) {
   const day = baseSet(c.id, 'day'); if (!day || !searchLeft() || searchesToday() >= NEWEST_CAP) return 0;
   const s = await api('search', {part:'snippet', type:'video', order:'date', maxResults:50, q:c.q || 'brawl stars', relevanceLanguage:c.lang, regionCode:c.region,
@@ -1169,8 +1174,11 @@ async function ingestNew() {
     (by[e.cid] = by[e.cid] || []).push(id);
   }
   let n = 0;
+  const nw = ls('bt_new', {});
   for (const [cid, ids] of Object.entries(by)) {
-    const now = Date.now(), items = (await details(ids)).map(it => ({...classify(it, 'ch'), st:now}));
+    // s:1 = robot to našel hledáním (jako dřív „nejnovější“ na stránce), jinak z kanálu (zvoneček)
+    const now = Date.now(), items = (await details(ids)).map(it => ({...(nw[it.id]?.s ? classify(it) : classify(it, 'ch')), st:now}));
+    learnChannels(C(cid), items.filter(it => nw[it.id]?.s && !it.cand)); // noví youtubeři se začnou sledovat
     for (const [p, h] of [['day', 24], ['week', 168], ['month', 720]]) {
       const fit = items.filter(it => now - new Date(it.pub) < h * 3600e3);
       if (fit.length && getSet(cid, p)) mergeInto(cid, p, fit);
@@ -1687,6 +1695,8 @@ function mergeKey0(k, mine, theirs) {
   if (typeof mine === 'number') return Math.max(mine, +theirs || 0); // časy (bt_autoAt…) – platí pozdější
   if (/^bt_h_/.test(k)) { const out = {...theirs}; for (const [id, p] of Object.entries(mine)) out[id] = out[id] ? thinPts([...out[id], ...p]) : p; return out; }
   if (k === 'bt_qs' || k === 'bt_disc' || k === 'bt_cal' || k === 'bt_trash' || k === 'bt_busy') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
+  // 🔔 nová videa: sjednotit; info robota (_robot) platí to novější – jinak by ho stará kopie z PC přebila
+  if (k === 'bt_new') { const out = {...theirs, ...mine}; if (theirs._robot && (!mine._robot || (theirs._robot.at || 0) > (mine._robot.at || 0))) out._robot = theirs._robot; return out; }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
   if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
   if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), newTs:Math.max(mine.newTs || 0, theirs.newTs || 0), items:capItems(byId(mine.items, theirs.items))};
