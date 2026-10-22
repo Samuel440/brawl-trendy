@@ -555,7 +555,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.79'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.81'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3049,23 +3049,15 @@ function aiInit() {
       AI.worker.onmessage = ({data:d}) => { const w = AI.wait[d.id]; if (!w) return; delete AI.wait[d.id]; d.err ? w.rej(new Error(d.err)) : w.res(d); };
       AI.text = (await aiWorkerCall({init:[...AI_YES, ...AI_NO]})).text;
       status(''); return;
-    } catch (e) { console.warn('AI ve workeru nejde, jedu v hlavním vlákně', e); AI.worker?.terminate(); AI.worker = null; }
-    const T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
-    const M = 'Xenova/clip-vit-base-patch32';
-    const [proc, vis, tok, txt] = await Promise.all([
-      T.AutoProcessor.from_pretrained(M), T.CLIPVisionModelWithProjection.from_pretrained(M, {dtype:'q8'}),
-      T.AutoTokenizer.from_pretrained(M), T.CLIPTextModelWithProjection.from_pretrained(M, {dtype:'q8'})]);
-    Object.assign(AI, {T, proc, vis});
-    AI.text = rows((await txt(tok([...AI_YES, ...AI_NO], {padding:true, truncation:true}))).text_embeds);
-    status('');
+    } catch (e) { AI.worker?.terminate(); AI.worker = null; throw e; }
   })();
-  AI.ready.catch(e => { AI.ready = null; status('AI model se nepodařilo načíst: ' + e.message, true); });
+  // při chybě už NIKDY znovu (do obnovení stránky) – dřív se model při každém překreslení načítal znova a znova
+  // (pokaždé stovky MB paměti navíc) a v hlavním vlákně zasekával stránku
+  AI.ready.catch(e => { AI.failed = true; status('AI kontrola miniatur se nespustila: ' + e.message, true); });
   return AI.ready;
 }
 async function embed(url) {
-  if (AI.worker) return (await aiWorkerCall({url})).e;
-  const img = await AI.T.RawImage.read(url);
-  return rows((await AI.vis(await AI.proc(img))).image_embeds)[0];
+  return (await aiWorkerCall({url})).e;
 }
 function aiScore(e) {
   const logits = AI.text.map(t => dot(e, t) * 100), mx = Math.max(...logits);
@@ -3082,7 +3074,7 @@ function aiBadge(it) {
 }
 // Projde miniatury sporných videí (bez „Brawl Stars“ v textu), které ještě nemají verdikt
 async function aiCheck(items) {
-  if (!S.ai) return;
+  if (!S.ai || AI.failed) return;
   // jiná hra v názvu nebo zablokované video = verdikt je jasný bez AI
   items.filter(it => (it.cand || strictCh(it)) && !aiOf(it) && !otherGame(it) && !BLOCK.videos[it.id]).forEach(it => AI.pending.add(it));
   if (AI.running || !AI.pending.size) return;
@@ -3816,10 +3808,14 @@ function gtLoader() {
 async function renderTrends() {
   const sec = $('#trendsSec'), on = S.period === 'cal' && !S.view && hasAccess();
   sec.hidden = !on;
-  if (!on) { GT.shown = ''; return; } // po návratu do kalendáře se načte znovu (čerstvá data)
+  // vložený graf Googlu běží jako samostatná stránka a v Edgi dokázal sníst i 20 GB paměti → načte se až po kliknutí
+  // a při odchodu z kalendáře se úplně zavře (iframe pryč = paměť se uvolní)
+  if (!on) { GT.shown = ''; GT.on = false; $('#gtrends').innerHTML = ''; return; }
+  if (!GT.on) { GT.shown = ''; $('#gtrends').classList.add('ready'); $('#gtrends').innerHTML = '<div class="gtwait"><button class="primary" data-gton>📈 Zobrazit graf Google Trends</button></div>'; }
   sec.querySelectorAll('[data-gtper]').forEach(b => b.classList.toggle('on', b.dataset.gtper === GT.per));
   sec.querySelectorAll('[data-gtprop]').forEach(b => b.classList.toggle('on', b.dataset.gtprop === GT.prop));
   $('#gtLink').href = 'https://trends.google.com/trends/explore?' + gtQuery();
+  if (!GT.on) return;
   const key = GT.per + '|' + GT.prop; if (GT.shown === key) return; GT.shown = key;
   const box = $('#gtrends'), wait = '<div class="gtwait">📈 Načítám graf z Google Trends…</div>';
   box.classList.remove('ready'); box.innerHTML = wait;
@@ -3936,8 +3932,9 @@ document.addEventListener('click', e => {
   }
   if (b.dataset.gtper !== undefined || b.dataset.gtprop !== undefined) { // 📈 Google Trends: období / zdroj
     if (b.dataset.gtper !== undefined) ss('bt_gtper', GT.per = b.dataset.gtper); else ss('bt_gtprop', GT.prop = b.dataset.gtprop);
-    renderTrends(); return;
+    GT.on = true; renderTrends(); return;
   }
+  if (b.hasAttribute('data-gton')) { GT.on = true; renderTrends(); return; }
   if (b.dataset.starwho !== undefined) { S.starWho = b.dataset.starwho; renderMain(); return; }
   if (b.dataset.startab) { S.starTab = b.dataset.startab; S.starWho = null; } // ⭐ Uložené: Videa / Nápady (i z odkazu v míchači)
   if (b.dataset.showmore !== undefined) { const y = scrollY; S.showN += SHOW_STEP; renderMain(); scrollTo(0, y); return; }
