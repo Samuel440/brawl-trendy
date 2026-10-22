@@ -548,7 +548,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$)/;
-const APP_VERSION = '2026-10-22.70'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.71'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -664,12 +664,22 @@ function markShared(k) {
   SYNC.dirty[k] = true;
   clearTimeout(SYNC.timer); SYNC.timer = setTimeout(syncPush, REMOTE?.name === 'drive' ? 10000 : 3000);
 }
-async function syncPush() {
-  const keys = Object.keys(SYNC.dirty); if (!keys.length || !REMOTE?.ready) return;
-  const body = {};
-  for (const k of keys) { const raw = kvRaw(k); if (raw !== null) body[k] = {v:JSON.parse(raw), t:syncMeta()[k] || Date.now()}; }
-  try { await REMOTE.put(body); keys.forEach(k => delete SYNC.dirty[k]); SYNC.ok = true; }
-  catch (e) { SYNC.ok = false; if (e.message === 'auth') driveLost(); }
+// co jsme z Disku u každého klíče naposledy viděli (čas souboru) – jen pro tohle zařízení
+function syncSeen() { return SYNC.seen ??= (() => { try { return JSON.parse(localStorage.getItem('bt_rseen')) || {}; } catch { return {}; } })(); }
+function saveSeen() { try { localStorage.setItem('bt_rseen', JSON.stringify(SYNC.seen)); } catch {} }
+async function syncPush(pulled) {
+  if (!Object.keys(SYNC.dirty).length || !REMOTE?.ready || SYNC.pushing) return;
+  SYNC.pushing = true;
+  try {
+    // PC a mobil zapisují do STEJNÉHO souboru na Disku → před nahráním nejdřív sloučit, co tam mezitím dalo jiné zařízení
+    // (jinak se jeho data přepsala – třeba čas hledání z mobilu – a PC pak hledalo znovu a pálilo kvótu)
+    if (REMOTE === DRIVE_BACKEND && !pulled && await syncPull(true)) reloadMemory();
+    const keys = Object.keys(SYNC.dirty); if (!keys.length) return;
+    const body = {};
+    for (const k of keys) { const raw = kvRaw(k); if (raw !== null) body[k] = {v:JSON.parse(raw), t:syncMeta()[k] || Date.now()}; }
+    try { await REMOTE.put(body); keys.forEach(k => { delete SYNC.dirty[k]; syncSeen()[k] = body[k]?.t; }); saveSeen(); SYNC.ok = true; }
+    catch (e) { SYNC.ok = false; if (e.message === 'auth') driveLost(); }
+  } finally { SYNC.pushing = false; }
 }
 
 // --- úložiště 1: server.py na PC / Macu (složka data/) ---
@@ -906,18 +916,21 @@ function driveLost() {
 }
 
 // stáhne, co mezitím načetli ostatní (novější vyhrává), a pošle, co máme novější my
-async function syncPull() {
+async function syncPull(noPush) {
   let remote;
   if (!REMOTE) { try { remote = await SERVER_BACKEND.getAll(); REMOTE = SERVER_BACKEND; } catch { SYNC.ok = false; return false; } }
   else { try { remote = await REMOTE.getAll(); } catch (e) { SYNC.ok = false; if (e.message === 'auth') driveLost(); return false; } }
   SYNC.ok = true;
-  const meta = syncMeta(); let changed = false;
+  const meta = syncMeta(), seen = syncSeen(); let changed = false;
   SYNC.pulling = true;
   // záznamy o smazání nejdřív, ať se podle nich řídí slučování ostatního
   for (const [k, e] of Object.entries(remote).sort(([a], [b]) => (b === 'bt_tomb') - (a === 'bt_tomb'))) {
     const mine = ls(k, null);
-    // když u nás data chybí (nové zařízení, smazaný prohlížeč), bereme z Disku vždycky – i když meta tvrdí, že je máme
-    if (!SHARED_RX.test(k) || (mine != null && (meta[k] || 0) >= e.t)) continue;
+    // když u nás data chybí (nové zařízení, smazaný prohlížeč), bereme z Disku vždycky.
+    // Jinak slučujeme, kdykoli se soubor na Disku ZMĚNIL od posledně – i když jsme mezitím něco změnili i my
+    // (dřív se pak data z druhého zařízení přeskočila a pak přepsala)
+    if (!SHARED_RX.test(k) || (mine != null && seen[k] === e.t)) continue;
+    seen[k] = e.t;
     // všechno se SLUČUJE – stejný účet na PC i mobilu zapisuje do stejného souboru, tak novější verze
     // nesmí přepsat starší (prázdné zařízení by smazalo ⭐ nebo blokace); smazání řeší bt_tomb
     const v = mine == null ? e.v : mergeKey(k, mine, e.v);
@@ -926,9 +939,9 @@ async function syncPull() {
     else { kvSetRaw(k, raw); meta[k] = Date.now(); SYNC.dirty[k] = true; } // sloučená verze má i naše změny → poslat dál
     changed = true;
   }
-  SYNC.pulling = false; saveMeta();
+  SYNC.pulling = false; saveMeta(); saveSeen();
   for (const k of kvKeys()) if (SHARED_RX.test(k) && (!remote[k] || (meta[k] || 0) > remote[k].t)) { meta[k] ??= Date.now(); SYNC.dirty[k] = true; }
-  saveMeta(); syncPush(); SYNC.last = Date.now();
+  saveMeta(); if (!noPush) syncPush(true); SYNC.last = Date.now();
   return changed;
 }
 
