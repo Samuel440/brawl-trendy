@@ -555,7 +555,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.76'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.77'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -686,7 +686,12 @@ async function syncPush(pulled) {
     const body = {};
     for (const k of keys) { const raw = kvRaw(k); if (raw !== null) body[k] = {v:JSON.parse(raw), t:syncMeta()[k] || Date.now()}; }
     try { await REMOTE.put(body); keys.forEach(k => { delete SYNC.dirty[k]; syncSeen()[k] = body[k]?.t; }); saveSeen(); SYNC.ok = true; }
-    catch (e) { SYNC.ok = false; if (e.message === 'auth') driveLost(); }
+    catch (e) {
+      SYNC.ok = false; if (e.message === 'auth') return driveLost();
+      // dřív to selhalo potichu (plný Disk) a nikdo nevěděl, že se nic nesdílí
+      if (Date.now() - (SYNC.warnAt || 0) > 10 * 60e3) { SYNC.warnAt = Date.now();
+        status(`☁️ Na Disk se nepodařilo nahrát (${e.message}).${/quota|limit|storage|space/i.test(e.message) ? ' Disk účtu ' + DRIVE.email + ' je plný – přihlas se účtem, který vlastní složku.' : ''}`, true); }
+    }
   } finally { SYNC.pushing = false; }
 }
 
@@ -742,7 +747,7 @@ async function gfetch(url, opts = {}) {
   if (!DRIVE.token || Date.now() > DRIVE.exp - 60e3) throw new Error('auth');
   const r = await fetch(url, {...opts, headers:{...(opts.headers || {}), Authorization:'Bearer ' + DRIVE.token}});
   if (r.status === 401) { DRIVE.token = null; throw new Error('auth'); }
-  if (!r.ok) throw new Error('Google Disk odpověděl chybou ' + r.status);
+  if (!r.ok) { let why = ''; try { why = (await r.json()).error?.errors?.[0]?.reason || ''; } catch {} throw new Error('Google Disk odpověděl chybou ' + r.status + (why ? ' ' + why : '')); }
   return r;
 }
 async function dList(q) {
@@ -781,6 +786,7 @@ async function driveInit(create) {
   // majitel = kdo vlastní složku, nebo kterýkoli z majitelských účtů (smí blokovat, má kolekci „Majitel“)
   DRIVE.owner = isOwnerEmail(DRIVE.email) || (found.length ? !!found[0].ownedByMe : true);
   DRIVE.folder = found[0]?.id || await dFolder(DRIVE_FOLDER);
+  DRIVE.folderOwner = found[0]?.owners?.[0]?.emailAddress || DRIVE.email;
   DRIVE.thumbs = (await dList(`name='thumbs' and '${DRIVE.folder}' in parents and ${mime}`))[0]?.id || await dFolder('thumbs', DRIVE.folder);
   DRIVE.state = 'on';
   if (DRIVE.owner) prepareRobotFiles().catch(e => console.warn('robot soubory', e));
@@ -798,6 +804,10 @@ async function prepareRobotFiles() {
     if (!have.has(name)) await dUpload(name, DRIVE.folder, new Blob([JSON.stringify({k, v:{}, t:0})], {type:'application/json'}));
   }
 }
+// Oba Samkovy (majitelské) účty zapisují do STEJNÝCH souborů – těch, které patří vlastníkovi složky.
+// Soubor se počítá do místa na Disku toho, kdo ho založil: druhý účet má Disk plný, takže jeho vlastní soubory
+// se nenahrály a mobil (přihlášený druhým účtem) nic nesdílel. Úprava cizího souboru místo nebere.
+const fileEmail = () => isOwnerEmail(DRIVE.email) && isOwnerEmail(DRIVE.folderOwner) ? DRIVE.folderOwner : DRIVE.email;
 const DRIVE_BACKEND = {
   name:'drive', ready:false,
   async getAll() {
@@ -813,7 +823,7 @@ const DRIVE_BACKEND = {
       }
     }));
     if (authErr) throw authErr;
-    const out = {}, suffix = `__${DRIVE.email}.json`, byKey = {};
+    const out = {}, suffix = `__${fileEmail()}.json`, byKey = {};
     DRIVE.mine = {};
     for (const [id, c] of Object.entries(DRIVE.cache)) {
       (byKey[c.e.k] ||= []).push([id, c]);
@@ -839,7 +849,7 @@ const DRIVE_BACKEND = {
   },
   async put(body) {
     for (const [k, e] of Object.entries(body)) {
-      const name = `s_${k}__${DRIVE.email}.json`, doc = {k, ...e};
+      const name = `s_${k}__${fileEmail()}.json`, doc = {k, ...e};
       const r = await dUpload(name, DRIVE.folder, new Blob([JSON.stringify(doc)], {type:'application/json'}), DRIVE.mine[k]);
       DRIVE.mine[k] = r.id; DRIVE.cache[r.id] = {mt:r.modifiedTime, name, e:doc};
     }
