@@ -221,6 +221,7 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
   .thumb .star::before{right:-10px}
 }
 .drivegate{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:rgba(79,163,255,.1);border:1px solid rgba(79,163,255,.4);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.calwarn{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0;padding:8px 12px;border-radius:10px;background:rgba(255,204,0,.1);border:1px solid rgba(255,204,0,.45);font-size:13.5px}
 .ghint{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:100%}
 .ghint input{min-width:0;width:220px;max-width:100%;padding:6px 8px}
 .chip{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:var(--ok)}
@@ -576,7 +577,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.90'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-22.91'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -978,12 +979,29 @@ async function driveConnectInner(create, pick) {
     REMOTE = DRIVE_BACKEND; DRIVE_BACKEND.ready = false; ss('bt_gdrive', true);
     setTimeout(() => pullMissingChannels().then(() => rerender()).catch(() => {}), 5000);
     S.starWho = null; reloadMemory(); // kolekce ⭐ a 💡 podle toho, kdo je přihlášený
+    // 🗓️ kalendář (a poznámky grafika) stáhnout HNED jako první – celé stažení všech dat (desítky MB) trvá
+    try { await quickPull(); rerender(); } catch {}
     await pullShared(true);
+    SYNC.calFresh = true;
     status(`☁️ Disk připojen (${DRIVE.email}).`); ss('bt_nodrive', false);
   } catch (e) { DRIVE.state = 'off'; status(e.message === 'auth' ? 'Přihlášení vypršelo – připoj Disk znovu.' : e.message, true); }
   rerender();
   // teprve teď (s daty z Disku) stáhnout z YouTube, co je opravdu zastaralé
   if (REMOTE === DRIVE_BACKEND && !S.view && TIME_PERIODS.includes(S.period)) showCountry(false);
+}
+// ⚡ rychlé stažení jen malých důležitých souborů (kalendář, poznámky ke kalendáři, smazané) – pár vteřin místo
+// celého Disku. Sloučí se s tím, co je v prohlížeči; plné stažení po něm to stejně projde znovu.
+async function quickPull() {
+  const files = (await dList(`'${DRIVE.folder}' in parents and (name contains 's_bt_cal' or name contains 's_bt_tomb') and trashed=false`))
+    .filter(f => /^s_bt_(cal|calg(_g_[a-z0-9_]+)?|tomb)__.+\.json$/.test(f.name));
+  const docs = await Promise.all(files.map(f => dGet(f.id).then(r => r.json()).catch(() => null)));
+  // smazané (tomb) první, ať se podle nich řídí slučování kalendáře
+  for (const d of docs.filter(Boolean).sort((a, b) => (b.k === 'bt_tomb') - (a.k === 'bt_tomb'))) {
+    if (!d.k || !SHARED_RX.test(d.k)) continue;
+    const mine = ls(d.k, null);
+    kvSetRaw(d.k, JSON.stringify(mine == null ? d.v : mergeKey(d.k, mine, d.v)));
+  }
+  SYNC.calFresh = true;
 }
 // přihlášení Googlem platí hodinu – pak sdílení počká na nové kliknutí
 function driveLost() {
@@ -2301,7 +2319,11 @@ function renderCal() {
         <button class="ct cthumb${f} ${cls}" data-calopen="${esc(e.id)}">${esc(e.thumb || '')}</button>`; }).join('');
     return list.length ? rows : dayCell(1) + `<div class="ct cadd dfirst ${cls}"></div>`; };
   const later = all.filter(e => e.date > isoDay(days[13])).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
-  $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>
+  // upozornění: dokud nepřišla data z Disku, je tu verze z minulé návštěvy (grafik i já bychom koukali na starý plán)
+  const calWarn = !gClientId() || !driveUsedHere() || SYNC.calFresh ? ''
+    : REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.token ? '<div class="calwarn">⏳ Načítám nejnovější kalendář z Disku… zatím vidíš verzi z minulé návštěvy.</div>'
+    : '<div class="calwarn">⚠️ Disk není připojený – kalendář může být starší než u ostatních. <button class="primary" id="btnDrive">☁️ Připojit Disk</button></div>';
+  $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>${calWarn}
       <div class="row"><button data-calshift="-1">◀ Týden zpět</button><button data-calshift="0">Dnes</button><button data-calshift="1">Týden dál ▶</button>
         ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div></div>
