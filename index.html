@@ -588,7 +588,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-23.96'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-23.97'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -762,7 +762,8 @@ function loadGis() {
 // přesměruje celá stránka na přihlášení a Google ji pak vrátí sem s přístupem v adrese (#access_token=…)
 const OAUTH_REDIRECT = 'https://samuel440.github.io/brawl-trendy/'; // musí být povolená v Google Cloud (OAuth klient)
 var OAUTH_MSG = ''; // hláška z návratu z přihlášení (ukáže se po načtení stránky)
-const useRedirect = () => location.href.startsWith(OAUTH_REDIRECT) && matchMedia('(pointer:coarse)').matches;
+// (dotykové zařízení se pozná víc způsoby – některé prohlížeče na telefonu „pointer:coarse“ nehlásí)
+const useRedirect = () => location.href.startsWith(OAUTH_REDIRECT) && (matchMedia('(pointer:coarse)').matches || navigator.maxTouchPoints > 0 || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent));
 function driveRedirect(email, pick) {
   const st = Math.random().toString(36).slice(2);
   // kontrolní kód i do localStorage – Android občas vrátí přihlášení v JINÉ kartě (sessionStorage je pak prázdné)
@@ -957,6 +958,8 @@ const DRIVE_BACKEND = {
 };
 // připojení Disku (z tlačítka); při prvním připojení se na Disk nahraje všechno, co je v prohlížeči
 async function driveConnect(create, pick) {
+  // 📱 bez platného přihlášení rovnou na přihlášení Googlu (i když předchozí pokus ještě „visí“)
+  if (useRedirect() && (pick || !DRIVE.token || Date.now() > DRIVE.exp - 60e3)) return driveRedirect(pick ? '' : ls('bt_gemail', ''), pick);
   if (DRIVE.connecting) return;
   DRIVE.connecting = true;
   try { await driveConnectInner(create, pick); } finally { DRIVE.connecting = false; }
@@ -979,9 +982,12 @@ function driveHint() {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { status('Napiš celou e-mailovou adresu (např. jmeno@gmail.com).', true); $('#gHint')?.focus(); return; }
   if (DRIVE.token && DRIVE.email && DRIVE.email !== email && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(DRIVE.token, () => {});
   try { sessionStorage.removeItem('bt_tok'); } catch {}
-  Object.assign(DRIVE, {token:null, exp:0, email:'', folder:null, thumbs:null, cache:{}, mine:{}, owner:undefined, state:'off'});
-  REMOTE = null; DRIVE_BACKEND.ready = false; SYNC.ok = false;
   ss('bt_gemail', email); // → login_hint
+  // na webu VŽDY rovnou přesměrovat na přihlášení – nezávisle na tom, jestli předchozí pokus (okno, stahování) ještě „visí“;
+  // dřív se kliknutí v tu chvíli tiše ignorovalo
+  if (location.href.startsWith(OAUTH_REDIRECT)) return driveRedirect(email);
+  Object.assign(DRIVE, {token:null, exp:0, email:'', folder:null, thumbs:null, cache:{}, mine:{}, owner:undefined, state:'off'});
+  REMOTE = null; DRIVE_BACKEND.ready = false; SYNC.ok = false; DRIVE.connecting = false;
   driveConnect(false, false);
 }
 // Přihlašovací okno Googlu jde otevřít jen po kliknutí → když už Disk používáš, připojí ho samo
