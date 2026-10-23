@@ -588,7 +588,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-23.95'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-23.96'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -871,39 +871,43 @@ async function prepareRobotFiles() {
 const fileEmail = () => isOwnerEmail(DRIVE.email) && isOwnerEmail(DRIVE.folderOwner) ? DRIVE.folderOwner : DRIVE.email;
 const DRIVE_BACKEND = {
   name:'drive', ready:false,
+  // 📱 Dřív se při KAŽDÉM otevření stránky stáhlo všech ~130 souborů (desítky MB) – na mobilu to trvalo věčnost
+  // a ☁️ se nepřipojil. Teď si prohlížeč pamatuje (bt_dmeta), kterou verzi kterého souboru už zpracoval,
+  // a stahuje jen soubory změněné od minula. Každý klíč se pořád skládá ze VŠECH souborů (ty, grafik, robot).
   async getAll() {
     const files = (await dList(`'${DRIVE.folder}' in parents and name contains 's_' and trashed=false`)).filter(f => f.name.startsWith('s_') && f.name.endsWith('.json'));
+    let meta = DRIVE.meta;
+    if (!meta) { try { meta = JSON.parse(localStorage.getItem('bt_dmeta')) || {}; } catch { meta = {}; } if (meta._f !== DRIVE.folder) meta = {_f:DRIVE.folder}; DRIVE.meta = meta; }
     const ids = new Set(files.map(f => f.id));
-    for (const id of Object.keys(DRIVE.cache)) if (!ids.has(id)) delete DRIVE.cache[id];
-    // změněné soubory stahovat po 6 najednou (po jednom to s desítkami souborů trvalo i desítky vteřin)
-    const todo = files.filter(f => DRIVE.cache[f.id]?.mt !== f.modifiedTime); // nezměněné nestahujeme znovu
-    let authErr = null;
+    for (const id of Object.keys(meta)) if (id !== '_f' && !ids.has(id)) delete meta[id];
+    const todo = files.filter(f => meta[f.id]?.mt !== f.modifiedTime), docs = {}, total = todo.length;
+    let authErr = null, done = 0;
+    // po 6 najednou; u většího stahování ukazovat průběh
     await Promise.all(Array.from({length:6}, async () => {
       for (let f; (f = todo.shift()) && !authErr;) {
-        try { DRIVE.cache[f.id] = {mt:f.modifiedTime, name:f.name, e:await (await dGet(f.id)).json()}; } catch (e) { if (e.message === 'auth') authErr = e; }
+        try { const d = await (await dGet(f.id)).json(); docs[f.id] = d; meta[f.id] = {mt:f.modifiedTime, name:f.name, k:d.k, t:d.t}; }
+        catch (e) { if (e.message === 'auth') authErr = e; }
+        if (total > 8) status(`☁️ Stahuji data z Disku… ${++done}/${total}`);
       }
     }));
     if (authErr) throw authErr;
+    try { localStorage.setItem('bt_dmeta', JSON.stringify(meta)); } catch {}
+    if (total > 8) status('');
     const out = {}, suffix = `__${fileEmail()}.json`, byKey = {};
     DRIVE.mine = {};
-    for (const [id, c] of Object.entries(DRIVE.cache)) {
-      (byKey[c.e.k] ||= []).push([id, c]);
-      if (c.name.endsWith(suffix)) DRIVE.mine[c.e.k] = id;
+    for (const [id, m] of Object.entries(meta)) {
+      if (id === '_f' || !m.k) continue;
+      (byKey[m.k] ||= []).push(id);
+      if (m.name.endsWith(suffix)) DRIVE.mine[m.k] = id;
     }
-    // Každý klíč se skládá ze VŠECH souborů (ty z PC/mobilu, grafik, robot). Dřív u většiny vyhrál jen nejnovější soubor –
-    // když pak stránku otevřel grafik, jeho soubor „přebil“ tvůj čerstvý čas hledání z mobilu a PC hledalo znovu.
-    // Slučování je drahé → jen když se některý ze souborů klíče změnil (jinak to každých 30 s zamrazilo prohlížeč).
-    DRIVE.hmerge ||= {};
+    // sloučit od nejstaršího k nejnovějšímu (u sporných hodnot vyhraje novější soubor)
+    const merge = (k, list) => { let v = null; for (const d of list.sort((a, b) => a.t - b.t)) v = v == null ? d.v : mergeKey(k, d.v, v); return v; };
     for (const [k, list] of Object.entries(byKey)) {
-      if (list.length === 1) { const {v, t} = list[0][1].e; out[k] = {v, t}; continue; }
-      const sig = list.map(([id, c]) => id + c.mt).sort().join('|');
-      if (DRIVE.hmerge[k]?.sig !== sig) {
-        // od nejstaršího k nejnovějšímu: u sporných hodnot vyhraje novější soubor
-        let v = null, t = 0;
-        for (const [, c] of [...list].sort((a, b) => a[1].e.t - b[1].e.t)) { v = v == null ? c.e.v : mergeKey(k, c.e.v, v); t = Math.max(t, c.e.t); }
-        DRIVE.hmerge[k] = {sig, v, t};
-      }
-      out[k] = {v:DRIVE.hmerge[k].v, t:DRIVE.hmerge[k].t};
+      const changed = list.filter(id => docs[id]).map(id => docs[id]);
+      out[k] = {t:Math.max(...list.map(id => meta[id].t || 0)),
+        v:changed.length ? merge(k, changed) : null, // jen změněné – zbytek už prohlížeč má sloučený
+        // když prohlížeč data nemá (nebo je potřeba celé), stáhnout všechny soubory klíče
+        load:async () => merge(k, (await Promise.all(list.map(id => docs[id] || dGet(id).then(r => r.json()).catch(() => null)))).filter(Boolean))};
     }
     this.ready = true;
     return out;
@@ -912,7 +916,8 @@ const DRIVE_BACKEND = {
     for (const [k, e] of Object.entries(body)) {
       const name = `s_${k}__${fileEmail()}.json`, doc = {k, ...e};
       const r = await dUpload(name, DRIVE.folder, new Blob([JSON.stringify(doc)], {type:'application/json'}), DRIVE.mine[k]);
-      DRIVE.mine[k] = r.id; DRIVE.cache[r.id] = {mt:r.modifiedTime, name, e:doc};
+      DRIVE.mine[k] = r.id;
+      if (DRIVE.meta) { DRIVE.meta[r.id] = {mt:r.modifiedTime, name, k, t:e.t}; try { localStorage.setItem('bt_dmeta', JSON.stringify(DRIVE.meta)); } catch {} }
     }
   },
   async listVersAll(id) {
@@ -993,6 +998,7 @@ async function driveConnectInner(create, pick) {
     if (pick || !DRIVE.token || Date.now() > DRIVE.exp - 60e3) await driveSignIn(pick);
     if (!await driveInit(create)) { status('☁️ Na Disku zatím není složka „' + DRIVE_FOLDER + '“ – založ ji v ⚙️ Nastavení, nebo počkej, až ti ji někdo nasdílí.', true); renderMain(); return; }
     REMOTE = DRIVE_BACKEND; DRIVE_BACKEND.ready = false; ss('bt_gdrive', true);
+    renderHeader(); status(`☁️ Disk připojen (${DRIVE.email}) – stahuji, co je nového…`); // ☁️ hned, data se dotahují
     setTimeout(() => pullMissingChannels().then(() => rerender()).catch(() => {}), 5000);
     S.starWho = null; reloadMemory(); // kolekce ⭐ a 💡 podle toho, kdo je přihlášený
     // 🗓️ kalendář (a poznámky grafika) stáhnout HNED jako první – celé stažení všech dat (desítky MB) trvá
@@ -1049,6 +1055,8 @@ async function syncPullInner(noPush) {
     // Jinak slučujeme, kdykoli se soubor na Disku ZMĚNIL od posledně – i když jsme mezitím něco změnili i my
     // (dřív se pak data z druhého zařízení přeskočila a pak přepsala)
     if (!SHARED_RX.test(k) || (mine != null && seen[k] === e.t)) continue;
+    // Disk poslal jen změněné soubory klíče – když tu data chybí, nebo se nezměnil žádný stažený soubor, stáhnout celé
+    if (e.load && (mine == null || e.v == null)) { try { e.v = await e.load(); } catch {} if (e.v == null) continue; }
     seen[k] = e.t;
     // všechno se SLUČUJE – stejný účet na PC i mobilu zapisuje do stejného souboru, tak novější verze
     // nesmí přepsat starší (prázdné zařízení by smazalo ⭐ nebo blokace); smazání řeší bt_tomb
