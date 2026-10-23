@@ -588,7 +588,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-22.94'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-23.95'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -761,22 +761,27 @@ function loadGis() {
 // 📱 na mobilu se přihlašovací okno Googlu otevírá jako nová karta a často zůstane bílé → tam se místo okna
 // přesměruje celá stránka na přihlášení a Google ji pak vrátí sem s přístupem v adrese (#access_token=…)
 const OAUTH_REDIRECT = 'https://samuel440.github.io/brawl-trendy/'; // musí být povolená v Google Cloud (OAuth klient)
+var OAUTH_MSG = ''; // hláška z návratu z přihlášení (ukáže se po načtení stránky)
 const useRedirect = () => location.href.startsWith(OAUTH_REDIRECT) && matchMedia('(pointer:coarse)').matches;
 function driveRedirect(email, pick) {
   const st = Math.random().toString(36).slice(2);
-  try { sessionStorage.setItem('bt_oauth_st', st); sessionStorage.setItem('bt_period_s', S.period); if (CAL_LINK) sessionStorage.setItem('bt_callink', CAL_LINK); } catch {}
+  // kontrolní kód i do localStorage – Android občas vrátí přihlášení v JINÉ kartě (sessionStorage je pak prázdné)
+  try { localStorage.setItem('bt_oauth_st', st); sessionStorage.setItem('bt_period_s', S.period); if (CAL_LINK) localStorage.setItem('bt_callink', CAL_LINK); } catch {}
   const p = {client_id:gClientId(), redirect_uri:OAUTH_REDIRECT, response_type:'token', scope:'https://www.googleapis.com/auth/drive', include_granted_scopes:'true', state:st};
   if (email) p.login_hint = email;
   if (pick) p.prompt = 'select_account';
-  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams(p);
+  status('↪ Přesměrovávám na přihlášení Googlu…');
+  location.href ='https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams(p);
 }
 // návrat z přihlášení: přístup z adresy uložit (jako po přihlášení oknem) a adresu uklidit
 (() => {
   const h = new URLSearchParams(location.hash.slice(1));
   if (!h.get('access_token') && !h.get('error')) return;
-  let st = null; try { st = sessionStorage.getItem('bt_oauth_st'); sessionStorage.removeItem('bt_oauth_st'); } catch {}
+  let st = null; try { st = localStorage.getItem('bt_oauth_st'); localStorage.removeItem('bt_oauth_st'); } catch {}
   history.replaceState(null, '', location.pathname + location.search);
-  if (h.get('error') || !st || h.get('state') !== st) return;
+  // dřív se chyba potichu zahodila a vypadalo to, že se „nic neděje“ → teď se ukáže
+  if (h.get('error')) { OAUTH_MSG = `☁️ Google přihlášení nevyšlo: ${h.get('error_description') || h.get('error')}${h.get('error') === 'access_denied' ? ' (přístup nepovolen – zkus znovu a povol přístup k Disku)' : ''}`; return; }
+  if (!st || h.get('state') !== st) { OAUTH_MSG = '☁️ Přihlášení se nepodařilo dokončit (vrátilo se v jiné kartě?) – klikni na Připojit Disk ještě jednou.'; return; }
   try { sessionStorage.setItem('bt_tok', JSON.stringify({t:h.get('access_token'), exp:Date.now() + (+h.get('expires_in') || 3600) * 1000})); } catch {}
   try { localStorage.setItem('bt_gdrive', 'true'); } catch {}
 })();
@@ -2538,7 +2543,7 @@ let CAL_LINK = null;
 function readCalLink() {
   const m = location.hash.match(/^#cal=([^&]+)/);
   if (m) { CAL_LINK = decodeURIComponent(m[1]); history.replaceState(null, '', location.pathname + location.search); }
-  else try { CAL_LINK = sessionStorage.getItem('bt_callink') || CAL_LINK; sessionStorage.removeItem('bt_callink'); } catch {}
+  else try { CAL_LINK = localStorage.getItem('bt_callink') || CAL_LINK; localStorage.removeItem('bt_callink'); } catch {}
   if (CAL_LINK) { S.period = 'cal'; S.view = null; try { sessionStorage.setItem('bt_period_s', 'cal'); } catch {} }
 }
 function openCalLink() {
@@ -2584,7 +2589,14 @@ function calEditor(id, date, focusScript, edit = true) {
     ${noteAdd ? '<div class="addch"><input data-calnote placeholder="Např. miniatury, ze kterých si půjčím (odkaz na YouTube), nápad…"><button data-calnoteadd>➕ Přidat</button></div>' : ''}
     ${own ? '<div class="ch">Ukládá se samo při psaní.</div>' : ''}</div>`;
   let timer = null;
-  const save = () => { clearTimeout(timer); timer = setTimeout(() => { calSave(e); renderMain(); }, 600); };
+  // před uložením vždy přečíst pole přímo – na mobilu klávesnice drží poslední rozepsané slovo a událost „input“
+  // dorazí až po ťuknutí jinam; ✖ hned po psaní pak zavřel okno bez konce scénáře
+  const grab = () => { if (own) ov.querySelectorAll('[data-f]').forEach(el => { e[el.dataset.f] = el.type === 'checkbox' ? el.checked : el.value; }); };
+  const save = () => { clearTimeout(timer); timer = setTimeout(() => { grab(); calSave(e); renderMain(); }, 600); };
+  // 📱 přepnutí do jiné aplikace / zamknutí telefonu s otevřeným oknem → uložit hned
+  const onHide = () => { if (!ov.isConnected) return document.removeEventListener('visibilitychange', onHide);
+    if (document.hidden && own) { clearTimeout(timer); grab(); if (e.title || e.script || e.thumb || e.inspo) calSave(e); } };
+  document.addEventListener('visibilitychange', onHide);
   // ☑️ fajfky v okně scénáře: ukládají se k videu (jen majitel; grafik si je odškrtá jen u sebe na chvíli)
   const sOpts = {get checks() { return !!e.checks; }, done:new Set(e.done || []),
     toggle() { e.done = [...sOpts.done]; if (admin) { calSave(e); if (!own) renderMain(); } }};
@@ -2614,18 +2626,18 @@ function calEditor(id, date, focusScript, edit = true) {
       ta.value = ta.value.slice(0, p) + (p && ta.value[p - 1] !== '\n' ? '\n' : '') + txt + '\n' + ta.value.slice(p);
       e.script = ta.value; save(); ta.focus();
     });
-    if (bgClick(ev, ov) || b?.classList.contains('histx')) { clearTimeout(timer); if (own && (e.title || e.script || e.thumb || e.inspo)) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || 'video')} na ${e.date}`); } ov.remove(); renderMain(); return; }
+    if (bgClick(ev, ov) || b?.classList.contains('histx')) { clearTimeout(timer); grab(); if (own && (e.title || e.script || e.thumb || e.inspo)) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || 'video')} na ${e.date}`); } ov.remove(); renderMain(); return; }
     if (!b) return;
     if (b.matches('[data-caldel]')) {
       askConfirm(`Smazat video „${e.title || 'bez názvu'}“${e.script ? ' i se scénářem' : ''}?`).then(yes => {
         if (!yes) return;
-        clearTimeout(timer); if (e.title || e.script || e.thumb || e.inspo) calSave(e); // do koše i s neuloženými úpravami
+        clearTimeout(timer); grab(); if (e.title || e.script || e.thumb || e.inspo) calSave(e); // do koše i s neuloženými úpravami
         calDelete(e.id, true); ov.remove(); renderMain();
       });
     }
     else if (b.matches('[data-caledit2]')) { ov.remove(); calEditor(e.id); }
     else if (b.matches('[data-calshare]')) shareCal(e, b);
-    else if (b.matches('[data-calview]')) { clearTimeout(timer); if (e.title || e.script || e.thumb || e.inspo) calSave(e); ov.remove(); renderMain(); calEditor(e.id, null, false, false); }
+    else if (b.matches('[data-calview]')) { clearTimeout(timer); grab(); if (e.title || e.script || e.thumb || e.inspo) calSave(e); ov.remove(); renderMain(); calEditor(e.id, null, false, false); }
     else if (b.matches('[data-calfull]')) scriptWindow(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title, sOpts);
     else if (b.matches('[data-calundone]')) { sOpts.done.clear(); e.done = []; b.remove(); calSave(e); if (SCRIPT_OPTS === sOpts) scriptWindowSync(e.script, e.title); }
     else if (b.matches('[data-calnoteadd]')) {
@@ -4338,6 +4350,7 @@ async function pullShared() {
   if (tok && tok.exp - 60e3 > Date.now() && ls('bt_gdrive', false) && gClientId()) { DRIVE.token = tok.t; DRIVE.exp = tok.exp; }
   readCalLink(); // 🔗 odkaz na video z kalendáře (…/#cal=…)
   show();
+  if (OAUTH_MSG) status(OAUTH_MSG, true);
   if (DRIVE.token) await driveConnect(false); else pullShared();
   renderQuotaBar();
   // doplnit měsíc u ručně přidaných kanálů, které ho ještě nemají (jen se sdílením, ať to nedělá každé zařízení zvlášť)
