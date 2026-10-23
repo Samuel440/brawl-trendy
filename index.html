@@ -589,7 +589,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-23.100'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-23.101'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1827,6 +1827,28 @@ function mergeKey0(k, mine, theirs) {
   if (typeof mine === 'number') return Math.max(mine, +theirs || 0); // časy (bt_autoAt…) – platí pozdější
   if (/^bt_h_/.test(k)) { const out = {...theirs}; for (const [id, p] of Object.entries(mine)) out[id] = out[id] ? thinPts([...out[id], ...p]) : p; return out; }
   if (k === 'bt_qs' || k === 'bt_disc' || k === 'bt_cal' || k === 'bt_trash' || k === 'bt_busy') { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || (e.at || 0) > (out[id].at || 0)) out[id] = e; return out; }
+  // ⭐ uložená videa: u každého videa vyhraje NOVĚJŠÍ změna (mt = zařazení do kolekcí / pořadí, jinak čas uložení).
+  // Dřív vždy vyhrála verze z tohohle zařízení – mobil se starou kopií tak přebil zařazení do kolekce z PC.
+  const newer = (a, b) => (a.mt || a.at || 0) >= (b.mt || b.at || 0);
+  if (/^bt_star(_g_[a-z0-9_]+)?$/.test(k)) { const out = {...theirs}; for (const [id, e] of Object.entries(mine)) if (!out[id] || newer(e, out[id])) out[id] = e; return out; }
+  // 💡📤 nápady a Přenos: stejné položky (podle času vzniku) → novější změna; nové z obou stran
+  if (/^bt_(mixsaved|drop)(_g_[a-z0-9_]+)?$/.test(k)) {
+    const m = new Map(theirs.map(s => [s.at, s]));
+    for (const s of mine) { const o = m.get(s.at); if (!o || newer(s, o)) m.set(s.at, s); }
+    return [...m.values()].sort(byOrd);
+  }
+  // 📁 kolekce: sjednotit podle id (novější úprava vyhraje), smazané (tomb) pryč
+  if (/^bt_folds(_g_[a-z0-9_]+)?$/.test(k)) {
+    const t = ls('bt_tomb', {}), out = {};
+    for (const tab of new Set([...Object.keys(theirs), ...Object.keys(mine)])) {
+      const m = new Map((theirs[tab] || []).map(d => [d.id, d]));
+      for (const d of mine[tab] || []) { const o = m.get(d.id); if (!o || (d.mt || 0) >= (o.mt || 0)) m.set(d.id, d); }
+      // pořadí: jak je na tomhle zařízení, nové z druhé strany na konec
+      const ids = [...(mine[tab] || []).map(d => d.id), ...(theirs[tab] || []).map(d => d.id)];
+      out[tab] = [...new Set(ids)].map(id => m.get(id)).filter(d => d && !t['bt_folds|' + d.id]);
+    }
+    return out;
+  }
   // 🔔 nová videa: sjednotit; info robota (_robot) platí to novější – jinak by ho stará kopie z PC přebila
   if (k === 'bt_new') { const out = {...theirs, ...mine}; if (theirs._robot && (!mine._robot || (theirs._robot.at || 0) > (mine._robot.at || 0))) out._robot = theirs._robot; return out; }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
@@ -2137,7 +2159,7 @@ function foldBtn(tab, kind, key, x) {
 }
 const foldItem = (kind, key) => kind === 'star' ? STARS[key] : ls(kind === 'idea' ? mixKey() : dropKey(), []).find(x => String(x.at) === String(key));
 function setItemFolds(kind, key, list) {
-  const upd = x => { const y = {...x, fs:list}; delete y.f; return y; };
+  const upd = x => { const y = {...x, fs:list, mt:Date.now()}; delete y.f; return y; }; // mt = čas změny (při slučování vyhraje novější)
   if (kind === 'star') { if (STARS[key]) { STARS[key] = upd(STARS[key]); ss(starKey(), STARS); } }
   else { const k = kind === 'idea' ? mixKey() : dropKey(); ss(k, ls(k, []).map(x => String(x.at) === String(key) ? upd(x) : x)); }
   if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
@@ -2181,7 +2203,7 @@ function pickFolds(tab, kind, key, opts = {}) {
   ov.addEventListener('click', async e => {
     const b = e.target.closest('button');
     if (b?.dataset.fpick) { const cur = itemFolds(foldItem(kind, key) || {}), id = b.dataset.fpick; setItemFolds(kind, key, cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]); draw(); }
-    else if (b?.hasAttribute('data-fpnew')) { const d = await foldEditor(); if (d) { const id = 'f' + Date.now().toString(36); saveFolds(tab, [...folds(tab), {id, ...d}]); setItemFolds(kind, key, [...itemFolds(foldItem(kind, key) || {}), id]); } draw(); }
+    else if (b?.hasAttribute('data-fpnew')) { const d = await foldEditor(); if (d) { const id = 'f' + Date.now().toString(36); saveFolds(tab, [...folds(tab), {id, ...d, mt:Date.now()}]); setItemFolds(kind, key, [...itemFolds(foldItem(kind, key) || {}), id]); } draw(); }
     else if (b?.hasAttribute('data-fprem')) { ov.remove(); opts.remove(); }
     else if (b?.hasAttribute('data-fpok') || bgClick(e, ov)) close();
   });
@@ -2829,7 +2851,7 @@ function moveSaved(kind, key, dir) {
   const [it] = arr.splice(idx, 1);
   arr.splice(tIdx >= 0 ? tIdx : dir === 'top' ? 0 : dir === 'bottom' ? arr.length : Math.max(0, Math.min(arr.length, idx + (dir === 'up' ? -1 : 1))), 0, it);
   const base = Date.now();
-  arr.forEach((x, i) => { x.ord = base - i; }); // první = nejvyšší
+  arr.forEach((x, i) => { x.ord = base - i; x.mt = base; }); // první = nejvyšší; mt = čas změny
   if (isStar) { for (const x of arr) { const id = x._id; delete x._id; STARS[id] = x; } ss(k, STARS); }
   else ss(k, arr);
   if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
@@ -4179,18 +4201,19 @@ document.addEventListener('click', e => {
   if (b.dataset.fopen !== undefined) { FSEL[foldTab()] = b.dataset.fopen; ss('bt_foldsel', FSEL); renderMain(); scrollTo(0, 0); return; } // otevřít kolekci / zpět na přehled
   if (b.hasAttribute('data-fnew')) {
     const tab = foldTab();
-    foldEditor().then(d => { if (!d) return; saveFolds(tab, [...folds(tab), {id:'f' + Date.now().toString(36), ...d}]); logEvent(`📁 nová kolekce „${d.n}“`); renderMain(); });
+    foldEditor().then(d => { if (!d) return; saveFolds(tab, [...folds(tab), {id:'f' + Date.now().toString(36), ...d, mt:Date.now()}]); logEvent(`📁 nová kolekce „${d.n}“`); renderMain(); });
     return;
   }
   if (b.dataset.fedit) {
     const tab = foldTab(), old = folds(tab).find(x => x.id === b.dataset.fedit); if (!old) return;
-    foldEditor(old).then(d => { if (!d) return; saveFolds(tab, folds(tab).map(x => x.id === old.id ? {...x, ...d} : x)); renderMain(); });
+    foldEditor(old).then(d => { if (!d) return; saveFolds(tab, folds(tab).map(x => x.id === old.id ? {...x, ...d, mt:Date.now()} : x)); renderMain(); });
     return;
   }
   if (b.dataset.fdel) {
     const tab = foldTab(), d = folds(tab).find(x => x.id === b.dataset.fdel); if (!d) return;
     askConfirm(`Smazat kolekci „${d.n}“? Položky v ní nezmizí – vrátí se mezi ostatní (bez kolekce).`, '🗑 Smazat kolekci').then(yes => {
-      if (!yes) return; saveFolds(tab, folds(tab).filter(x => x.id !== d.id)); FSEL[tab] = ''; ss('bt_foldsel', FSEL); renderMain(); });
+      // tomb: smazaná kolekce se z jiného zařízení nevrátí
+      if (!yes) return; tomb('bt_folds', d.id); saveFolds(tab, folds(tab).filter(x => x.id !== d.id)); FSEL[tab] = ''; ss('bt_foldsel', FSEL); renderMain(); });
     return;
   }
   if (b.dataset.fitem) { pickFolds(foldTab(), b.dataset.fitem, b.dataset.fkey); return; } // 📁 u položky
