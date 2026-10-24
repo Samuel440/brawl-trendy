@@ -589,7 +589,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-23.101'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.102'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2389,10 +2389,11 @@ function renderCal() {
   const day = d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => calCreated(a) - calCreated(b));
     const cls = `${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''} ${d.getDay() % 6 === 0 ? 'weekend' : ''} ${d.getDay() === 1 && iso !== isoDay(days[0]) ? 'weekstart' : ''}`;
     // „＋ video“ je u každého dne na konci buňky s datem; řádky vedle zůstávají čisté (prázdný den = prázdný řádek)
-    const dayCell = (n) => `<div class="ct cday dfirst ${cls}"${n > 1 ? ` style="grid-row:span ${n}"` : ''}><b>${DOW[d.getDay()]}</b> ${d.getDate()}. ${d.getMonth() + 1}.${iso === today ? '<span class="tag hot">dnes</span>' : ''}${own ? `<button class="caladd" data-caladd="${iso}" title="Přidat video na tento den">＋ video</button>` : ''}</div>`;
+    // ↕️ přetažení: video (název) se pustí na den = přesun na ten den, na jiné video = prohození dnů
+    const dayCell = (n) => `<div class="ct cday dfirst ${cls}"${own ? ` data-drag="cal" data-id="day:${iso}"` : ''}${n > 1 ? ` style="grid-row:span ${n}"` : ''}><b>${DOW[d.getDay()]}</b> ${d.getDate()}. ${d.getMonth() + 1}.${iso === today ? '<span class="tag hot">dnes</span>' : ''}${own ? `<button class="caladd" data-caladd="${iso}" title="Přidat video na tento den">＋ video</button>` : ''}</div>`;
     const rows = list.map((e, i) => { const ids = ytIds(e.inspo), f = i === 0 ? ' dfirst' : '';
       return `${i === 0 ? dayCell(list.length) : ''}
-        <div class="ct cname${f} ${cls}"><button class="cnamebtn" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '')}</span><span class="ch">${badge(e)}</span></button></div>
+        <div class="ct cname${f} ${cls}"${own ? ` draggable="true" data-drag="cal" data-id="${esc(e.id)}" title="Přetáhni na jiný den (nebo na jiné video = prohodit)"` : ''}><button class="cnamebtn" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '')}</span><span class="ch">${badge(e)}</span></button></div>
         <button class="ct cinspo${f} ${cls}" data-calopen="${esc(e.id)}">${ids.slice(0, 4).map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`).join('') + (ids.length > 4 ? `<span class="ch">+${ids.length - 4}</span>` : '')}</button>
         <button class="ct cthumb${f} ${cls}" data-calopen="${esc(e.id)}">${esc(e.thumb || '')}</button>`; }).join('');
     return list.length ? rows : dayCell(1) + `<div class="ct cadd dfirst ${cls}"></div>`; };
@@ -2809,7 +2810,8 @@ document.addEventListener('drop', e => { if (!DRAG) return; const c = e.target.c
 const TD = {timer:null, el:null, on:false, x:0, y:0, over:null, noClick:0};
 const tdClear = () => { clearTimeout(TD.timer); TD.el?.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x => x.classList.remove('dragover')); TD.el = TD.over = null; TD.on = false; };
 document.addEventListener('touchstart', e => {
-  const c = e.target.closest?.('[data-drag]'); if (!c || e.touches.length > 1) return;
+  // táhnout jde jen to, co je přetažitelné (dny v kalendáři jsou jen cíl, kam se pouští)
+  const c = e.target.closest?.('[data-drag]'); if (!c || c.getAttribute('draggable') !== 'true' || e.touches.length > 1) return;
   if (e.target.closest('input, textarea, select')) return;
   TD.el = c; TD.x = e.touches[0].clientX; TD.y = e.touches[0].clientY;
   TD.timer = setTimeout(() => { TD.on = true; c.classList.add('dragging'); navigator.vibrate?.(25); }, 400);
@@ -2834,7 +2836,22 @@ document.addEventListener('touchcancel', tdClear);
 // po puštění nespustit klik (nepustit video) a podržení neotevře menu obrázku
 document.addEventListener('click', e => { if (Date.now() - TD.noClick < 500) { e.preventDefault(); e.stopPropagation(); } }, true);
 document.addEventListener('contextmenu', e => { if (TD.el || e.target.closest?.('[data-drag]') && matchMedia('(pointer:coarse)').matches) e.preventDefault(); });
+// 🗓️ video v kalendáři přetažené na den (přesun) nebo na jiné video (prohození dnů)
+function calMove(id, target) {
+  const all = ls(calKey(), {}), e = all[id]; if (!e || target === id) return;
+  if (target.startsWith('day:')) {
+    const d = target.slice(4); if (d === e.date) return;
+    calSave({...e, date:d}); logEvent(`📅 přesunul ${shortT(e.title || 'video')} na ${d}`);
+  } else {
+    const o = all[target]; if (!o || o.date === e.date) return;
+    calSave({...e, date:o.date}); calSave({...o, date:e.date});
+    logEvent(`📅 prohodil ${shortT(e.title || 'video')} ↔ ${shortT(o.title || 'video')}`);
+  }
+  if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
+  const y = scrollY; renderMain(); scrollTo(0, y);
+}
 function moveSaved(kind, key, dir) {
+  if (kind === 'cal') return calMove(key, dir.slice(3));
   // 📁 karty kolekcí – pořadí je prostě pořadí v seznamu
   if (kind.startsWith('fold-')) {
     const tab = kind.slice(5), arr = [...folds(tab)], idx = arr.findIndex(d => d.id === key), t = arr.findIndex(d => d.id === dir.slice(3));
