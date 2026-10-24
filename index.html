@@ -599,7 +599,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-24.113'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.114'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -635,7 +635,8 @@ async function kvLoad() {
 
 // ---------- Stav ----------
 const ls = (k, d) => { try { const v = kvRaw(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
-const ss = (k, v) => { kvSetRaw(k, JSON.stringify(v)); if (k.startsWith('bt_ch_') && typeof CHCACHE !== 'undefined') delete CHCACHE[k.slice(6)]; if (k.startsWith('bt_h_') && typeof HCACHE !== 'undefined') delete HCACHE[k]; markShared(k); };
+// (nová videa / body grafu → PEERIDX pryč, srovnání s kanálem se přepočítá)
+const ss = (k, v) => { kvSetRaw(k, JSON.stringify(v)); if (/^bt_(c_|h_|arch_)/.test(k)) PEERIDX = null; if (k.startsWith('bt_ch_') && typeof CHCACHE !== 'undefined') delete CHCACHE[k.slice(6)]; if (k.startsWith('bt_h_') && typeof HCACHE !== 'undefined') delete HCACHE[k]; markShared(k); };
 const S = {
   key: ls('bt_key', ''),
   country: ls('bt_country', 'it'),
@@ -3154,7 +3155,7 @@ const viewsAt = (pts, age) => { // zhlédnutí v daném stáří (mezi měření
   return Math.round(a[1] + (b[1] - a[1]) * (b[0] === a[0] ? 1 : (t - a[0]) / (b[0] - a[0])));
 };
 // rejstřík Brawl videí podle kanálu – postaví se JEDNOU (pak 60 s z paměti), ať šedé pásmo zvládnou i desítky karet bez lagu
-let PEERIDX = null;
+var PEERIDX = null; // var: ss() ho maže při každé změně dat (a ss běží už při startu stránky)
 function peerIndex(cs) {
   const key = cs.map(c => c.id).join();
   if (PEERIDX?.key === key && Date.now() - PEERIDX.at < 60e3) return PEERIDX.map;
@@ -4471,7 +4472,7 @@ if (!ls('bt_mig_dub', false)) {
 const cleanupRemovedCountries = () => { for (const k of kvKeys()) if (/^bt_(c|ch|arch)_(id|vn|sa)(_|$)/.test(k)) kvDelete(k); };
 // po stažení sdílených dat od ostatních obnovit to, co je načtené v paměti
 function reloadMemory() {
-  HCACHE = {}; CHMED = null; // historie a mediány kanálů se načtou znovu (mohly přijít body z jiných zařízení)
+  HCACHE = {}; CHMED = null; PEERIDX = null; // historie, mediány a srovnání s kanálem znovu (mohly přijít body z jiných zařízení)
   const swap = (obj, val) => { for (const k of Object.keys(obj)) delete obj[k]; Object.assign(obj, val); };
   swap(STARS, ls(starKey(), {})); swap(BLOCK, ls('bt_block', {videos:{}, channels:{}}));
   swap(AI_CACHE, ls('bt_aicache', {})); swap(TR, ls('bt_tr', {})); swap(QTR, ls('bt_qtr', {}));
