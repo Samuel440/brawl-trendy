@@ -266,6 +266,10 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .rankplayer{position:relative;margin:6px 0 10px;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:16/9;max-width:100%}
 .rankplayer iframe{width:100%;height:100%;border:0;display:block}
 .rankplayer .histx{top:6px;right:6px;z-index:2}
+/* PC: okno grafu se při přehrávání rozšíří na 2 sloupce – vlevo graf (nehne se), vpravo video (drží nahoře) */
+.histbox.withplayer{width:min(1240px,100%);display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,480px);gap:16px;align-items:start}
+.histbox.withplayer .histmain{min-width:0}
+.histbox.withplayer .rankplayer{position:sticky;top:0;margin:34px 0 0}
 .rankrow.sel{outline:2px solid var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent)}
 .rankrow.sel [data-rankhist]{background:var(--blue);border-color:var(--blue)}
 .cmpkey{font-size:12.5px;margin:4px 0;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -592,7 +596,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-24.105'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.106'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3196,23 +3200,27 @@ function showHistory(it) {
     listHtml = `<div class="ranklist" hidden><div class="ch">Brawl videa kanálu ${esc(it.ch)} podle zhlédnutí ${ageTxt} od zveřejnění (nejlepší nahoře):</div>
       ${all.map((x, i) => `<div class="rankrow${x.me ? ' me' : ''}"><b>${i + 1}.</b><img src="https://i.ytimg.com/vi/${esc(x.it.id)}/mqdefault.jpg" alt="" loading="lazy"><span class="rt" title="${esc(x.it.t)}" data-orig="${esc(x.it.t)}">${esc(trT(x.it.t))}</span><span class="rv">${n(x.v)}</span>
         ${x.me ? '' : `<button data-rankhist="${i}" title="Porovnat v grafu (modrá čára) – znovu kliknout = schovat">📈</button>`}<button class="rkplay" data-rankplay="${esc(x.it.id)}" title="Pustit tady v okně">▶</button><a class="rkplay" href="${ytUrl(x.it.id)}" target="_blank" rel="noopener" title="Otevřít na YouTube">↗</a></div>`).join('')}</div>
-      <div class="rankplayer" hidden></div>`;
+`;
     rankAll = all;
   } else if (peers.length) rankHtml = `<span class="ch" title="Srovnání s kanálem se ukáže, až bude mít aspoň ${PEER_MIN} Brawl videí s grafem v tomhle stáří">📊 srovnání s kanálem: ${cmp.length}/${PEER_MIN} videí s grafem</span>`;
   const ov = document.createElement('div'); ov.className = 'histov';
-  ov.innerHTML = `<div class="histbox"><button class="histx" title="Zavřít">✖</button>
+  ov.innerHTML = `<div class="histbox"><button class="histx" title="Zavřít">✖</button><div class="histmain">
     <h3 data-orig="${esc(it.t)}">📈 ${esc(trT(it.t))}</h3><div class="ch">${esc(it.ch)} · ${n(it.views)} zhlédnutí · ${pts.length - 1} ${pts.length - 1 === 1 ? 'měření' : 'měření'}${pts.length <= 3 ? ' – víc bodů přibude s každou obnovou (na všech zařízeních)' : ''}</div>
     ${rankHtml ? `<div class="row">${rankHtml}${band.length ? '<span class="ch"><span class="bandkey"></span> typický výkon kanálu (šedě)</span>' : ''}</div>` : ''}${listHtml}
     <div class="cmpkey" hidden></div><div class="histchart"></div>
-    <table class="histtab"><tr><th>Kdy</th><th>Od zveřejnění</th><th>Zhlédnutí</th><th>Přírůstek</th><th>Rychlost</th></tr>${rows.join('')}</table></div>`;
+    <table class="histtab"><tr><th>Kdy</th><th>Od zveřejnění</th><th>Zhlédnutí</th><th>Přírůstek</th><th>Rychlost</th></tr>${rows.join('')}</table></div><div class="rankplayer" hidden></div></div>`;
   ov.addEventListener('click', e => {
     if (e.target.closest('[data-rank]')) { const l = ov.querySelector('.ranklist'); l.hidden = !l.hidden; return; }
     // 📈 u videa z žebříčku: jen ho VYBRAT – v tomhle grafu se ukáže jako modrá čára do stejného času od zveřejnění
     // ▶ přehrát video z žebříčku rovnou tady (pod seznamem), bez další karty; znovu ▶ u stejného = zavřít
     const rp = e.target.closest('[data-rankplay]'), pl = ov.querySelector('.rankplayer');
     if (rp || e.target.closest('[data-rankplayx]')) {
-      const id = rp?.dataset.rankplay;
-      if (!id || pl.dataset.id === id) { pl.hidden = true; pl.innerHTML = ''; pl.dataset.id = ''; return; }
+      const id = rp?.dataset.rankplay, box = ov.querySelector('.histbox');
+      // PC: přehrávač ve sloupci vpravo (graf zůstane na místě, okno se rozšíří a zůstane uprostřed); mobil: pod seznamem
+      const side = matchMedia('(min-width: 900px)').matches;
+      if (!id || pl.dataset.id === id) { pl.hidden = true; pl.innerHTML = ''; pl.dataset.id = ''; box.classList.remove('withplayer'); return; }
+      if (side) box.append(pl); else ov.querySelector('.ranklist').after(pl);
+      box.classList.toggle('withplayer', side);
       pl.dataset.id = id; pl.hidden = false;
       pl.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe><button class="histx" data-rankplayx title="Zavřít přehrávač">✖</button>`;
       pl.scrollIntoView({block:'nearest', behavior:'smooth'}); return;
