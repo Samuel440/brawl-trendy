@@ -599,7 +599,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-24.115'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.116'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -726,7 +726,11 @@ async function syncPush(pulled) {
   try {
     // PC a mobil zapisují do STEJNÉHO souboru na Disku → před nahráním nejdřív sloučit, co tam mezitím dalo jiné zařízení
     // (jinak se jeho data přepsala – třeba čas hledání z mobilu – a PC pak hledalo znovu a pálilo kvótu)
-    if (REMOTE === DRIVE_BACKEND && !pulled && await syncPull(true)) reloadMemory();
+    if (REMOTE === DRIVE_BACKEND && !pulled && await syncPull(true)) {
+      reloadMemory();
+      // přišlo něco viditelného → překreslit v klidu (dřív se to ukázalo až po přepnutí kategorie)
+      if ([...(SYNC.changedKeys || [])].some(k => !QUIET_KEYS.test(k))) { SYNC.changedKeys = new Set(); calmRerender(); }
+    }
     const keys = Object.keys(SYNC.dirty); if (!keys.length) return;
     const body = {};
     for (const k of keys) { const raw = kvRaw(k); if (raw !== null) body[k] = {v:JSON.parse(raw), t:syncMeta()[k] || Date.now()}; }
@@ -4482,7 +4486,8 @@ function reloadMemory() {
 // data, jejichž změna na stránce nic viditelného nemění (počítadla, protokol, značky robota…) → nepřekreslovat
 const QUIET_KEYS = /^bt_(qs|busy|log(_g_[a-z0-9_]+)?|tomb|new|autoAt|aicache|qtr|trash)$/;
 async function pullShared() {
-  if (!await syncPull()) return;
+  // (data mohla přijít i „mimochodem“ při nahrávání – i tehdy překreslit, jinak zůstalo třeba poloviční šedé pásmo)
+  if (!await syncPull() && !SYNC.changedKeys?.size) return;
   const keys = SYNC.changedKeys || new Set(); SYNC.changedKeys = new Set();
   reloadMemory(); renderQuotaBar();
   // 🔔 robot hlásí nová videa 📌 kanálů → doplnit do seznamů (a hned poslat na Disk ostatním)
