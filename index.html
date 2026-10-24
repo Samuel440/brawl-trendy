@@ -599,7 +599,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-24.109'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.110'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3142,8 +3142,9 @@ const viewsAt = (pts, age) => { // zhlédnutí v daném stáří (mezi měření
   const pub = pts[0][0], t = pub + age; if (pts.length < 3 || pts[pts.length - 1][0] < t) return null;
   const i = pts.findIndex(p => p[0] >= t); if (i < 0) return null;
   const a = pts[i - 1] || pts[0], b = pts[i];
-  // mezi měřeními moc velká mezera (třeba první měření až po dni) = dopočet by lhal → raději nepočítat
-  if (b[0] - a[0] > Math.max(3 * 3600e3, age * .6)) return null;
+  // dopočet od nuly (zveřejnění) k prvnímu měření až o den později by lhal → nepočítat; mezi dvěma
+  // SKUTEČNÝMI měřeními je dopočet rozumný i přes delší mezeru (starší videa se měřila jen občas)
+  if (a === pts[0] ? b[0] - a[0] > Math.max(3 * 3600e3, age * .6) : b[0] - a[0] > Math.max(24 * 3600e3, age * 1.5)) return null;
   return Math.round(a[1] + (b[1] - a[1]) * (b[0] === a[0] ? 1 : (t - a[0]) / (b[0] - a[0])));
 };
 // rejstřík Brawl videí podle kanálu – postaví se JEDNOU (pak 60 s z paměti), ať šedé pásmo zvládnou i desítky karet bez lagu
@@ -3160,12 +3161,14 @@ function peerIndex(cs) {
 }
 // srovnává se s POSLEDNÍMI 10 Brawl videi kanálu (jako „typický výkon“ v YouTube Studiu), ukáže se od 5
 const PEER_MAX = 10;
-function channelPeers(it) {
+// age = stáří sledovaného videa: berou se jen videa, jejichž graf do toho stáří už dosahuje (čerstvější by srovnání nedala)
+function channelPeers(it, age = 0) {
   if (!it.chId) return [];
   const out = [], list = (peerIndex(it.c?.id ? [it.c] : COUNTRIES).get(it.chId) || []).slice().sort((a, b) => new Date(b.pub) - new Date(a.pub));
   for (const x of list) {
     if (x.id === it.id || !!x.short !== !!it.short) continue;
-    const pts = x._pts ||= histOf(x); if (pts.length >= 3) out.push({it:x, pts});
+    const pts = x._pts ||= histOf(x);
+    if (pts.length >= 3 && pts[pts.length - 1][0] - pts[0][0] >= age * .9) out.push({it:x, pts});
     if (out.length >= PEER_MAX) break;
   }
   return out;
@@ -3193,10 +3196,10 @@ function fillBands() {
       el.dataset.bd = '1';
       const it = CARD_ITEMS.get(el.closest('.card').dataset.id); if (!it) continue;
       const pts = histOf(it); if (pts.length < 3) continue;
-      const band = peerBand(pts, channelPeers(it), 16); if (!band.length) continue;
+      const band = peerBand(pts, channelPeers(it, pts[pts.length - 1][0] - pts[0][0]), 16); if (!band.length) continue;
       el.querySelector('svg')?.remove(); el.insertAdjacentHTML('afterbegin', histSvg(pts, 200, 30, false, band).replace('class="hist"', 'class="hist bandin"'));
     }
-    requestAnimationFrame(() => setTimeout(step, 0));
+    setTimeout(step, 16); // (ne requestAnimationFrame – ten v kartě na pozadí stojí a pásma by se nedoplnila)
   };
   setTimeout(step, 60);
 }
@@ -3228,7 +3231,7 @@ function showHistory(it) {
   // graf kreslit přesně v šířce okna – jinak se na mobilu text v bublině a popisky os zdeformují (smrsknou do šířky)
   const GW = Math.round(Math.min(640, document.documentElement.clientWidth - 66));
   // 📊 srovnání s ostatními Brawl videi kanálu ve STEJNÉM stáří (šedé pásmo + pořadí X/10)
-  const peers = channelPeers(it), band = peerBand(pts, peers), age = pts[pts.length - 1][0] - pts[0][0];
+  const age = pts[pts.length - 1][0] - pts[0][0], peers = channelPeers(it, age), band = peerBand(pts, peers);
   const cmp = peers.map(p => ({it:p.it, v:viewsAt(p.pts, age), pts:p.pts})).filter(p => p.v != null);
   let rankHtml = '', listHtml = '', rankAll = [];
   if (cmp.length >= PEER_MIN) {
