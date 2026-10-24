@@ -263,6 +263,9 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .rankrow .rv{flex:none;font-weight:700}
 .rankrow button,.rankrow .rkplay{flex:none;width:30px;height:30px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;text-decoration:none;border:1px solid var(--line);background:var(--panel2);color:var(--text)}
 .rankrow .rkplay:hover,.rankrow button:hover{border-color:var(--accent)}
+/* šedé pásmo v malém grafu se objeví plynule */
+svg.hist.bandin polygon,svg.hist.bandin polyline[stroke-dasharray]{animation:bandin .5s ease}
+@keyframes bandin{from{opacity:0}}
 .rankplayer{position:relative;margin:6px 0 10px;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:16/9;max-width:100%}
 .rankplayer iframe{width:100%;height:100%;border:0;display:block}
 .rankplayer .histx{top:6px;right:6px;z-index:2}
@@ -596,7 +599,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-24.108'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.109'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3177,11 +3180,25 @@ function peerBand(pts, peers, steps = 48) {
   }
   return band;
 }
-// malý graf na kartě + šedé pásmo typického výkonu kanálu (jen 16 bodů – rychlé i pro desítky karet)
-function miniHist(it) {
-  const pts = histOf(it);
-  const band = pts.length >= 3 ? peerBand(pts, channelPeers(it), 16) : [];
-  return histSvg(pts, 200, 30, false, band);
+// šedé pásmo v malých grafech na kartách: karty se vykreslí HNED bez pásma, pásma se pak doplní postupně
+// (po 6 kartách na snímek) – kliknutí na stát tak nečeká na výpočet stovky pásem
+let BAND_RUN = 0;
+function fillBands() {
+  const run = ++BAND_RUN;
+  const step = () => {
+    if (run !== BAND_RUN) return; // mezitím se stránka překreslila → tahle várka už neplatí
+    const els = [...document.querySelectorAll('#main .card[data-id] .histmini:not([data-bd])')].slice(0, 6);
+    if (!els.length) return;
+    for (const el of els) {
+      el.dataset.bd = '1';
+      const it = CARD_ITEMS.get(el.closest('.card').dataset.id); if (!it) continue;
+      const pts = histOf(it); if (pts.length < 3) continue;
+      const band = peerBand(pts, channelPeers(it), 16); if (!band.length) continue;
+      el.querySelector('svg')?.remove(); el.insertAdjacentHTML('afterbegin', histSvg(pts, 200, 30, false, band).replace('class="hist"', 'class="hist bandin"'));
+    }
+    requestAnimationFrame(() => setTimeout(step, 0));
+  };
+  setTimeout(step, 60);
 }
 const trT = t => S.trAuto && TR[t] ? TR[t] : t; // název v češtině, když je zapnutý automatický překlad a už ho máme
 // SVG graf: x = čas od zveřejnění, y = zhlédnutí (band = šedé pásmo typického výkonu kanálu)
@@ -3334,7 +3351,7 @@ function card(it, i, showCountry) {
       <a class="title" href="${ytUrl(it.id)}" target="_blank" rel="noopener" title="${esc(it.t)}" data-orig="${esc(it.t)}" data-lang="${langOk(it, it.c) ? it.c.lang : 'auto'}">${esc(S.trAuto && TR[it.t] ? TR[it.t] : it.t)}</a>
       <div class="ch"><a class="chlink" href="https://www.youtube.com/channel/${esc(it.chId)}/videos" target="_blank" rel="noopener" title="Otevřít kanál na YouTube">${esc(it.ch)}</a> · ${n(it.subs)} odběr.</div>
       <div class="stats"><span><b>${n(it.views)}</b> zhlédnutí</span><span>${n(it.vph)}/h</span><span>${ago(it.ageH)}</span></div>
-      <button class="histmini" data-hist title="Jak video nabíralo zhlédnutí – klikni pro velký graf">${miniHist(it)}<span>📈</span></button>
+      <button class="histmini" data-hist title="Jak video nabíralo zhlédnutí – klikni pro velký graf">${histSvg(histOf(it), 200, 30)}<span>📈</span></button>
       <div class="tags">${tags.join('')}</div>
       <div class="idea">💡 ${esc(ideaFor(it))}</div>
       <div class="actions"><button data-tr>🌐 ${S.trAuto && TR[it.t] ? 'Originál' : 'Přeložit'}</button><button data-copy>📋 Kopírovat</button><button data-thumb title="Stáhnout miniaturu v plné kvalitě">🖼️</button><a href="${trUrl(it.t)}" target="_blank" rel="noopener" title="Otevřít v Google Překladači">↗</a>${isOwner() ? '<button class="blockbtn" data-block title="Nemá to nic s Brawlem – zablokovat">✖</button>' : ''}</div>
@@ -4225,6 +4242,7 @@ function renderMain() {
   else if (S.period === 'cal') renderCal();
   else if (S.period === 'star') renderStars();
   else renderCountry(S.period === 'arch' ? getArchive(S.country) : S.period === 'all' ? allTimeSet(S.country) : getSet(S.country, S.period), C(S.country), S.period);
+  fillBands(); // šedá pásma do malých grafů postupně, až po vykreslení
 }
 // 🏆 Celá doba: hledání „nejsledovanější všech dob“ vrací hlavně oficiální anglická videa Brawl Stars (u Itálie 103 ze 107
 // skrytých jako jiný jazyk → prázdná stránka). Proto se přidají i nejsledovanější videa té země, která už máme
