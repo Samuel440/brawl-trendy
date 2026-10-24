@@ -599,7 +599,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-24.111'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.112'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2416,7 +2416,10 @@ function renderCal() {
     return list.length ? rows : dayCell(1) + `<div class="ct cadd dfirst ${cls}"${own ? ` data-drag="cal" data-id="day:${iso}"` : ''}></div>`; };
   const later = all.filter(e => e.date > isoDay(days[13])).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
   // upozornění: dokud nepřišla data z Disku, je tu verze z minulé návštěvy (grafik i já bychom koukali na starý plán)
-  const calWarn = !gClientId() || !driveUsedHere() || SYNC.calFresh ? ''
+  const inApp = /Instagram|FBAN|FBAV|TikTok|Messenger|Discord|Snapchat|Line\//i.test(navigator.userAgent);
+  const calWarn = CAL_LINK && REMOTE !== DRIVE_BACKEND
+    ? `<div class="calwarn">🔗 Odkaz na video z kalendáře – nejdřív se připoj ke Google Disku, pak se video samo otevře. <button class="primary" id="btnDrive">☁️ Připojit Disk</button>${inApp ? '<br><span class="ch">Jsi v prohlížeči uvnitř aplikace (Instagram…) – tam přihlášení Googlem často nejde. Otevři odkaz v Safari / Chromu (⋯ → Otevřít v prohlížeči).</span>' : ''}</div>`
+    : !gClientId() || !driveUsedHere() || SYNC.calFresh ? ''
     : REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.token ? '<div class="calwarn">⏳ Načítám nejnovější kalendář z Disku… zatím vidíš verzi z minulé návštěvy.</div>'
     : '<div class="calwarn">⚠️ Disk není připojený – kalendář může být starší než u ostatních. <button class="primary" id="btnDrive">☁️ Připojit Disk</button></div>';
   $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>${calWarn}
@@ -2629,8 +2632,11 @@ function readCalLink() {
 function openCalLink() {
   if (!CAL_LINK) return;
   const e = ls(calKey(), {})[CAL_LINK];
-  if (e) { CAL_LINK = null; document.querySelectorAll('.histov').forEach(x => x.remove()); calEditor(e.id, null, false, false); return; }
-  if (SYNC.calFresh || !driveUsedHere()) { status('🔗 Video z odkazu v kalendáři není – možná už bylo smazané nebo přesunuté.', true); CAL_LINK = null; }
+  if (e) { CAL_LINK = null; try { localStorage.removeItem('bt_callink'); } catch {} document.querySelectorAll('.histov').forEach(x => x.remove()); calEditor(e.id, null, false, false); return; }
+  // „neexistuje“ jen když už jsou čerstvá data z Disku; bez přihlášení (nový prohlížeč, Instagram…) odkaz podržet
+  // a počkat – po připojení Disku se video otevře samo (dřív to grafikovi rovnou napsalo, že video není)
+  if (REMOTE === DRIVE_BACKEND && SYNC.calFresh) { status('🔗 Video z odkazu v kalendáři není – možná už bylo smazané nebo přesunuté.', true); CAL_LINK = null; try { localStorage.removeItem('bt_callink'); } catch {} }
+  else try { localStorage.setItem('bt_callink', CAL_LINK); } catch {}
 }
 addEventListener('hashchange', () => { readCalLink(); if (CAL_LINK) { show(); openCalLink(); } });
 // klik na video = 👁 přehled (jen ke čtení), ✏️ Upravit = úpravy (jen majitel)
