@@ -596,7 +596,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-24.107'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.108'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3155,12 +3155,15 @@ function peerIndex(cs) {
   }
   PEERIDX = {key, at:Date.now(), map}; return map;
 }
+// srovnává se s POSLEDNÍMI 10 Brawl videi kanálu (jako „typický výkon“ v YouTube Studiu), ukáže se od 5
+const PEER_MAX = 10;
 function channelPeers(it) {
   if (!it.chId) return [];
-  const out = [];
-  for (const x of peerIndex(it.c?.id ? [it.c] : COUNTRIES).get(it.chId) || []) {
+  const out = [], list = (peerIndex(it.c?.id ? [it.c] : COUNTRIES).get(it.chId) || []).slice().sort((a, b) => new Date(b.pub) - new Date(a.pub));
+  for (const x of list) {
     if (x.id === it.id || !!x.short !== !!it.short) continue;
     const pts = x._pts ||= histOf(x); if (pts.length >= 3) out.push({it:x, pts});
+    if (out.length >= PEER_MAX) break;
   }
   return out;
 }
