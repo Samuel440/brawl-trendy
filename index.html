@@ -589,7 +589,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-24.103'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.104'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -882,6 +882,12 @@ async function prepareRobotFiles() {
   // + s_bt_new__… pro 🔔 zvoneček (nová videa 📌 kanálů, která robot najde v RSS)
   for (const k of [...Array.from({length:16}, (_, i) => 'bt_h_' + i.toString(16)), 'bt_new']) {
     const name = `s_${k}__${ROBOT}.json`;
+    if (!have.has(name)) await dUpload(name, DRIVE.folder, new Blob([JSON.stringify({k, v:{}, t:0})], {type:'application/json'}));
+  }
+  // 🔥 „horké“ soubory grafů: robot do nich každých 30 min zapisuje jen čerstvá videa (do 4 dnů) – malé, rychlé.
+  // Velké soubory se všemi videi přepisuje jen jednou za 6 h (dřív každý běh → došel denní limit robota).
+  for (let i = 0; i < 16; i++) {
+    const k = 'bt_h_' + i.toString(16), name = `s_${k}__${ROBOT}-hot.json`;
     if (!have.has(name)) await dUpload(name, DRIVE.folder, new Blob([JSON.stringify({k, v:{}, t:0})], {type:'application/json'}));
   }
 }
