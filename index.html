@@ -596,7 +596,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-24.106'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-24.107'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3143,12 +3143,24 @@ const viewsAt = (pts, age) => { // zhlédnutí v daném stáří (mezi měření
   if (b[0] - a[0] > Math.max(3 * 3600e3, age * .6)) return null;
   return Math.round(a[1] + (b[1] - a[1]) * (b[0] === a[0] ? 1 : (t - a[0]) / (b[0] - a[0])));
 };
+// rejstřík Brawl videí podle kanálu – postaví se JEDNOU (pak 60 s z paměti), ať šedé pásmo zvládnou i desítky karet bez lagu
+let PEERIDX = null;
+function peerIndex(cs) {
+  const key = cs.map(c => c.id).join();
+  if (PEERIDX?.key === key && Date.now() - PEERIDX.at < 60e3) return PEERIDX.map;
+  const map = new Map(), seen = new Set();
+  for (const c of cs) for (const x of prepare([...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])], c)) {
+    if (!x.chId || seen.has(x.id) || otherGame(x) || (x.cand && !candOk(x))) continue;
+    seen.add(x.id); (map.get(x.chId) || map.set(x.chId, []).get(x.chId)).push(x);
+  }
+  PEERIDX = {key, at:Date.now(), map}; return map;
+}
 function channelPeers(it) {
   if (!it.chId) return [];
-  const cs = it.c?.id ? [it.c] : COUNTRIES, seen = new Set([it.id]), out = [];
-  for (const c of cs) for (const x of prepare([...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])], c)) {
-    if (seen.has(x.id) || x.chId !== it.chId || !!x.short !== !!it.short || otherGame(x) || (x.cand && !candOk(x))) continue;
-    seen.add(x.id); const pts = histOf(x); if (pts.length >= 3) out.push({it:x, pts});
+  const out = [];
+  for (const x of peerIndex(it.c?.id ? [it.c] : COUNTRIES).get(it.chId) || []) {
+    if (x.id === it.id || !!x.short !== !!it.short) continue;
+    const pts = x._pts ||= histOf(x); if (pts.length >= 3) out.push({it:x, pts});
   }
   return out;
 }
@@ -3161,6 +3173,12 @@ function peerBand(pts, peers, steps = 48) {
     if (vals.length >= PEER_MIN) band.push([t0 + age, quant(vals, .25), quant(vals, .5), quant(vals, .75), vals.length]);
   }
   return band;
+}
+// malý graf na kartě + šedé pásmo typického výkonu kanálu (jen 16 bodů – rychlé i pro desítky karet)
+function miniHist(it) {
+  const pts = histOf(it);
+  const band = pts.length >= 3 ? peerBand(pts, channelPeers(it), 16) : [];
+  return histSvg(pts, 200, 30, false, band);
 }
 const trT = t => S.trAuto && TR[t] ? TR[t] : t; // název v češtině, když je zapnutý automatický překlad a už ho máme
 // SVG graf: x = čas od zveřejnění, y = zhlédnutí (band = šedé pásmo typického výkonu kanálu)
@@ -3313,7 +3331,7 @@ function card(it, i, showCountry) {
       <a class="title" href="${ytUrl(it.id)}" target="_blank" rel="noopener" title="${esc(it.t)}" data-orig="${esc(it.t)}" data-lang="${langOk(it, it.c) ? it.c.lang : 'auto'}">${esc(S.trAuto && TR[it.t] ? TR[it.t] : it.t)}</a>
       <div class="ch"><a class="chlink" href="https://www.youtube.com/channel/${esc(it.chId)}/videos" target="_blank" rel="noopener" title="Otevřít kanál na YouTube">${esc(it.ch)}</a> · ${n(it.subs)} odběr.</div>
       <div class="stats"><span><b>${n(it.views)}</b> zhlédnutí</span><span>${n(it.vph)}/h</span><span>${ago(it.ageH)}</span></div>
-      <button class="histmini" data-hist title="Jak video nabíralo zhlédnutí – klikni pro velký graf">${histSvg(histOf(it), 200, 30)}<span>📈</span></button>
+      <button class="histmini" data-hist title="Jak video nabíralo zhlédnutí – klikni pro velký graf">${miniHist(it)}<span>📈</span></button>
       <div class="tags">${tags.join('')}</div>
       <div class="idea">💡 ${esc(ideaFor(it))}</div>
       <div class="actions"><button data-tr>🌐 ${S.trAuto && TR[it.t] ? 'Originál' : 'Přeložit'}</button><button data-copy>📋 Kopírovat</button><button data-thumb title="Stáhnout miniaturu v plné kvalitě">🖼️</button><a href="${trUrl(it.t)}" target="_blank" rel="noopener" title="Otevřít v Google Překladači">↗</a>${isOwner() ? '<button class="blockbtn" data-block title="Nemá to nic s Brawlem – zablokovat">✖</button>' : ''}</div>
