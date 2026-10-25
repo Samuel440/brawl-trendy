@@ -17,8 +17,10 @@ import threading
 import time
 
 SLOZKA = r"G:\Můj disk\Brawl Trendy – data"
-KAZDYCH_S = 5           # nejvýš tak často se soubor přepíše (Drive ho pak nahraje)
-ZIVOT_S = 30            # i beze změny se tak často zapíše „žiju“ – web pozná, že program nespadl
+# Google Drive pro počítač nahrávání PŘERUŠÍ, když se do souboru během nahrávání zapíše („Stream was written to“)
+# → při zápisu co 5 s se nenahrálo nikdy nic. Proto nejvýš co 15 s a vždy celý nový soubor najednou (os.replace).
+KAZDYCH_S = 15          # nejvýš tak často se soubor přepíše (Drive ho pak nahraje)
+ZIVOT_S = 45            # i beze změny se tak často zapíše „žiju“ – web pozná, že program nespadl
 HISTORIE_KAZDYCH_S = 20  # bod do grafu průběhu (čas, procenta)
 RADKU = 40
 
@@ -86,7 +88,7 @@ class Stav:
     # -- zápis na G:
     def _smycka(self):
         while self.bezi:
-            time.sleep(KAZDYCH_S)
+            time.sleep(KAZDYCH_S + 1)
             if self.bezi:
                 self._zapis(time.time() - self.zapsano >= ZIVOT_S)
 
@@ -101,8 +103,10 @@ class Stav:
                 data = json.dumps(self.d, ensure_ascii=False)
                 self.zmena = False
                 self.zapsano = time.time()
-            # přepis na místě (ne nový soubor) – Drive pak jen nahraje novou verzi téhož souboru
-            with open(self.soubor, "w", encoding="utf-8") as f:
+            # celý soubor bokem a pak jedním krokem na místo – Drive vidí jen hotové verze
+            tmp = os.path.join(SLOZKA, f"~vyr_{self.d['program']}.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
                 f.write(data)
+            os.replace(tmp, self.soubor)
         except Exception:  # noqa: BLE001
             pass
