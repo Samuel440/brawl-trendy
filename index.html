@@ -68,6 +68,10 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .calaltrow b{color:var(--accent)}
 .calcopy{padding:2px 7px;font-size:13px}
 .calalt{margin:4px 0}
+/* ⭐ šablona názvu, kterou se vyplatí použít */
+.fmt.tplhot{border:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel));box-shadow:0 0 14px color-mix(in srgb,var(--accent) 35%,transparent)}
+.fmt.tplhot > summary b{font-size:17px;color:var(--accent)}
+.tag.tplstar{background:var(--accent);color:#111;font-weight:900;border-color:var(--accent)}
 .pingask{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0;padding:8px 10px;border:1px solid var(--accent);border-radius:10px;background:var(--panel2)}
 .calping{margin:4px 0}
 /* 🔴 grafik uložil nové video */
@@ -646,14 +650,17 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.129'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.130'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
 const kvRaw = k => inKV(k) ? (KV.has(k) ? KV.get(k) : null) : localStorage.getItem(k);
 const kvKeys = () => [...new Set([...KV.keys(), ...Object.keys(localStorage)])];
 let kvPending = new Map(), kvTimer = null;
+// DATAVER = počítadlo změn dat videí (i z Disku) – podle něj se zahodí zapamatované výpočty Nápadů (gather)
+var DATAVER = 0;
 function kvSetRaw(k, raw) {
+  if (/^bt_(c_|block$|aicache$|ch_|arch_)/.test(k)) DATAVER++;
   if (!inKV(k)) { try { localStorage.setItem(k, raw); } catch {} return; }
   KV.set(k, raw); kvPending.set(k, raw);
   clearTimeout(kvTimer); kvTimer = setTimeout(kvFlush, 300);
@@ -3980,7 +3987,16 @@ async function loadAll(p) {
   }
   status(''); S.busy = false; renderIdeas();
 }
+// ⚡ výsledek gather() se pamatuje, dokud se nezmění data (DATAVER) nebo filtry – dřív se při každém kliknutí v Nápadech
+// znovu prohnaly desítky tisíc videí z Celé doby (regexy formátů, brawlerů, jazyka) → na PC lag, na mobilu ještě horší
+var GATHER = {};
 function gather(p) {
+  const key = [DATAVER, S.type, S.strict, S.noLive, Object.keys(BLOCK.videos).length, Object.keys(BLOCK.channels).length].join('|');
+  const hit = GATHER[p];
+  if (hit && hit.key === key) return hit.v;
+  return (GATHER[p] = {key, v:gatherNow(p)}).v;
+}
+function gatherNow(p) {
   let out = [], loaded = 0, oldest = Infinity;
   for (const c of COUNTRIES) {
     if (c.id === 'cz') continue; // konkurenci do nápadů nemícháme
@@ -4189,9 +4205,13 @@ function topicsOf(it, terms) {
   if (terms) for (const w of tokens(t)) if (terms.has(w) && w.length >= 4 && !GENERIC.has(w) && !/^brawlers?$/.test(w)) out.push('🔥 ' + w);
   return [...new Set(out)];
 }
-// ⏱️ jen videa z posledních N dní (staré vlny – minulé updaty – jinak zůstávaly nahoře)
-const WAVE_DAYS = [3, 7, 14, 30];
+// ⏱️ jen videa z posledních N dní (staré vlny – minulé updaty – jinak zůstávaly nahoře); výsledek se pamatuje, dokud se nezmění data
+let WAVE_C = {};
 function waveTopics(days = 30) {
+  const key = days + '|' + DATAVER + '|' + S.type;
+  return WAVE_C[days]?.key === key ? WAVE_C[days].v : (WAVE_C[days] = {key, v:waveTopicsNow(days)}).v;
+}
+function waveTopicsNow(days) {
   const terms = brawlTerms(), since = Date.now() - days * 864e5;
   const foreign = weekMonth().filter(it => new Date(it.pub) >= since);
   const cz = C('cz'), czList = ['week', 'month'].flatMap(p => getSet('cz', p)?.items || []).filter(it => langOk(it, cz) && new Date(it.pub) >= since);
@@ -4210,41 +4230,78 @@ function waveTopics(days = 30) {
     .sort((a, b) => b.score - a.score);
 }
 function waveHtml() {
-  const days = ls('bt_wavedays', 7), rows = waveTopics(days).slice(0, 20);
-  const pick = `<div class="row"><span class="lbl">⏱️ Videa za</span><span class="seg">${WAVE_DAYS.map(d => `<button data-wavedays="${d}" class="${d === days ? 'on' : ''}">${d} ${d < 5 ? 'dny' : 'dní'}</button>`).join('')}</span>
-    <span class="ch">Bere se z videí, která stránka a robot stejně průběžně obnovují (Týden + Měsíc ze všech států) – hledání to nestojí.</span></div>`;
-  if (!rows.length) return pick + '<div class="empty">V tomhle období zatím žádná vlna – zkus delší dobu, nebo načti Týden u víc států.</div>';
+  const rows = waveTopics(ideaDays()).slice(0, 20);
+  if (!rows.length) return '<div class="empty">V tomhle období zatím žádná vlna – zkus delší dobu, nebo načti Týden u víc států.</div>';
   const tipOf = k => { const name = k.slice(3); return (TEMPLATES.find(x => x[0] === name) || [])[2] || (FORMATS.find(f => f[0] === name) || [])[2]
     || (k.startsWith('🦸') ? `Brawler ${name} je teď v kurzu venku – natoč s ním CZ video (build, tier, challenge, noob vs pro).` : `„${name}“ – nové téma/event, které venku letí. Natoč CZ verzi, dokud je čerstvé.`); };
-  return pick + `<div class="fmts">${rows.map(r => {
+  return `<div class="fmts">${rows.map(r => {
     const best = [...r.items].sort((a, b) => b.vph - a.vph);
     const perC = [...r.countries].map(id => C(id));
     const gap = r.cz === 0 ? '<span class="tag hot">🟢 MEZERA – v Česku nikdo</span>' : `<span class="tag">🇨🇿 ${r.cz} ${r.cz === 1 ? 'video' : r.cz < 5 ? 'videa' : 'videí'} v Česku</span>`;
     return `<details class="fmt"><summary><b>${esc(r.k)}</b><span class="ch">${perC.map(c => flag(c)).join('')} ${r.countries.size} státy · ${r.items.length} videí · ${n(r.vph)}/h${r.recent ? ` · ${r.recent} za 3 dny` : ''}</span>${gap}${r.mine ? `<span class="tag ok">✅ už jsi točil (${r.mine})</span>` : ''}</summary>
       <div class="idea">💡 ${esc(tipOf(r.k))}</div>
-      <div class="grid">${best.slice(0, 8).map((it, i) => card(it, i, true)).join('')}</div></details>`; }).join('')}</div>`;
+      ${lazyGrid(best, 8)}</details>`; }).join('')}</div>`;
 }
 function bangersHtml() {
-  const list = weekMonth()
+  const list = ideaRecent(weekMonth())
     .filter(it => (bangerX(it) ?? 0) >= 4 && it.views >= 3000).sort((a, b) => bangerX(b) - bangerX(a))
     .filter(function (it) { const k = it.chId; this[k] = (this[k] || 0) + 1; return this[k] <= 2; }, {}).slice(0, 16); // max 2 od jednoho kanálu
-  return list.length ? `<div class="grid">${list.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Zatím málo dat – kanál potřebuje aspoň 4 známá videa. Načti Týden a Měsíc u víc států.</div>';
+  return list.length ? progGrid(list) : '<div class="empty">Zatím málo dat – kanál potřebuje aspoň 4 známá videa. Načti Týden a Měsíc u víc států.</div>';
 }
 function templatesHtml() {
-  const foreign = weekMonth();
-  const cz = C('cz'), czList = ['week', 'month'].flatMap(p => getSet('cz', p)?.items || []).filter(it => langOk(it, cz));
+  const foreign = ideaRecent(weekMonth());
+  const cz = C('cz'), czList = ideaRecent(['week', 'month'].flatMap(p => getSet('cz', p)?.items || []).filter(it => langOk(it, cz)));
   const rows = TEMPLATES.map(([name, rx, czT]) => {
     const items = foreign.filter(it => rx.test(it.t)), v = items.map(it => it.views).sort((a, b) => a - b);
     return {name, czT, items:items.sort((a, b) => b.views - a.views), med:v.length ? v[Math.floor(v.length / 2)] : 0,
       countries:new Set(items.map(it => it.c.id)), cz:new Set(czList.filter(it => rx.test(it.t)).map(it => it.id)).size};
   }).filter(r => r.items.length >= 2).sort((a, b) => b.med * b.countries.size - a.med * a.countries.size);
   if (!rows.length) return '<div class="empty">Načti Týden / Měsíc u víc států.</div>';
-  return `<div class="fmts">${rows.map(r => `<details class="fmt"><summary><b>${esc(r.name)}</b><span class="ch">${r.items.length} videí · ${r.countries.size} států · medián ${n(r.med)} zhlédnutí</span>${r.cz ? `<span class="tag">🇨🇿 ${r.cz}</span>` : '<span class="tag hot">🟢 v Česku nikdo</span>'}</summary>
+  // ⭐ super k využití = nejlepší 3 podle síly (medián × státy), aspoň ve 2 státech a v Česku skoro nikdo (max 2 videa)
+  const top = new Set(rows.filter(r => r.countries.size >= 2 && r.cz <= 2).slice(0, 3));
+  return `<div class="fmts">${rows.map(r => `<details class="fmt${top.has(r) ? ' tplhot' : ''}"><summary>${top.has(r) ? '<span class="tag tplstar">⭐ SUPER – VYUŽIJ</span>' : ''}<b>${esc(r.name)}</b><span class="ch">${r.items.length} videí · ${r.countries.size} států · medián ${n(r.med)} zhlédnutí</span>${r.cz ? `<span class="tag">🇨🇿 ${r.cz}</span>` : '<span class="tag hot">🟢 v Česku nikdo</span>'}</summary>
       <div class="idea">✍️ Česky: <b>${esc(r.czT)}</b> <button data-copytxt="${esc(r.czT)}">📋 Kopírovat</button></div>
       <div class="ch" style="margin:4px 0 8px">Nejlepší příklad: „${esc(r.items[0].t)}“ – ${n(r.items[0].views)} zhlédnutí (${esc(r.items[0].c.name)})</div>
-      <div class="grid">${r.items.slice(0, 8).map((it, i) => card(it, i, true)).join('')}</div></details>`).join('')}</div>`;
+      ${lazyGrid(r.items, 8)}</details>`).join('')}</div>`;
 }
 
+// ⏱️ společný filtr „videa za posledních N dní“ pro funkce Nápadů, které berou Týden/Měsíc
+const IDEA_DAYS = [3, 7, 14, 30], IDEA_DAYS_SECS = ['wave', 'bangers', 'top10', 'tpl'];
+const ideaDays = () => ls('bt_ideadays', 7);
+const ideaRecent = list => { const since = Date.now() - ideaDays() * 864e5; return list.filter(it => new Date(it.pub) >= since); };
+const ideaDaysPick = () => `<div class="row ideadays"><span class="lbl">⏱️ Videa za</span><span class="seg">${IDEA_DAYS.map(d => `<button data-ideadays="${d}" class="${d === ideaDays() ? 'on' : ''}">${d} ${d < 5 ? 'dny' : 'dní'}</button>`).join('')}</span>
+  <span class="ch">Bere se z videí, která stránka a robot stejně průběžně obnovují – hledání to nestojí.</span></div>`;
+// obsah otevřené funkce: vykreslí se až po vykreslení záhlaví (stránka nezamrzne na kliknutí)
+let IDEA_BODY = null, IDEA_RUN = 0;
+function ideaBodyFill() {
+  const run = ++IDEA_RUN;
+  setTimeout(() => {
+    const el = $('#main .ideabody'); if (!el || run !== IDEA_RUN || !IDEA_BODY) return;
+    el.innerHTML = typeof IDEA_BODY === 'function' ? IDEA_BODY() : IDEA_BODY;
+    el.querySelectorAll('.grid[data-prog]').forEach(gridFill);
+    autoTranslate(); translateMix(); fillBands();
+  }, 30);
+}
+// 🃏 karty v rozbalovacích řádcích (vlny, šablony, formáty) se vytvoří až po rozkliknutí řádku – dřív se jich
+// najednou kreslilo i 160 (20 vln × 8 karet), i když byly schované
+const LAZY = new Map(); let LAZY_N = 0;
+function lazyGrid(items, max = 8) { const id = 'lz' + (++LAZY_N); LAZY.set(id, items.slice(0, max)); return `<div class="grid" data-lazy="${id}"></div>`; }
+// progGrid = mřížka, která se naplní hned po vykreslení, ale POSTUPNĚ (po 6 kartách) – jako šedá pásma v grafech
+const progGrid = (items, max = 60) => lazyGrid(items, max).replace('data-lazy', 'data-prog data-lazy');
+function gridFill(g) {
+  if (g.dataset.done) return; g.dataset.done = '1';
+  const items = LAZY.get(g.dataset.lazy) || []; let i = 0;
+  const step = () => {
+    if (!g.isConnected) return;
+    g.insertAdjacentHTML('beforeend', items.slice(i, i + 6).map((it, k) => card(it, i + k, true)).join('')); i += 6;
+    if (i < items.length) setTimeout(step, 16); else { autoTranslate(); fillBands(); }
+  };
+  step();
+}
+document.addEventListener('toggle', e => {
+  if (!e.target.open) return;
+  const g = e.target.querySelector(':scope > .grid[data-lazy]'); if (g) gridFill(g);
+}, true);
 // 💡 dlaždice Nápadů: jeden název + vlastní obrázek (žádné opakující se emoji)
 const IDEA_TILES = {
   mix:{name:'Míchač nápadů', c1:'#7b5cff', c2:'#c04bff', img:`<svg viewBox="0 0 64 64"><rect x="6" y="14" width="26" height="34" rx="5" fill="#fff" transform="rotate(-12 19 31)"/><rect x="10" y="20" width="18" height="12" rx="2" fill="#ffcc00" transform="rotate(-12 19 31)"/><rect x="32" y="12" width="26" height="34" rx="5" fill="#fff" transform="rotate(12 45 29)"/><rect x="36" y="18" width="18" height="12" rx="2" fill="#4fa3ff" transform="rotate(12 45 29)"/><circle cx="32" cy="50" r="10" fill="#3ddc84"/><path d="M32 44v12M26 50h12" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/></svg>`},
@@ -4260,18 +4317,23 @@ const IDEA_TILES = {
   ever:{name:'Evergreen', c1:'#b7860b', c2:'#f4d03f', img:`<svg viewBox="0 0 64 64"><path d="M18 8h28v14a14 14 0 01-28 0z" fill="#fff"/><path d="M18 12H8c0 10 5 14 11 14M46 12h10c0 10-5 14-11 14" stroke="#fff" stroke-width="4" fill="none"/><rect x="28" y="36" width="8" height="10" fill="#fff"/><rect x="18" y="46" width="28" height="8" rx="3" fill="#fff"/><path d="M32 13l2.5 5 5.5.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-3.9 5.5-.8z" fill="#b7860b"/></svg>`},
 };
 function renderIdeas() {
-  const day = gather('day'), week = gather('week'), all = gather('all'), month = gather('month');
+  // data států až na vyžádání (Celá doba = desítky tisíc videí) – přehled dlaždic je pak okamžitý
+  const day = {get list() { return gather('day').list; }}, week = {get list() { return gather('week').list; }}, all = {get list() { return gather('all').list; }}, month = {get list() { return gather('month').list; }};
   const total = COUNTRIES.length - 1;
-  const info = g => g.loaded ? `${g.loaded}/${total} států · nejstarší data ${ago((Date.now() - g.oldest) / 3600e3)}` : 'zatím nenačteno';
+  // kolik států má data a jak stará (jen z času uložení – bez rozbalování videí)
+  const info = p => { const ts = COUNTRIES.filter(c => c.id !== 'cz').map(c => tsOf(c.id, p)).filter(Boolean); return ts.length ? `${ts.length}/${total} států · nejstarší data ${ago((Date.now() - Math.min(...ts)) / 3600e3)}` : 'zatím nenačteno'; };
+  const tsOf = (cid, p) => { const raw = kvRaw(ckey(cid, p)); return raw ? +((raw.match(/"ts":(\d+)/) || [])[1] || 0) : 0; };
   const btn = (p, l) => { const cost = staleCost(p);
     const stale = COUNTRIES.filter(c => !isFresh(getSet(c.id, p), p)).length;
     if (!stale) return `<button data-loadall="${p}" disabled>✔ Načteno – nic se nestahuje</button>`;
     return `<button class="${cost ? 'costly' : ''}" data-loadall="${p}" title="${cost ? '⚡ Stojí hledání ze 100 denních' : 'Jen obnova zhlédnutí a sledovaných kanálů – hledání nestojí'}">${l} (${cost ? `${cost} hledání` : 'bez hledání'})</button>`; };
 
   // 1) Co letí teď
-  const byVph = [...day.list].sort((a, b) => b.vph - a.vph);
-  const hotLong = byVph.filter(it => !it.short).slice(0, 12), hotShort = byVph.filter(it => it.short).slice(0, 12);
-  const hotGrid = (h, l) => `<h3>${h}</h3>${l.length ? `<div class="grid">${l.map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Nic.</div>'}`;
+  // ⚡ všechno se počítá až když to otevřená funkce (nebo počet na dlaždici) opravdu potřebuje – L() = spočítat jednou, na vyžádání
+  const L = f => { let v, done = false; return () => done ? v : (done = true, v = f()); };
+  const byVph = L(() => [...day.list].sort((a, b) => b.vph - a.vph));
+  const hotLong = L(() => byVph().filter(it => !it.short).slice(0, 12)), hotShort = L(() => byVph().filter(it => it.short).slice(0, 12));
+  const hotGrid = (h, l) => `<h3>${h}</h3>${l.length ? progGrid(l) : '<div class="empty">Nic.</div>'}`;
   // 2) Formáty: novinky vs. celá doba – zvlášť videa a shorts (shorts mají řádově víc views/h a přehlušily by videa)
   const share = (list, name) => list.length ? list.filter(it => it.formats.some(f => f[0] === name)).length / list.length : 0;
   const fmtRows = (dayList, allList) => FORMATS.map(f => {
@@ -4284,36 +4346,34 @@ function renderIdeas() {
     return `<h3>${h}</h3><div class="fmts">${rows.map(r => `<details class="fmt">
         <summary><b>${esc(r.name)}</b><span class="ch">${r.n} videí</span><span class="fbar"><span class="bar" style="width:${Math.max(4, r.vph / maxV * 100)}%"></span></span><span>${n(r.vph)}/h</span>${r.hasAll && r.sd > r.sa * 1.5 ? '<span class="tag hot">ROSTE</span>' : ''}</summary>
         <div class="idea">💡 ${esc(r.tip)}</div>
-        <div class="grid">${r.items.slice(0, 12).map((it, i) => card(it, i, true)).join('')}</div>
+        ${lazyGrid(r.items, 12)}
       </details>`).join('') || '<div class="empty">Nic.</div>'}</div>`;
   };
-  const fLong = fmtRows(day.list.filter(it => !it.short), all.list.filter(it => !it.short));
-  const fShort = fmtRows(day.list.filter(it => it.short), all.list.filter(it => it.short));
+  const fLong = L(() => fmtRows(day.list.filter(it => !it.short), all.list.filter(it => !it.short)));
+  const fShort = L(() => fmtRows(day.list.filter(it => it.short), all.list.filter(it => it.short)));
   // 🧱 velké dlaždice s obrázkem; po kliknutí se otevře jen ta jedna funkce (◀ zpět na dlaždice)
   // obsah se počítá jen pro otevřenou funkci (šetří čas – stovky karet)
   const SECS = [];
   const sec = (id, title, count, hint, body) => { SECS.push({id, title, count, hint, body}); return ''; };
   // 3) Nová slova dne (nejsou v týdnu ani celé době = čerstvé téma / nový brawler / event)
-  const oldWords = new Set([...week.list.filter(it => it.ageH > 48), ...all.list].flatMap(it => tokens(it.t)));
-  const words = countBy(day.list, it => tokens(it.t), it => Math.log10(it.vph + 10)).filter(e => e.n >= 2).slice(0, 40);
+  const oldWords = L(() => new Set([...week.list.filter(it => it.ageH > 48), ...all.list].flatMap(it => tokens(it.t))));
+  const words = L(() => countBy(day.list, it => tokens(it.t), it => Math.log10(it.vph + 10)).filter(e => e.n >= 2).slice(0, 40));
   // 4) Brawleři v novinkách
-  const br = countBy(day.list, it => it.brawlers, it => it.vph).slice(0, 15);
-  // 5) Virály nad odběry za týden
-  const outl = week.list.filter(it => it.outlier && it.outlier >= 3 && it.views >= 5000).sort((a, b) => b.outlier - a.outlier).slice(0, 12);
+  const br = L(() => countBy(day.list, it => it.brawlers, it => it.vph).slice(0, 15));
   // 6) Evergreen
-  const ever = FORMATS.map(f => ({name:f[0], tip:f[2], s:share(all.list, f[0]), views:all.list.filter(it => it.formats.includes(f)).reduce((a, b) => a + b.views, 0)})).filter(r => r.s > 0).sort((a, b) => b.views - a.views);
-  const everBr = countBy(all.list, it => it.brawlers, it => it.views).slice(0, 12);
+  const ever = L(() => FORMATS.map(f => ({name:f[0], tip:f[2], s:share(all.list, f[0]), views:all.list.filter(it => it.formats.includes(f)).reduce((a, b) => a + b.views, 0)})).filter(r => r.s > 0).sort((a, b) => b.views - a.views));
+  const everBr = L(() => countBy(all.list, it => it.brawlers, it => it.views).slice(0, 12));
 
   const loadBox = `<div class="summary">
       <h3>💡 Nápady z celého světa (bez Česka)</h3>
-      <div class="row"><span class="lbl">Novinky 24 h</span><span class="ch">${info(day)}</span>${btn('day', '⟳ Načíst novinky ze všech států')}</div>
-      <div class="row"><span class="lbl">Týden</span><span class="ch">${info(week)}</span>${btn('week', 'Načíst týden')}</div>
-      <div class="row"><span class="lbl">Celá doba</span><span class="ch">${info(all)}</span>${btn('all', 'Načíst celou dobu')}</div>
+      <div class="row"><span class="lbl">Novinky 24 h</span><span class="ch">${info('day')}</span>${btn('day', '⟳ Načíst novinky ze všech států')}</div>
+      <div class="row"><span class="lbl">Týden</span><span class="ch">${info('week')}</span>${btn('week', 'Načíst týden')}</div>
+      <div class="row"><span class="lbl">Celá doba</span><span class="ch">${info('all')}</span>${btn('all', 'Načíst celou dobu')}</div>
     </div>`;
   `
     ${sec('mix', '🎲 Míchač nápadů z mých videí', ls(mixKey(), []).length ? ls(mixKey(), []).length + ' uložených' : '',
       'Dvě náhodná videa vedle sebe – zkus z nich spojit nový nápad (např. „účet v jedné barvě“ + „co o tobě říká tvůj main“ → hraju za mainu na účtu v jedné barvě). Dobrou kombinaci si ulož i s poznámkou.',
-      mixSection())}
+      mixSection)}
 
     ${sec('wave', '🌊 Vlna ze zahraničí – mezery v Česku', '',
       'Témata (brawler, formát, šablona názvu, nové slovo), která se teď točí aspoň ve dvou státech. Nahoře ta, co nejvíc rostou a v Česku na ně skoro nikdo nemá video. <span class="tag hot">🟢 MEZERA</span> = můžeš být v Česku první. <span class="tag ok">✅ už jsi točil</span> = máš na to video na ULTRA SAMI (dle 📺 Míchače).',
@@ -4324,54 +4384,65 @@ function renderIdeas() {
       bangersHtml)}
 
     ${sec('top10', '🏅 Jednička kanálu – 1/10', '',
-      'Videa z posledních 30 dní, která mají víc zhlédnutí než každé z posledních 10 Brawl videí stejného youtubera (videa a shorts zvlášť). Tohle se mu povedlo nejvíc – nápad, který u jeho diváků zabral. Seřazeno podle toho, kolikrát překonalo jeho obvyklé video (medián).',
+      'Videa z vybraného období (⏱️ níž), která mají víc zhlédnutí než každé z posledních 10 Brawl videí stejného youtubera (videa a shorts zvlášť). Tohle se mu povedlo nejvíc – nápad, který u jeho diváků zabral. Seřazeno podle toho, kolikrát překonalo jeho obvyklé video (medián).',
       () => {
-        const best = month.list.map(it => ({it, r:channelTop(it)})).filter(x => x.r).sort((a, b) => b.r.x - a.r.x).slice(0, 60);
+        const best = ideaRecent(month.list).map(it => ({it, r:channelTop(it)})).filter(x => x.r).sort((a, b) => b.r.x - a.r.x).slice(0, 60);
         if (!best.length) return '<div class="empty">Zatím nic – kanál potřebuje aspoň 5 dalších uložených Brawl videí. Data přibývají s každou obnovou.</div>';
-        return `<div class="grid">${best.map(({it, r}, i) => card({...it, _rk:r}, i, true)).join('')}</div>`;
+        return progGrid(best.map(({it, r}) => ({...it, _rk:r})));
       })}
 
     ${sec('tpl', '🧩 Šablony názvů, které fungují', '',
       'Vzorce názvů, které se opakují napříč státy, s mediánem zhlédnutí. Česká verze je připravená k doplnění.',
       templatesHtml)}
 
-    ${sec('formats', '🧩 Formáty, které dnes táhnou', fLong.length + fShort.length,
+    ${sec('formats', '🧩 Formáty, které dnes táhnou', () => fLong().length + fShort().length,
       'Klikni na formát a uvidíš videa, která ho právě používají. Videa a shorts zvlášť. „ROSTE“ = dnes se točí častěji než obvykle (po načtení „Celá doba“).',
-      () => day.list.length ? `<div class="two">${S.type !== 'short' ? `<div>${fmtBlock('🎬 Videa', fLong)}</div>` : ''}${S.type !== 'long' ? `<div>${fmtBlock('📱 Shorts', fShort)}</div>` : ''}</div>` : '<div class="empty">Načti novinky tlačítkem nahoře.</div>')}
+      () => day.list.length ? `<div class="two">${S.type !== 'short' ? `<div>${fmtBlock('🎬 Videa', fLong())}</div>` : ''}${S.type !== 'long' ? `<div>${fmtBlock('📱 Shorts', fShort())}</div>` : ''}</div>` : '<div class="empty">Načti novinky tlačítkem nahoře.</div>')}
 
-    ${sec('hot', '🔥 Co letí právě teď', hotLong.length + hotShort.length,
+    ${sec('hot', '🔥 Co letí právě teď', () => hotLong().length + hotShort().length,
       'Nejrychleji rostoucí za 24 h (zhlédnutí za hodinu) – nejčerstvější nápady na video.',
-      () => byVph.length ? (S.type !== 'short' ? hotGrid('🎬 Videa', hotLong) : '') + (S.type !== 'long' ? hotGrid('📱 Shorts', hotShort) : '') : '<div class="empty">Načti novinky tlačítkem nahoře.</div>')}
+      () => byVph().length ? (S.type !== 'short' ? hotGrid('🎬 Videa', hotLong()) : '') + (S.type !== 'long' ? hotGrid('📱 Shorts', hotShort()) : '') : '<div class="empty">Načti novinky tlačítkem nahoře.</div>')}
 
-    ${sec('words', '🆕 Slova dne', words.length,
+    ${sec('words', '🆕 Slova dne', () => words().length,
       'Slova, která se dnes opakují v názvech – klikni a uvidíš videa s tím slovem. <span class="tag hot">NOVÉ</span> = v týdnu/celé době skoro nebyla → nový brawler, event, skin nebo leak.',
-      `<div class="tags">${words.map(e => `<button class="tag ${oldWords.size && !oldWords.has(e.k) ? 'hot' : 'blue'}" data-q="${esc(e.k)}" title="${e.n} videí · ${n(e.views)} zhlédnutí">${esc(e.k)} · ${e.n}</button>`).join('') || '<span class="ch">Zatím žádná data.</span>'}</div>`)}
+      () => `<div class="tags">${words().map(e => `<button class="tag ${oldWords().size && !oldWords().has(e.k) ? 'hot' : 'blue'}" data-q="${esc(e.k)}" title="${e.n} videí · ${n(e.views)} zhlédnutí">${esc(e.k)} · ${e.n}</button>`).join('') || '<span class="ch">Zatím žádná data.</span>'}</div>`)}
 
-    ${sec('season', '🧩 Slova sezóny z Brawl kanálů', brawlTerms().size,
+    ${sec('season', '🧩 Slova sezóny z Brawl kanálů', () => brawlTerms().size,
       'Názvy, které teď opakují kanály točící jen Brawl (nové boxy, skiny, event). Podle nich stránka pozná i videa bez „Brawl Stars“ v názvu.',
-      `<div class="tags">${termPills(30)}</div>`)}
+      () => `<div class="tags">${termPills(30)}</div>`)}
 
-    ${sec('brawlers', '🦸 Brawleři v novinkách', br.length,
+    ${sec('brawlers', '🦸 Brawleři v novinkách', () => br().length,
       'Klikni na brawlera a uvidíš videa o něm.',
-      `<div class="tags">${br.map(e => `<button class="tag ok" data-q="${esc(e.k)}" title="${n(e.views)} zhlédnutí">${esc(e.k)} · ${e.n} videí</button>`).join('') || '<span class="ch">Zatím žádná data.</span>'}</div>`)}
+      () => `<div class="tags">${br().map(e => `<button class="tag ok" data-q="${esc(e.k)}" title="${n(e.views)} zhlédnutí">${esc(e.k)} · ${e.n} videí</button>`).join('') || '<span class="ch">Zatím žádná data.</span>'}</div>`)}
 
-    ${sec('ever', '🏛️ Evergreen – co funguje za celou dobu', ever.length,
+    ${sec('ever', '🏛️ Evergreen – co funguje za celou dobu', () => ever().length,
       'Formáty a brawleři z nejsledovanějších videí všech dob. Dobré na videa, která nabírají views dlouho.',
-      ever.length ? `<table><tr><th>Formát</th><th>Podíl v top videích</th><th>Zhlédnutí celkem</th></tr>${ever.map(r => `<tr><td><b>${esc(r.name)}</b><div class="ch">${esc(r.tip)}</div></td><td>${Math.round(r.s * 100)} %</td><td>${n(r.views)}</td></tr>`).join('')}</table>
-      <div class="tags" style="margin-top:10px">${everBr.map(e => `<span class="tag ok">${esc(e.k)} · ${n(e.views)}</span>`).join('')}</div>` : '<div class="empty">Načti „Celá doba“ tlačítkem nahoře.</div>')}`;
+      () => ever().length ? `<table><tr><th>Formát</th><th>Podíl v top videích</th><th>Zhlédnutí celkem</th></tr>${ever().map(r => `<tr><td><b>${esc(r.name)}</b><div class="ch">${esc(r.tip)}</div></td><td>${Math.round(r.s * 100)} %</td><td>${n(r.views)}</td></tr>`).join('')}</table>
+      <div class="tags" style="margin-top:10px">${everBr().map(e => `<span class="tag ok">${esc(e.k)} · ${n(e.views)}</span>`).join('')}</div>` : '<div class="empty">Načti „Celá doba“ tlačítkem nahoře.</div>')}`;
   const open = SECS.find(s => s.id === S.ideaSec);
+  LAZY.clear();
   if (open) {
     const t = IDEA_TILES[open.id] || {};
     $('#main').innerHTML = `<div class="ideahead"><button class="ideaback" data-ideasec="">◀ Všechny nápady</button>
-        <span class="ideaico">${t.img || ''}</span><h2>${esc(t.name || open.title)}</h2>${open.count ? `<span class="tag">${open.count}</span>` : ''}</div>
+        <span class="ideaico">${t.img || ''}</span><h2>${esc(t.name || open.title)}</h2>${open.count && typeof open.count !== 'function' ? `<span class="tag">${open.count}</span>` : ''}</div>
       <div class="ch ideahint">${open.hint}</div>
+      ${IDEA_DAYS_SECS.includes(open.id) ? ideaDaysPick() : ''}
       ${['mix', 'tpl', 'season'].includes(open.id) ? '' : `<details class="ideaload"><summary class="ch">⟳ Načtení dat (novinky / týden / celá doba)</summary>${loadBox}</details>`}
-      <div class="ideabody">${typeof open.body === 'function' ? open.body() : open.body}</div>`;
+      <div class="ideabody"><div class="lazy ch">⏳ Počítám…</div></div>`;
+    // obsah až v dalším kroku – stránka se nejdřív ukáže (záhlaví, ⏳) a nezamrzne na kliknutí
+    IDEA_BODY = open.body; ideaBodyFill();
   } else {
     // dlaždice hned nahoře, načítání dat až pod nimi (na mobilu by jinak zabralo celou obrazovku)
     $('#main').innerHTML = `<div class="ideatiles">${SECS.map(s => { const t = IDEA_TILES[s.id] || {};
       return `<button class="ideatile" data-ideasec="${s.id}" style="--g1:${t.c1};--g2:${t.c2}" title="${esc(s.title)}">
-        ${s.count ? `<span class="ideacount">${esc(String(s.count))}</span>` : ''}<span class="ideaimg">${t.img || ''}</span><b>${esc(t.name || s.title)}</b></button>`; }).join('')}</div>` + loadBox;
+        ${s.count ? `<span class="ideacount"${typeof s.count === 'function' ? ` data-cnt="${s.id}" hidden` : ''}>${typeof s.count === 'function' ? '' : esc(String(s.count))}</span>` : ''}<span class="ideaimg">${t.img || ''}</span><b>${esc(t.name || s.title)}</b></button>`; }).join('')}</div>` + loadBox;
+    IDEA_BODY = null;
+    // počty na dlaždicích se dopočítají až po vykreslení, po jednom (dlaždice jsou vidět hned)
+    const cnt = SECS.filter(s => typeof s.count === 'function'), run = ++IDEA_RUN;
+    const step = () => { const s = cnt.shift(); if (!s || run !== IDEA_RUN) return;
+      const el = $(`#main [data-cnt="${s.id}"]`), v = s.count(); if (el && v) { el.textContent = v; el.hidden = false; }
+      setTimeout(step, 16); };
+    setTimeout(step, 60);
   }
   autoTranslate();
   aiCheck(COUNTRIES.flatMap(c => ['day', 'week'].flatMap(p => getSet(c.id, p)?.items || [])));
@@ -4570,7 +4641,13 @@ document.addEventListener('click', e => {
   if (b.dataset.period === 'star' && !b.dataset.startab) { S.starTab = 'drop'; S.starWho = null; }
   if (b.dataset.period === 'cal') { S.calOff = 0; S.calJump = true; } // 🗓️ otevřít vždy na dnešku
   if (b.dataset.period === 'ideas') S.ideaSec = null; // 💡 záložka = vždy zpátky na dlaždice
-  if (b.dataset.wavedays) { ss('bt_wavedays', +b.dataset.wavedays); renderMain(); return; }
+  // ⏱️ jen přepočítat obsah otevřené funkce, ne celé Nápady
+  if (b.dataset.ideadays) {
+    ss('bt_ideadays', +b.dataset.ideadays);
+    document.querySelectorAll('[data-ideadays]').forEach(x => x.classList.toggle('on', x === b));
+    const el = $('#main .ideabody'); if (el) el.innerHTML = '<div class="lazy ch">⏳ Počítám…</div>';
+    ideaBodyFill(); return;
+  }
   if (b.dataset.ideasec !== undefined) { S.ideaSec = b.dataset.ideasec || null; renderMain(); scrollTo(0, 0); return; }
   if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); try { sessionStorage.setItem('bt_period_s', S.period); } catch {} if (TIME_PERIODS.includes(S.period) || S.period === 'arch') ss('bt_lastp', S.period); show(); }
   else if (b.dataset.startab) renderMain();
@@ -4712,7 +4789,7 @@ if (!ls('bt_mig_dub', false)) {
 const cleanupRemovedCountries = () => { for (const k of kvKeys()) if (/^bt_(c|ch|arch)_(id|vn|sa)(_|$)/.test(k)) kvDelete(k); };
 // po stažení sdílených dat od ostatních obnovit to, co je načtené v paměti
 function reloadMemory() {
-  HCACHE = {}; CHMED = null; PEERIDX = null; // historie, mediány a srovnání s kanálem znovu (mohly přijít body z jiných zařízení)
+  HCACHE = {}; CHMED = null; PEERIDX = null; DATAVER++; // historie, mediány a srovnání s kanálem znovu (mohly přijít body z jiných zařízení)
   const swap = (obj, val) => { for (const k of Object.keys(obj)) delete obj[k]; Object.assign(obj, val); };
   swap(STARS, ls(starKey(), {})); swap(BLOCK, ls('bt_block', {videos:{}, channels:{}}));
   swap(AI_CACHE, ls('bt_aicache', {})); swap(TR, ls('bt_tr', {})); swap(QTR, ls('bt_qtr', {}));
