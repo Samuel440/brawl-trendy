@@ -119,6 +119,9 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .tllane{position:relative;flex:1}
 .tllane i{position:absolute;top:0;bottom:0;border-radius:2px;background:#4f7cff;box-shadow:inset -1px 0 0 rgba(0,0,0,.35)}
 .tlrow.A .tllane i{background:#2ec4b6}
+.tlrow.P{height:17px}
+.tlrow.P .tllbl{font-size:13px;line-height:17px}
+.tllegend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px}
 .vyrpulse{animation:vyrpulse 1.4s ease-in-out infinite}
 @keyframes vyrpulse{50%{opacity:.45}}
 #tabs .vyrlive{box-shadow:inset 0 -3px 0 var(--hot)}
@@ -700,7 +703,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.135'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.136'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4700,15 +4703,18 @@ function vyrTimeline(T) {
   const step = [5, 10, 30, 60, 120, 300, 600].find(x => x * pps >= 70) || 900;
   const ruler = Array.from({length:Math.floor(dur / step) + 1}, (_, i) => `<span style="left:${i * step * pps}px">${tlTime(i * step)}</span>`).join('');
   const stopy = s.stopy.filter(t => t.klipy.length);
-  const rows = stopy.map(t => `<div class="tlrow ${t.typ}"><span class="tllbl" title="${esc(t.nazev)}">${t.typ}${t.n}</span><div class="tllane">${t.klipy.map(k =>
-    `<i style="left:${(k[0] * pps).toFixed(1)}px;width:${Math.max(1, (k[1] - k[0]) * pps).toFixed(1)}px${k[3] && RES_COL[k[3]] ? `;background:${RES_COL[k[3]]}` : ''}" title="${esc(k[2])} · ${tlTime(k[0])}–${tlTime(k[1])}"></i>`).join('')}</div></div>`).join('');
+  // (📋 plán: řádek má ikonu + popis a barvy rovnou jako #hex)
+  const col = c => c && (c[0] === '#' ? c : RES_COL[c]);
+  const rows = stopy.map(t => `<div class="tlrow ${t.typ}"><span class="tllbl" title="${esc(t.nazev)}">${t.ikona || t.typ + t.n}</span><div class="tllane">${t.klipy.map(k =>
+    `<i style="left:${(k[0] * pps).toFixed(1)}px;width:${Math.max(1, (k[1] - k[0]) * pps).toFixed(1)}px${col(k[3]) ? `;background:${col(k[3])}` : ''}" title="${esc(k[2])} · ${tlTime(k[0])}–${tlTime(k[1])}"></i>`).join('')}</div></div>`).join('');
+  const legend = stopy.some(t => t.ikona) ? `<div class="tllegend ch">${stopy.map(t => `<span>${t.ikona} ${esc(t.nazev)} <b>${t.klipy.length}</b></span>`).join('')}</div>` : '';
   const mk = s.markery.map(m => `<b style="left:${(m[0] * pps).toFixed(1)}px;background:${RES_COL[m[1]] || 'var(--accent)'}" title="${esc(m[2])} · ${tlTime(m[0])}"></b>`).join('');
   const nk = stopy.reduce((a, t) => a + t.klipy.length, 0);
   return `<div class="vyrtl"><div class="row"><b>🎞️ Timeline</b>
       <span class="seg">${snaps.map((x, i) => `<button data-vyrsnap="${i}" class="${i === si ? 'on' : ''}">${esc(x.popis)}</button>`).join('')}</span>
       <span class="seg"><button data-vyrzoom="-1" title="Oddálit">−</button><button data-vyrzoom="0" title="Celá timeline">${VYR.ui.zoom}×</button><button data-vyrzoom="1" title="Přiblížit">+</button></span>
       <span class="ch">„${esc(s.timeline)}“ · ${tlTime(dur)} · ${stopy.length} stop · ${nk} klipů · ${s.markery.length} markerů · ${hhmm(s.t)}</span></div>
-    <div class="tlwrap"><div class="tlinner" style="width:${W + 40}px"><div class="tlruler">${ruler}</div><div class="tlmk">${mk}</div>${rows}</div></div></div>`;
+    <div class="tlwrap"><div class="tlinner" style="width:${W + 40}px"><div class="tlruler">${ruler}</div><div class="tlmk">${mk}</div>${rows}</div></div>${legend}</div>`;
 }
 document.addEventListener('scroll', e => { if (e.target.classList?.contains('tlwrap')) VYR.ui.scroll = e.target.scrollLeft; }, true);
 const vyrBar = (p, cls = '') => `<span class="vyrbar ${cls}"><i style="width:${Math.max(0, Math.min(100, p || 0))}%"></i></span>`;
