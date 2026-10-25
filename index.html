@@ -62,14 +62,16 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .qm i.qpj{position:absolute;left:0;top:0;background:#3ddc8455}
 .qm i.qpj.over{background:#ff4f6d55}
 .qm i:not(.qpj){position:relative}
-.discbtn{font-size:12px;padding:5px 10px}
-#controls #updated{margin-right:auto}
 .calalts{display:flex;flex-direction:column;gap:4px;margin:2px 0 8px}
 .calaltrow{display:flex;gap:8px;align-items:center;background:var(--panel2);border-radius:8px;padding:5px 8px}
 .calaltrow span{flex:1;min-width:0}
 .calaltrow b{color:var(--accent)}
 .calcopy{padding:2px 7px;font-size:13px}
 .calalt{margin:4px 0}
+.pingask{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0;padding:8px 10px;border:1px solid var(--accent);border-radius:10px;background:var(--panel2)}
+.calping{margin:4px 0}
+/* 🔴 grafik uložil nové video */
+.staralert{background:var(--hot)!important;color:#fff!important;border-color:var(--hot)!important}
 .calttl{display:flex;gap:6px;align-items:center}
 .calttl input{flex:1;min-width:0}
 .calalt textarea{width:100%;box-sizing:border-box}
@@ -279,6 +281,14 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .rankrow .rv{flex:none;font-weight:700}
 .rankrow button,.rankrow .rkplay{flex:none;width:30px;height:30px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;text-decoration:none;border:1px solid var(--line);background:var(--panel2);color:var(--text)}
 .rankrow .rkplay:hover,.rankrow button:hover{border-color:var(--accent)}
+/* 📱 TOP 10 na mobilu: celý název vedle miniatury (až 3 řádky), zhlédnutí a tlačítka pod ním */
+@media (max-width:600px){
+  .ranklist{max-height:none}
+  .rankrow{flex-wrap:wrap;row-gap:4px;padding:5px 4px;border-bottom:1px solid var(--line);border-radius:0}
+  .rankrow img{width:56px}
+  .rankrow .rt{flex:1 1 calc(100% - 100px);white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-height:1.3}
+  .rankrow .rv{margin-left:auto}
+}
 /* šedé pásmo v malém grafu se objeví plynule */
 svg.hist.bandin polygon,svg.hist.bandin polyline[stroke-dasharray]{animation:bandin .5s ease}
 @keyframes bandin{from{opacity:0}}
@@ -615,7 +625,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.118'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.119'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1153,7 +1163,7 @@ const ptDate = () => new Date().toLocaleDateString('en-CA', {timeZone:'America/L
 function projectSearches(s) {
   const [h, m] = new Date().toLocaleTimeString('en-GB', {timeZone:'America/Los_Angeles', hour12:false}).split(':').map(Number);
   const el = (h % 24) + m / 60;
-  return s < 2 || el < 1 ? 0 : Math.round(s * 24 / el);
+  return s < 2 || el < 2 ? 0 : Math.round(s * 24 / el);
 }
 const SEARCH_MAX = 100, QUERY_MAX = 10000;
 function quota(search = 0, query = 0) {
@@ -1187,7 +1197,8 @@ function renderQuotaBar() {
     const pct = (v, max) => Math.min(100, Math.round(v / max * 100));
     const bar = (v, max, pj) => `<span class="qm">${pj ? `<i class="qpj${pj > max ? ' over' : ''}" style="width:${pct(pj, max)}%"></i>` : ''}<i style="width:${pct(v, max)}%"></i></span>`;
     // odhad do konce dne (reset o půlnoci pacifického času): dnešní tempo × zbývající hodiny
-    const pj = projectSearches(s), pjq = projectSearches(q);
+    // odhad jen u majitele (tam běží automatika + robot); grafik hledá jen ručně, tam by tempo nic neznamenalo
+    const pj = who === '' ? projectSearches(s) : 0, pjq = who === '' ? projectSearches(q) : 0;
     return `<span class="qp ${hot ? 'hot' : ''}" title="Hledání ${s} / ${lim} · dotazy ${q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')} (součet všech zařízení). Obnoví se v 9:00.${pj ? `\nSvětle zelená = odhad při dnešním tempu: ~${pj} / ${lim} do konce dne${pj > lim ? ' – NEVYJDE, hledání dojdou dřív' : ' – vyjde'}.` : ''}${pjq ? `\nDotazy ⚡ odhad: ~${pjq.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}${pjq > QUERY_MAX ? ' – NEVYJDE' : ' – vyjde'}.` : ''}"><b>${esc(typeof whoLabel === 'function' ? whoLabel(who) : 'Moje')}</b>
       <span class="qi">🔎 ${bar(s, lim, pj)} ${s}/${lim}${who === me && searchBlocked() ? ' – došla' : ''}</span><span class="qi">⚡ ${bar(q, QUERY_MAX, pjq)} ${q >= 1000 ? (q / 1000).toFixed(1).replace('.', ',') + ' tis.' : q}</span></span>`;
   });
@@ -2137,6 +2148,16 @@ const shortT = t => `„${String(t).slice(0, 60)}${String(t).length > 60 ? '…'
 // miniatury se hlídají u videí ze všech kolekcí – hlídá ten, komu zrovna stránka běží
 const allStarIds = () => [...new Set(collections('bt_star').flatMap(w => Object.keys(w === meWho() ? STARS : ls(starKey(w), {}))))];
 const STARS = ls(starKey(), {});
+// 🔴 když grafik (kdokoli kromě majitele) uloží nové video, majiteli zčervená záložka ⭐ – obráceně ne
+// bt_starseen = {kdo: čas posledního viděného uložení}, jen na tomhle zařízení
+function starNew(w) {
+  if (!isOwner() || !w.startsWith('g_')) return 0;
+  const seen = ls('bt_starseen', {}), at = Math.max(0, ...Object.values(ls(starKey(w), {})).map(s => s.at || 0));
+  if (!(w in seen)) { seen[w] = at; ss('bt_starseen', seen); return 0; } // poprvé: stará uložení nehlásit
+  return at > seen[w] ? at : 0;
+}
+const starAlert = () => collections('bt_star').some(starNew);
+function starSeen(w) { const seen = ls('bt_starseen', {}); seen[w] = Date.now(); ss('bt_starseen', seen); }
 const RAW_KEYS = ['id', 't', 'ch', 'chId', 'pub', 'views', 'likes', 'com', 'dur', 'subs', 'cc', 'lang', 'chL', 'homeL', 'bs', 'bsT', 'bsN', 'bsTag', 'live', 'src', 'cand', 'weak'];
 // ☆ → uložit (a hned nabídnout kolekce) · ★ → nabídka: kolekce, nebo „Odebrat z oblíbených“
 function toggleStar(it, b) {
@@ -2424,7 +2445,7 @@ function calNotes(id) { return collections('bt_calg').flatMap(w => (ls(calgKey(w
 function renderCal() {
   const own = isOwner();
   // úplně prázdné záznamy (bez názvu, scénáře, miniatury i inspirace) – vznikly omylem, majitel je rovnou uklidí
-  if (own) Object.values(ls(calKey(), {})).filter(e => !e.title && !e.script && !e.thumb && !e.inspo).forEach(e => calDelete(e.id));
+  if (own) Object.values(ls(calKey(), {})).filter(e => !e.title && !e.script && !e.thumb && !e.inspo && !e.alt).forEach(e => calDelete(e.id));
   const all = Object.values(ls(calKey(), {}));
   const t = new Date(); t.setHours(0, 0, 0, 0);
   const start = new Date(t); start.setDate(t.getDate() - ((t.getDay() + 6) % 7) + (S.calOff || 0) * 7);
@@ -2455,7 +2476,9 @@ function renderCal() {
   $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>${calWarn}
       <div class="row"><button data-calshift="-1">◀ Týden zpět</button><button data-calshift="0">Dnes</button><button data-calshift="1">Týden dál ▶</button>
         ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
-      <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div></div>
+      <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div>
+      ${own ? '' : PING.on() ? '<div class="row ch">🔔 Oznámení zapnutá – když ti Samko pošle zadání miniatury, vyskočí okno se zvukem (stačí mít stránku otevřenou, klidně na pozadí).</div>'
+        : '<div class="row"><button class="primary" data-pingon>🔔 Zapnout oznámení od Samka</button><span class="ch">Okno se zvukem na Windows i mobilu, když ti pošle zadání miniatury.</span></div>'}</div>
     <div class="caltable" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
   if (CAL_LINK) setTimeout(openCalLink); // 🔗 přišel odkaz na video z kalendáře
   const hd = $('header');
@@ -2677,6 +2700,9 @@ function calEditor(id, date, focusScript, edit = true) {
   const sel = () => new Set(ytIds(e.inspo));
   // 🅰️🅱️ alternativní názvy (jeden na řádek); hlavní název = A, další B, C…
   const altT = () => String(e.alt || '').split('\n').map(s => s.trim()).filter(Boolean);
+  // 🔔 po dopsání zadání miniatury se zeptat, jestli poslat grafikovi oznámení
+  const pingInfo = () => e.ping ? `<span class="ch">🔔 Oznámení grafikovi posláno ${fmtDate(e.ping.at)}</span> <button type="button" data-calping="yes">🔔 Poslat znovu</button>` : '';
+  const pingAsk = () => `<div class="pingask">🔔 Poslat grafikovi <b>OZNÁMENÍ</b> (okno se zvukem na Windows / mobilu)? <button type="button" class="primary" data-calping="yes">Ano, poslat</button><button type="button" data-calping="no">Ne</button></div>`;
   const altRows = () => altT().map((t, i) => `<div class="calaltrow"><b>${String.fromCharCode(66 + i)}</b> <span>${esc(t)}</span><button class="calcopy" data-calcopy="${esc(t)}" title="Zkopírovat název">📋</button></div>`).join('');
   const strip = () => stars.length ? stars.map(([vid, s]) => `<button class="calpick ${sel().has(vid) ? 'on' : ''}" data-calpick="${esc(vid)}" title="${esc(s.t || '')}"><img src="https://i.ytimg.com/vi/${esc(vid)}/mqdefault.jpg" alt="">${sel().has(vid) ? '<span class="tick">✔</span>' : ''}</button>`).join('') : '<span class="ch">Zatím nemáš žádná ⭐ uložená videa.</span>';
   const notes = () => calNotes(e.id).map(n => `<div class="calnote"><b>${esc(whoLabel(n.w))}</b> <span class="ch">${fmtDate(n.at)}</span>
@@ -2701,7 +2727,7 @@ function calEditor(id, date, focusScript, edit = true) {
     ${own ? `<div class="row"><button data-calbrowse="star">⭐ Vybrat z oblíbených</button><button data-calbrowse="trend">🔥 Vybrat z trendů</button><button data-calbrowse="seen">👀 Naposledy viděné</button></div>
       <details><summary class="ch">✏️ Odkazy ručně</summary><textarea class="calin" data-f="inspo" rows="2" placeholder="Odkazy na videa z YouTube (každý na řádek)">${esc(e.inspo)}</textarea></details>` : ''}
     ${showThumb ? `<h4>🖼️ Co chci na miniatuře <span class="ch">(pro grafika)</span></h4>
-    ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea>` : `<div class="caltxt">${esc(e.thumb)}</div>`}` : ''}
+    ${own ? `<textarea class="calin" data-f="thumb" rows="3" placeholder="Např. já s překvapeným obličejem vlevo, Spike vpravo, velký nápis 1000 BOXŮ, červené šipky…">${esc(e.thumb)}</textarea><div class="calping">${pingInfo()}</div>` : `<div class="caltxt">${esc(e.thumb)}</div>`}` : ''}
     ${showScript ? `<h4>📝 Scénář <button data-calfull title="Samostatné okno – posuneš si ho kamkoli, i na druhý monitor">🪟 Otevřít v okně</button>${own ? ' <button data-caltext>📥 Vložit z uložených</button>' : ''}</h4>
     ${own ? `<label class="chkopt"><input type="checkbox" data-f="checks" ${e.checks ? 'checked' : ''}> ☑️ Fajfkování řádků v okně scénáře <span class="ch">(každý řádek si při natáčení odškrtneš)</span>${(e.done || []).length ? ` <button type="button" data-calundone>↺ Zrušit fajfky (${e.done.length})</button>` : ''}</label>` : ''}
     ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt script">${esc(e.script)}</div>`}` : ''}
@@ -2721,6 +2747,11 @@ function calEditor(id, date, focusScript, edit = true) {
   // ☑️ fajfky v okně scénáře: ukládají se k videu (jen majitel; grafik si je odškrtá jen u sebe na chvíli)
   const sOpts = {get checks() { return !!e.checks; }, done:new Set(e.done || []),
     toggle() { e.done = [...sOpts.done]; if (admin) { calSave(e); if (!own) renderMain(); } }};
+  // „change“ u textarea = dopsáno a kliknuto jinam
+  ov.addEventListener('change', ev => {
+    if (!own || ev.target.dataset?.f !== 'thumb' || !ev.target.value.trim() || ev.target.value === e.ping?.text) return;
+    ov.querySelector('.calping').innerHTML = pingAsk();
+  });
   ov.addEventListener('input', ev => {
     const f = ev.target.dataset?.f; if (!f || !own) return;
     e[f] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
@@ -2748,6 +2779,14 @@ function calEditor(id, date, focusScript, edit = true) {
         const r = document.createRange(); r.selectNodeContents(b.previousElementSibling || b.parentNode); getSelection().removeAllRanges(); getSelection().addRange(r);
       });
       return;
+    }
+    if (b?.dataset.calping) {
+      if (b.dataset.calping === 'yes') {
+        clearTimeout(timer); grab(); e.ping = {at:Date.now(), text:e.thumb}; calSave(e);
+        if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
+        logEvent(`🔔 poslal grafikovi zadání miniatury ${shortT(e.title || 'video')}`);
+      }
+      ov.querySelector('.calping').innerHTML = pingInfo(); return;
     }
     if (b?.dataset.calpick) return toggleInspo(b.dataset.calpick);
     if (b?.dataset.calunpick) return toggleInspo(b.dataset.calunpick);
@@ -3097,11 +3136,12 @@ function renderStars() {
   }
   const ideas = S.starTab === 'ideas', base = ideas ? 'bt_mixsaved' : 'bt_star';
   const who = S.starWho ?? meWho(), mine = who === meWho();
+  if (!ideas && starNew(who)) { starSeen(who); renderHeader(); }
   const coll = ideas ? ls(mixKey(who), []) : mine ? STARS : ls(starKey(who), {});
   const count = (b, w) => b === 'bt_star' ? Object.keys(w === meWho() ? STARS : ls(starKey(w), {})).length : ls(mixKey(w), []).length;
   // nahoře: Videa / Nápady / Přenos, pod tím kolekce lidí (vlastní je vybraná automaticky podle přihlášení)
   let tabs = `<div class="mixbar"><span class="seg"><button data-startab="drop">📤 Přenos</button><button data-startab="videos" class="${!ideas ? 'on' : ''}">⭐ Videa</button><button data-startab="ideas" class="${ideas ? 'on' : ''}">💡 Nápady</button></span>
-    <span class="seg">${collections(base).map(w => `<button data-starwho="${w}" class="${w === who ? 'on' : ''}">${w === meWho() ? '👤 ' : '👥 '}${esc(whoLabel(w))} (${count(base, w)})</button>`).join('')}</span></div>`;
+    <span class="seg">${collections(base).map(w => `<button data-starwho="${w}" class="${w === who ? 'on' : !ideas && starNew(w) ? 'staralert' : ''}">${w === meWho() ? '👤 ' : '👥 '}${esc(whoLabel(w))} (${count(base, w)})</button>`).join('')}</span></div>`;
   if (ideas) {
     const head = foldHead('ideas', who, coll), inF = !!openFold('ideas', who);
     $('#main').innerHTML = tabs + (inF ? head : `<div class="summary"><h3>💡 Uložené nápady – ${esc(whoLabel(who))} – ${coll.length}</h3>
@@ -3666,7 +3706,8 @@ function renderHeader() {
   // pořadí: 🗓️ Kalendář (začíná se na něm) · 🎬 Videa · ⭐ Uložené · 💡 Nápady; 🗄️ Archiv je v řadě období (trochu jinak vypadá)
   const inVideos = TIME_PERIODS.includes(S.period) || S.period === 'arch';
   const lastP = [...TIME_PERIODS, 'arch'].includes(ls('bt_lastp', 'week')) ? ls('bt_lastp', 'week') : 'week';
-  $('#tabs').innerHTML = tab('cal') + `<button data-period="${inVideos ? S.period : lastP}" class="${inVideos ? 'on' : ''}">🎬 Videa</button>` + tab('star') + tab('ideas');
+  $('#tabs').innerHTML = tab('cal') + `<button data-period="${inVideos ? S.period : lastP}" class="${inVideos ? 'on' : ''}">🎬 Videa</button>`
+    + tab('star').replace('class="', `${starAlert() ? 'title="Grafik uložil nová videa" ' : ''}class="${starAlert() ? 'staralert ' : ''}`) + tab('ideas');
   $('#periods').style.display = inVideos ? 'flex' : 'none';
   $('#periods').innerHTML = TIME_PERIODS.map(tab).join('') + `<button data-period="arch" class="archbtn ${S.period === 'arch' ? 'on' : ''}" title="Archiv – jen z uložených dat, kvótu nebere">${PERIODS.arch.label}</button>`;
   STICK = stickFor(); setTimeout(applyStick); // 📱 přilepit záložky (stránka se někdy kreslí bez renderMain)
@@ -3686,11 +3727,10 @@ function renderHeader() {
   } else if (S.period === 'arch') {
     $('#controls').innerHTML = sortSel + common + '<span>Archiv je jen z uložených dat – nic nestahuje a kvótu nebere.</span>';
   } else {
-    // 🔭 objevit malé kanály hned (dřív schované ve sbalených statistikách / Nastavení)
     $('#controls').innerHTML = `
       ${sortSel}
       ${common}
-      <span id="updated"></span>${S.key && TIME_PERIODS.includes(S.period) ? `<button class="discbtn" data-refreshnow title="Plné hledání nových videí hned teď (1–2 hledání ze 100), bez čekání na časomíru">⟳ Aktualizovat teď</button>` : ''}${S.key ? `<button class="discbtn" data-discover="${S.country}"${searchLeft() ? '' : ' disabled'} title="${searchLeft() ? 'Najít nové malé Brawl kanály v tomhle státě (1 hledání ze 100 + pár levných dotazů)' : 'Na dnešek došla hledání – obnoví se v 9:00'}">🔭 Malé kanály teď</button>` : ''}`;
+      <span id="updated"></span>`;
   }
 }
 
@@ -3801,7 +3841,7 @@ function renderCountry(set, c, p) {
       <details class="row ch" ${tracked.length ? '' : 'open'}><summary>📡 Sledované Brawl kanály: ${tracked.length}${tracked.length ? '' : ' (naučí se z výsledků, nebo si je přidej ručně)'}</summary>
         <div class="tags" style="margin-top:6px">${tracked.map(ch => `<span class="tag ${ch.manual ? 'ok' : ''}"><a href="https://www.youtube.com/channel/${esc(ch.id)}" target="_blank" rel="noopener" style="text-decoration:none">${ch.manual ? '📌 ' : ''}${esc(ch.name)}${ch.ids.length ? ' · ' + ch.ids.length + ' videí' : ''}</a>${ch.manual ? ` <button class="x" data-unch="${esc(ch.id)}" title="Přestat sledovat">✖</button>` : ''}</span>`).join('')}</div>
         <div class="addch"><input id="chInput" placeholder="@LukasBrawlStars nebo odkaz na kanál"><button id="btnAddCh">➕ Přidat kanál do ${esc(c.name)}</button></div></details>
-      ${(() => { const d = discInfo(c.id); return `<div class="row ch">🔭 Objevování malých kanálů: ${d.last ? `naposledy ${ago((Date.now() - d.last) / 3600e3)}, celkem objeveno ${d.total || 0}` : 'ještě neproběhlo'}${S.discover ? ` · důkladně samo jednou za ${S.discDays} ${S.discDays === 1 ? 'den' : 'dní'}` : ' · vypnuté v Nastavení'} <button data-discover="${c.id}"${searchLeft() ? ' class="costly" title="1 hledání ze 100 denních + pár levných dotazů"' : ''}>🔭 Hledat malé kanály teď</button></div>`; })()}
+      ${(() => { const d = discInfo(c.id); return `<div class="row ch">🔭 Objevování malých kanálů: ${d.last ? `naposledy ${ago((Date.now() - d.last) / 3600e3)}, celkem objeveno ${d.total || 0}` : 'ještě neproběhlo'}${S.discover ? ` · důkladně samo jednou za ${S.discDays} ${S.discDays === 1 ? 'den' : 'dní'}` : ' · vypnuté v Nastavení'} <button data-discover="${c.id}"${searchLeft() ? ' class="costly" title="1 hledání ze 100 denních + pár levných dotazů"' : ''}>🔭 Hledat malé kanály teď</button>${S.key && TIME_PERIODS.includes(S.period) ? ` <button data-refreshnow class="costly" title="Plné hledání nových videí v ${esc(c.name)} hned teď (1–2 hledání ze 100), bez čekání na časomíru">⟳ Aktualizovat vše teď</button>` : ''}</div>`; })()}
     </details></div>
     ${list.length ? sections.map(([h, l]) => `<div class="sec"><h2>${h} <span class="ch">(${l.length})</span></h2>${l.length ? `<div class="grid">${l.slice(0, S.showN).map((it, i) => card(it, i)).join('')}</div>${l.length > S.showN ? `<button class="more" data-showmore>Zobrazit dalších ${Math.min(SHOW_STEP, l.length - S.showN)} (z ${l.length})</button>` : ''}` : '<div class="empty">Nic.</div>'}</div>`).join('') : '<div class="empty">Nic nenalezeno. Zkus jiný stát, nebo v ⚙️ Nastavení vypnout „Jen videa z daného státu“.</div>'}
     ${set.next ? `<button class="more" id="btnMore">Načíst dalších 50 (1 hledání)</button>` : ''}`;
@@ -4393,6 +4433,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.type) { S.type = b.dataset.type; ss('bt_type', S.type); rerender(); }
   else if (b.dataset.tr !== undefined) toggleTranslate(b);
   else if (b.dataset.copy !== undefined) { const t = b.closest('.card').querySelector('.title').textContent; navigator.clipboard?.writeText(t).then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
+  else if (b.hasAttribute('data-pingon')) pingEnable();
   else if (b.id === 'btnRefresh' || b.hasAttribute('data-refreshnow')) { S.view = null; renderHeader(); showCountry(true); }
   else if (b.id === 'btnMore') loadMore();
   else if (b.id === 'btnKey') renderSetup();
@@ -4586,6 +4627,48 @@ function calmRerender() {
 })();
 // co minutu (když je stránka vidět) se podívat, jestli ostatní nenačetli něco nového – nic to nestojí
 setInterval(() => { if (!document.hidden && SYNC.ok && !SYNC.pushing && !SYNC.inPull) pullShared(); }, 30e3);
+// 🔔 Oznámení pro grafika: majitel u videa v kalendáři pošle „ping“ (e.ping = {at, text}), grafikovi stránka
+// ukáže systémové okno (Windows / mobil) se zvukem. Funguje, když má grafik stránku otevřenou (klidně na pozadí);
+// zavřená stránka se dozví při dalším otevření. Bez serveru a zdarma.
+// kliknutí na 🔔 oznámení u už otevřené stránky jen změní #cal=… → otevřít to video
+addEventListener('hashchange', () => { if (location.hash.startsWith('#cal=')) { readCalLink(); show(); } });
+var PING = {on:() => typeof Notification !== 'undefined' && Notification.permission === 'granted'};
+async function pingEnable() {
+  if (typeof Notification === 'undefined') return status('Tenhle prohlížeč oznámení neumí – zkus Chrome.', true);
+  const p = await Notification.requestPermission();
+  if (p === 'granted') { try { await navigator.serviceWorker?.register('sw.js'); } catch {} pingSound(); status('🔔 Oznámení zapnutá – až ti Samko pošle zadání miniatury, vyskočí okno se zvukem.'); }
+  else status('Oznámení jsou zakázaná – povol je v nastavení prohlížeče u téhle stránky (ikona zámku vedle adresy).', true);
+  renderMain();
+}
+function pingSound() {
+  try {
+    const a = new (window.AudioContext || window.webkitAudioContext)();
+    [[880, 0], [1320, .18]].forEach(([f, t]) => { const o = a.createOscillator(), g = a.createGain();
+      o.frequency.value = f; g.gain.setValueAtTime(.25, a.currentTime + t); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + t + .35);
+      o.connect(g).connect(a.destination); o.start(a.currentTime + t); o.stop(a.currentTime + t + .4); });
+  } catch {}
+}
+async function pingShow(e) {
+  const title = `🔔 Miniatura: ${e.title || 'video'}`, body = String(e.ping.text || e.thumb || '').slice(0, 180), data = {id:e.id};
+  pingSound(); status(`${title} – ${body}`);
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) return reg.showNotification(title, {body, data, tag:'ping_' + e.id, renotify:true, requireInteraction:true});
+  } catch {}
+  try { const n = new Notification(title, {body, tag:'ping_' + e.id, requireInteraction:true}); n.onclick = () => { focus(); calEditor(e.id, e.date, false, false); n.close(); }; } catch {}
+}
+function pingCheck() {
+  if (isOwner() || !PING.on()) return;
+  const seen = ls('bt_pingseen', 0), fresh = Object.values(ls(calKey(), {})).filter(e => e.ping?.at > seen);
+  if (seen === 0) { ss('bt_pingseen', Date.now()); return; } // poprvé: stará oznámení nehlásit
+  if (!fresh.length) return;
+  ss('bt_pingseen', Math.max(...fresh.map(e => e.ping.at)));
+  fresh.forEach(pingShow);
+}
+setInterval(pingCheck, 15e3);
+// grafik se zapnutými oznámeními: Disk kontrolovat i se stránkou na pozadí (prohlížeč to stejně brzdí na ~1× za minutu)
+setInterval(() => { if (document.hidden && PING.on() && !isOwner() && SYNC.ok && !SYNC.pushing && !SYNC.inPull) pullShared().then(pingCheck); }, 60e3);
+if (PING.on()) navigator.serviceWorker?.register('sw.js').catch(() => {});
 // 📤 Přenos: obrázek vložený Ctrl+V nebo soubor přetažený na stránku se rovnou pošle (jen na záložce Přenos, ve vlastní kolekci)
 const onDropTab = () => S.period === 'star' && S.starTab === 'drop' && !S.view && (S.starWho ?? meWho()) === meWho();
 document.addEventListener('paste', e => {
