@@ -72,7 +72,13 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .calping{margin:4px 0}
 /* 🔴 grafik uložil nové video */
 .staralert{background:var(--hot)!important;color:#fff!important;border-color:var(--hot)!important}
-.calttl{display:flex;gap:6px;align-items:center}
+.starnewsec{border:2px solid var(--hot);border-radius:14px;padding:10px 12px;margin:8px 0 14px}
+.starnewsec h3{margin:0 0 8px;color:var(--hot)}
+.starnewsec.seen{border-color:var(--line)}
+.starnewsec.seen h3{color:var(--text)}
+.card.cardnew{box-shadow:0 0 0 2px var(--hot)}
+.newbadge{position:absolute;right:8px;bottom:8px;background:var(--hot);color:#fff;font-weight:900;font-size:11px;border-radius:6px;padding:2px 7px}
+.calttl{display:flex;gap:6px;align-items:center;padding-right:44px} /* místo pro ✖ zavřít vpravo nahoře */
 .calttl input{flex:1;min-width:0}
 .calalt textarea{width:100%;box-sizing:border-box}
 /* 📊 souhrn nad videi jde sbalit (na mobilu je sbalený) */
@@ -625,7 +631,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.119'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.120'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2157,7 +2163,23 @@ function starNew(w) {
   return at > seen[w] ? at : 0;
 }
 const starAlert = () => collections('bt_star').some(starNew);
-function starSeen(w) { const seen = ls('bt_starseen', {}); seen[w] = Date.now(); ss('bt_starseen', seen); }
+function starSeen(w) { const seen = ls('bt_starseen', {}); seen[w] = Math.max(Date.now(), starNew(w)); ss('bt_starseen', seen); }
+// která videa jsou od posledního prohlédnutí nová: [{...video, id, _w:kdo}]
+const starFresh = () => collections('bt_star').filter(starNew).flatMap(w => { const seen = ls('bt_starseen', {})[w] || 0;
+  return Object.entries(ls(starKey(w), {})).filter(([, s]) => (s.at || 0) > seen).map(([id, s]) => ({...s, id:s.id || id, _w:w})); });
+// označení zmizí, až nové videa opravdu uvidím: sekce 🆕 je na obrazovce a já v ní scrolluju
+let STARNEW_SCROLL = 0, STARNEW_Y = scrollY;
+addEventListener('scroll', () => {
+  const dy = Math.abs(scrollY - STARNEW_Y); STARNEW_Y = scrollY;
+  const sec = document.querySelector('.starnewsec:not(.seen)'); if (!sec) return;
+  const r = sec.getBoundingClientRect(); if (r.top > innerHeight * .8 || r.bottom < 0) return;
+  if ((STARNEW_SCROLL += Math.min(dy, 200)) < 150) return; // aspoň kus scrollu = opravdu se dívám, ne jen obnovení pozice stránky
+  STARNEW_SCROLL = 0; sec.classList.add('seen');
+  for (const w of new Set(sec.dataset.who.split(','))) starSeen(w);
+  sec.querySelector('h3').insertAdjacentHTML('beforeend', ' <span class="ch">✔ viděno</span>');
+  renderHeader();
+  document.querySelectorAll('.mixbar .staralert').forEach(b => b.classList.remove('staralert'));
+}, {passive:true});
 const RAW_KEYS = ['id', 't', 'ch', 'chId', 'pub', 'views', 'likes', 'com', 'dur', 'subs', 'cc', 'lang', 'chL', 'homeL', 'bs', 'bsT', 'bsN', 'bsTag', 'live', 'src', 'cand', 'weak'];
 // ☆ → uložit (a hned nabídnout kolekce) · ★ → nabídka: kolekce, nebo „Odebrat z oblíbených“
 function toggleStar(it, b) {
@@ -3136,7 +3158,6 @@ function renderStars() {
   }
   const ideas = S.starTab === 'ideas', base = ideas ? 'bt_mixsaved' : 'bt_star';
   const who = S.starWho ?? meWho(), mine = who === meWho();
-  if (!ideas && starNew(who)) { starSeen(who); renderHeader(); }
   const coll = ideas ? ls(mixKey(who), []) : mine ? STARS : ls(starKey(who), {});
   const count = (b, w) => b === 'bt_star' ? Object.keys(w === meWho() ? STARS : ls(starKey(w), {})).length : ls(mixKey(w), []).length;
   // nahoře: Videa / Nápady / Přenos, pod tím kolekce lidí (vlastní je vybraná automaticky podle přihlášení)
@@ -3157,17 +3178,26 @@ function renderStars() {
   const head = foldHead('videos', who, allVids), inF = !!openFold('videos', who);
   // filtr Videa/Shorts tu NEPLATÍ – uložené ukázat vždy všechny (dřív zapnuté „Shorts“ schovalo dlouhá videa a kolekce vypadala prázdná)
   const list = foldSplit(allVids, 'videos', who).sort(byOrd).map(s => enrich(s, C(s.cid))).filter(matchQ);
-  $('#main').innerHTML = tabs + (inF ? head : `<div class="summary"><h3>⭐ Uložená videa – ${esc(whoLabel(who))} – ${allVids.length}</h3>
+  // 🆕 co grafik nově uložil – nahoře, ať hned vidím JAKÁ videa (zmizí po prohlédnutí a scrollu v té části)
+  const fresh = starFresh().sort((a, b) => b.at - a.at), freshIds = new Set(fresh.map(s => s.id));
+  const freshWho = [...new Set(fresh.map(s => s._w))];
+  const freshHtml = fresh.length ? `<div class="starnewsec" data-who="${freshWho.join(',')}"><h3>🆕 Nově uložil${freshWho.length === 1 ? ` ${esc(whoLabel(freshWho[0]))}` : 'i'} – ${fresh.length} ${fresh.length === 1 ? 'video' : fresh.length < 5 ? 'videa' : 'videí'}</h3>
+    <div class="grid">${fresh.map(s => enrich(s, C(s.cid))).map((it, i) => card(it, i, true)).join('')}</div></div>` : '';
+  $('#main').innerHTML = tabs + freshHtml + (inF ? head : `<div class="summary"><h3>⭐ Uložená videa – ${esc(whoLabel(who))} – ${allVids.length}</h3>
     ${mine ? '' : '<div class="row ch">Kolekce druhého člověka. ☆ u videa ho uloží do tvé kolekce.</div>'}
     <div class="row ch">☆ v rohu miniatury video uloží, na ★ si vybereš kolekce nebo ho odebereš. Jedno video může být ve víc kolekcích.</div>
     <div class="row ch">🖼️ U uložených videí se každých 30 min hlídá miniatura – když ji youtuber změní, uloží se nová verze. <button id="btnThumbsNow">Zkontrolovat miniatury teď</button></div></div>`)
     + `${inF ? '' : head}
     ${list.length ? `<div class="grid">${list.map((it, i) => card(it, i, true)).join('')}</div>` : `<div class="empty">${inF ? 'Kolekce je zatím prázdná – na ★ u videa ji vyber.' : folds('videos', who).length ? 'Všechna videa jsou v kolekcích.' : 'Zatím nic. Klikni na ☆ v rohu miniatury u videa, které se ti líbí.'}</div>`}`;
+  // 🆕 štítek na nových videích (v horní části i v grafikově kolekci)
+  if (freshIds.size) document.querySelectorAll('#main .grid .card').forEach(el => {
+    if (freshIds.has(el.dataset.id) && (el.closest('.starnewsec') || !mine)) { el.classList.add('cardnew'); el.querySelector('.thumb, a')?.insertAdjacentHTML('beforeend', '<span class="newbadge">NOVÉ</span>'); }
+  });
   // 📁 u videa: ve kterých kolekcích je (klik = změnit)
-  if (mine) document.querySelectorAll('#main .grid .card').forEach(el => {
+  if (mine) document.querySelectorAll('#main .grid:not(.starnewsec .grid) .card').forEach(el => {
     el.querySelector('.actions')?.insertAdjacentHTML('beforebegin', foldBtn('videos', 'star', el.dataset.id, STARS[el.dataset.id] || {}));
   });
-  if (mine && !S.q.trim()) document.querySelectorAll('#main .grid .card').forEach(el => {
+  if (mine && !S.q.trim()) document.querySelectorAll('#main .grid:not(.starnewsec .grid) .card').forEach(el => {
     el.querySelector('.actions')?.insertAdjacentHTML('afterbegin', ordBtns('star', el.dataset.id));
     el.draggable = true; el.dataset.drag = 'star'; // 🖱️ chytit a pustit na místo jiného videa
   });
