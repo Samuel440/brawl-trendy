@@ -62,13 +62,16 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .qm i.qpj{position:absolute;left:0;top:0;background:#3ddc8455}
 .qm i.qpj.over{background:#ff4f6d55}
 .qm i:not(.qpj){position:relative}
-.discbtn{margin-left:auto;font-size:12px;padding:5px 10px}
+.discbtn{font-size:12px;padding:5px 10px}
+#controls #updated{margin-right:auto}
 .calalts{display:flex;flex-direction:column;gap:4px;margin:2px 0 8px}
 .calaltrow{display:flex;gap:8px;align-items:center;background:var(--panel2);border-radius:8px;padding:5px 8px}
 .calaltrow span{flex:1;min-width:0}
 .calaltrow b{color:var(--accent)}
 .calcopy{padding:2px 7px;font-size:13px}
 .calalt{margin:4px 0}
+.calttl{display:flex;gap:6px;align-items:center}
+.calttl input{flex:1;min-width:0}
 .calalt textarea{width:100%;box-sizing:border-box}
 /* 📊 souhrn nad videi jde sbalit (na mobilu je sbalený) */
 .sumd > summary{list-style:none;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
@@ -612,7 +615,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.117'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.118'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1184,9 +1187,9 @@ function renderQuotaBar() {
     const pct = (v, max) => Math.min(100, Math.round(v / max * 100));
     const bar = (v, max, pj) => `<span class="qm">${pj ? `<i class="qpj${pj > max ? ' over' : ''}" style="width:${pct(pj, max)}%"></i>` : ''}<i style="width:${pct(v, max)}%"></i></span>`;
     // odhad do konce dne (reset o půlnoci pacifického času): dnešní tempo × zbývající hodiny
-    const pj = projectSearches(s);
-    return `<span class="qp ${hot ? 'hot' : ''}" title="Hledání ${s} / ${lim} · dotazy ${q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')} (součet všech zařízení). Obnoví se v 9:00.${pj ? `\nSvětle zelená = odhad při dnešním tempu: ~${pj} / ${lim} do konce dne${pj > lim ? ' – NEVYJDE, hledání dojdou dřív' : ' – vyjde'}.` : ''}"><b>${esc(typeof whoLabel === 'function' ? whoLabel(who) : 'Moje')}</b>
-      <span class="qi">🔎 ${bar(s, lim, pj)} ${s}/${lim}${who === me && searchBlocked() ? ' – došla' : ''}</span><span class="qi">⚡ ${bar(q, QUERY_MAX)} ${q >= 1000 ? (q / 1000).toFixed(1).replace('.', ',') + ' tis.' : q}</span></span>`;
+    const pj = projectSearches(s), pjq = projectSearches(q);
+    return `<span class="qp ${hot ? 'hot' : ''}" title="Hledání ${s} / ${lim} · dotazy ${q.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')} (součet všech zařízení). Obnoví se v 9:00.${pj ? `\nSvětle zelená = odhad při dnešním tempu: ~${pj} / ${lim} do konce dne${pj > lim ? ' – NEVYJDE, hledání dojdou dřív' : ' – vyjde'}.` : ''}${pjq ? `\nDotazy ⚡ odhad: ~${pjq.toLocaleString('cs')} / ${QUERY_MAX.toLocaleString('cs')}${pjq > QUERY_MAX ? ' – NEVYJDE' : ' – vyjde'}.` : ''}"><b>${esc(typeof whoLabel === 'function' ? whoLabel(who) : 'Moje')}</b>
+      <span class="qi">🔎 ${bar(s, lim, pj)} ${s}/${lim}${who === me && searchBlocked() ? ' – došla' : ''}</span><span class="qi">⚡ ${bar(q, QUERY_MAX, pjq)} ${q >= 1000 ? (q / 1000).toFixed(1).replace('.', ',') + ' tis.' : q}</span></span>`;
   });
   el.innerHTML = parts.join('');
 }
@@ -2674,6 +2677,7 @@ function calEditor(id, date, focusScript, edit = true) {
   const sel = () => new Set(ytIds(e.inspo));
   // 🅰️🅱️ alternativní názvy (jeden na řádek); hlavní název = A, další B, C…
   const altT = () => String(e.alt || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const altRows = () => altT().map((t, i) => `<div class="calaltrow"><b>${String.fromCharCode(66 + i)}</b> <span>${esc(t)}</span><button class="calcopy" data-calcopy="${esc(t)}" title="Zkopírovat název">📋</button></div>`).join('');
   const strip = () => stars.length ? stars.map(([vid, s]) => `<button class="calpick ${sel().has(vid) ? 'on' : ''}" data-calpick="${esc(vid)}" title="${esc(s.t || '')}"><img src="https://i.ytimg.com/vi/${esc(vid)}/mqdefault.jpg" alt="">${sel().has(vid) ? '<span class="tick">✔</span>' : ''}</button>`).join('') : '<span class="ch">Zatím nemáš žádná ⭐ uložená videa.</span>';
   const notes = () => calNotes(e.id).map(n => `<div class="calnote"><b>${esc(whoLabel(n.w))}</b> <span class="ch">${fmtDate(n.at)}</span>
       ${ytIds(n.text).map(v => `<a href="${ytUrl(v)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt=""></a>`).join('')}
@@ -2687,11 +2691,11 @@ function calEditor(id, date, focusScript, edit = true) {
   const showInspo = own || ytIds(e.inspo).length, showThumb = own || e.thumb, showScript = own || e.script;
   const showNotes = own || !admin || calNotes(e.id).length, noteAdd = own || !admin;
   ov.innerHTML = `<div class="histbox calbox ${own ? '' : 'calview'}"><button class="histx" title="Zavřít">✖</button>${admin && !own ? '<button class="histedit" data-caledit2 title="Upravit">✏️</button>' : ''}${!own && all[e.id] ? `<button class="histshare${admin ? '' : ' solo'}" data-calshare title="Sdílet – zkopíruje odkaz přímo na tohle video (třeba pro grafika)">🔗</button>` : ''}
-    ${own ? `<input class="calin title" data-f="title" value="${esc(e.title)}" placeholder="Název videa">
-      <details class="calalt" ${altT().length ? 'open' : ''}><summary class="ch">🅰️🅱️ Další názvy na A/B test${altT().length ? ` (${altT().length})` : ''}</summary><textarea class="calin" data-f="alt" rows="3" placeholder="Každý název na nový řádek – v přehledu si každý zkopíruješ tlačítkem 📋">${esc(e.alt || '')}</textarea></details>
+    ${own ? `<div class="calttl"><input class="calin title" data-f="title" value="${esc(e.title)}" placeholder="Název videa"><button class="calcopy" data-calcopy title="Zkopírovat název">📋</button></div>
+      <details class="calalt" ${altT().length ? 'open' : ''}><summary class="ch">🅰️🅱️ Další názvy na A/B test${altT().length ? ` (${altT().length})` : ''}</summary><textarea class="calin" data-f="alt" rows="3" placeholder="Každý název na nový řádek – každý pak zkopíruješ tlačítkem 📋">${esc(e.alt || '')}</textarea><div class="calalts">${altRows()}</div></details>
       <div class="row"><label>📅 Vyjde <input type="date" class="calin" data-f="date" value="${esc(e.date)}"></label><button class="blockbtn" data-caldel>🗑 Smazat</button><button data-calview>👁 Hotovo – zobrazit přehled</button></div>`
-      : `<h2>${esc(e.title || 'Video')}${altT().length && e.title ? ` <button class="calcopy" data-calcopy="${esc(e.title)}" title="Zkopírovat název">📋</button>` : ''}</h2>
-      ${altT().length ? `<div class="calalts"><span class="ch">🅰️🅱️ Další názvy na A/B test:</span>${altT().map((t, i) => `<div class="calaltrow"><b>${String.fromCharCode(66 + i)}</b> <span>${esc(t)}</span><button class="calcopy" data-calcopy="${esc(t)}" title="Zkopírovat název">📋</button></div>`).join('')}</div>` : ''}<div class="row"><span class="ch">📅 ${dt ? `${DOW[dt.getDay()]} ${dt.getDate()}. ${dt.getMonth() + 1}. ${dt.getFullYear()}` : ''}</span></div>`}
+      : `<h2>${esc(e.title || 'Video')}${e.title ? ` <button class="calcopy" data-calcopy="${esc(e.title)}" title="Zkopírovat název">📋</button>` : ''}</h2>
+      ${altT().length ? `<div class="calalts"><span class="ch">🅰️🅱️ Další názvy na A/B test:</span>${altRows()}</div>` : ''}<div class="row"><span class="ch">📅 ${dt ? `${DOW[dt.getDay()]} ${dt.getDate()}. ${dt.getMonth() + 1}. ${dt.getFullYear()}` : ''}</span></div>`}
     ${showInspo ? `<h4>💡 Inspirace (videa, ze kterých vycházím)</h4>
     <div class="calinspo">${inspoHtml(e.inspo)}</div>` : ''}
     ${own ? `<div class="row"><button data-calbrowse="star">⭐ Vybrat z oblíbených</button><button data-calbrowse="trend">🔥 Vybrat z trendů</button><button data-calbrowse="seen">👀 Naposledy viděné</button></div>
@@ -2721,6 +2725,7 @@ function calEditor(id, date, focusScript, edit = true) {
     const f = ev.target.dataset?.f; if (!f || !own) return;
     e[f] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
     if (f === 'inspo') ov.querySelector('.calinspo').innerHTML = inspoHtml(e.inspo);
+    if (f === 'alt') ov.querySelector('.calalt .calalts').innerHTML = altRows();
     if (f === 'script' || f === 'title' || f === 'checks') { if (SCRIPT_OPTS === sOpts) scriptWindowSync(e.script, e.title); }
     save();
   });
@@ -2735,9 +2740,11 @@ function calEditor(id, date, focusScript, edit = true) {
   };
   ov.addEventListener('click', ev => {
     const b = ev.target.closest('button');
-    if (b?.dataset.calcopy) {
+    if (b?.hasAttribute('data-calcopy')) {
       const ok = () => { b.textContent = '✔'; setTimeout(() => { b.textContent = '📋'; }, 1200); };
-      navigator.clipboard?.writeText(b.dataset.calcopy).then(ok, () => {
+      const inp = b.previousElementSibling;
+      if (inp?.tagName === 'INPUT') { inp.select(); try { document.execCommand('copy'); } catch {} }
+      navigator.clipboard?.writeText(b.dataset.calcopy || inp?.value || '').then(ok, () => {
         const r = document.createRange(); r.selectNodeContents(b.previousElementSibling || b.parentNode); getSelection().removeAllRanges(); getSelection().addRange(r);
       });
       return;
@@ -3683,7 +3690,7 @@ function renderHeader() {
     $('#controls').innerHTML = `
       ${sortSel}
       ${common}
-      <span id="updated"></span>${S.key ? `<button class="discbtn" data-discover="${S.country}"${searchLeft() ? '' : ' disabled'} title="${searchLeft() ? 'Najít nové malé Brawl kanály v tomhle státě (1 hledání ze 100 + pár levných dotazů)' : 'Na dnešek došla hledání – obnoví se v 9:00'}">🔭 Malé kanály teď</button>` : ''}`;
+      <span id="updated"></span>${S.key && TIME_PERIODS.includes(S.period) ? `<button class="discbtn" data-refreshnow title="Plné hledání nových videí hned teď (1–2 hledání ze 100), bez čekání na časomíru">⟳ Aktualizovat teď</button>` : ''}${S.key ? `<button class="discbtn" data-discover="${S.country}"${searchLeft() ? '' : ' disabled'} title="${searchLeft() ? 'Najít nové malé Brawl kanály v tomhle státě (1 hledání ze 100 + pár levných dotazů)' : 'Na dnešek došla hledání – obnoví se v 9:00'}">🔭 Malé kanály teď</button>` : ''}`;
   }
 }
 
@@ -4386,7 +4393,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.type) { S.type = b.dataset.type; ss('bt_type', S.type); rerender(); }
   else if (b.dataset.tr !== undefined) toggleTranslate(b);
   else if (b.dataset.copy !== undefined) { const t = b.closest('.card').querySelector('.title').textContent; navigator.clipboard?.writeText(t).then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
-  else if (b.id === 'btnRefresh') { S.view = null; renderHeader(); showCountry(true); }
+  else if (b.id === 'btnRefresh' || b.hasAttribute('data-refreshnow')) { S.view = null; renderHeader(); showCountry(true); }
   else if (b.id === 'btnMore') loadMore();
   else if (b.id === 'btnKey') renderSetup();
   else if (b.dataset.q) { $('#q').value = b.dataset.q; $('#qScope').value = S.qScope = 'all'; onSearchInput(b.dataset.q); window.scrollTo(0, 0); }
