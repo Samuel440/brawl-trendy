@@ -25,6 +25,20 @@ HISTORIE_KAZDYCH_S = 20  # bod do grafu průběhu (čas, procenta)
 RADKU = 40
 
 
+def uloz(nazev: str, data) -> bool:
+    """Jednorázově uloží libovolná data jako vyroba_<nazev>.json (např. snímky timeliny z Resolve)."""
+    try:
+        if not os.path.isdir(SLOZKA):
+            return False
+        tmp = os.path.join(SLOZKA, f"~vyr_{nazev}.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+        os.replace(tmp, os.path.join(SLOZKA, f"vyroba_{nazev}.json"))
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class Stav:
     def __init__(self, program: str, nazev: str):
         self.soubor = os.path.join(SLOZKA, f"vyroba_{program}.json")
