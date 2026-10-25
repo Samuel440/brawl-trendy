@@ -646,7 +646,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.122'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.123'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1333,6 +1333,11 @@ async function fetchSet(c, p, pageToken, extra) {
     const have = new Set(items.map(i => i.id));
     items.push(...(await fetchChannelVideos(c, p, have)).filter(it => !have.has(it.id)));
   }
+  // 🏆 Celá doba: hledání vrátí jen pár desítek videí → doplnit NEJPOPULÁRNĚJŠÍ videa sledovaných kanálů
+  if (!pageToken && p === 'all') {
+    const have = new Set(items.map(i => i.id));
+    try { items.push(...(await fetchChannelPopular(c, have)).filter(it => !have.has(it.id))); } catch (e) { if (/limit dotazů/.test(e.message)) throw e; }
+  }
   return {items, next:s.nextPageToken || null, dated};
 }
 // ---------- 🕐 Nejnovější videa podle toho, kdy v dané zemi youtubeři vydávají ----------
@@ -1506,6 +1511,26 @@ async function fetchChannelVideos(c, p, have) {
   if (!ids.length) return [];
   const now = Date.now();
   return (await details(ids)).map(it => ({...classify(it, 'ch'), st:now}));
+}
+// 🏆 Nejpopulárnější videa sledovaných kanálů pro „Celou dobu“ – YouTube má u každého kanálu skryté seznamy
+// „populární videa“ (UULP…) a „populární shorts“ (UUPS…). Hledání to nestojí, jen levné dotazy (~3 na kanál).
+// Projde se poprvé a pak nejvýš jednou za 7 dní na stát (čas se sdílí přes Disk v bt_disc → ostatní zařízení to neopakují).
+const POP_PER = 25, POP_DAYS = 7;
+async function fetchChannelPopular(c, have) {
+  if (Date.now() - (discInfo(c.id).pop || 0) < POP_DAYS * 864e5) return [];
+  const chans = trackedChannels(c).filter((ch, i) => i < 60 || ch.manual);
+  if (!chans.length) return [];
+  status(`🏆 ${c.name}: procházím nejpopulárnější videa ${chans.length} sledovaných kanálů…`);
+  const res = await Promise.allSettled(chans.flatMap(ch => ['UULP', 'UUPS'].map(pre =>
+    api('playlistItems', {part:'contentDetails', playlistId:pre + ch.id.slice(2), maxResults:POP_PER}, 1))));
+  const quotaErr = res.find(r => r.status === 'rejected' && /limit dotazů/.test(r.reason.message));
+  if (quotaErr) throw quotaErr.reason;
+  const ids = [...new Set(res.flatMap(r => r.status === 'fulfilled' ? r.value.items : []).map(x => x.contentDetails.videoId).filter(id => !have.has(id)))];
+  saveDisc(c.id, {pop:Date.now()});
+  if (!ids.length) return [];
+  const now = Date.now(), items = (await details(ids)).map(it => ({...classify(it, 'ch'), st:now}));
+  logEvent(`🏆 doplnil ${items.length} nejpopulárnějších videí sledovaných kanálů (${c.name})`);
+  return items;
 }
 // ---------- 🔭 Objevování malých kanálů ----------
 // Hledání podle zhlédnutí najde jen velké kanály. Malé se objevují dvěma cestami:
@@ -3843,6 +3868,14 @@ async function showCountry(force) {
     catch (e) { status(e.message, true); failed = true; }
     // čerstvá data hned na Disk (ne až za 10 s), ať je ostatní zařízení vidí a nestahují totéž
     if (!failed && REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
+  }
+  // 🏆 Celá doba: nejpopulárnější videa sledovaných kanálů projít hned poprvé (bez hledání), ne až při dalším plném načtení
+  if (!failed && set && p === 'all' && S.key && !discInfo(c.id).pop) {
+    try {
+      const pop = await fetchChannelPopular(c, new Set(set.items.map(i => i.id)));
+      if (pop.length) { mergeInto(c.id, 'all', pop); archive(c.id, pop); set = getSet(c.id, p); if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); } }
+      status(`🏆 ${c.name}: přidáno ${pop.length} nejpopulárnějších videí sledovaných kanálů.`);
+    } catch (e) { status(e.message, true); }
   }
   // 🕐 Novinky / Týden: v hlavní čas vydávání v té zemi navíc nejnovější videa (1 hledání za hodinu / dvě)
   if (!failed && set && (p === 'day' || p === 'week') && newestDue(c)) {
