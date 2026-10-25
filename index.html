@@ -646,7 +646,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.128'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.129'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3994,7 +3994,12 @@ function gather(p) {
   return {list:out, loaded, oldest};
 }
 // ---------- 🎲 Míchač nápadů: moje videa (+ zahraniční trendy) náhodně vedle sebe ----------
-const MIX = {a:null, b:null, mode:ls('bt_mixmode', 'mine')};
+// hist = dvojice zamíchané od otevření stránky (jen v paměti) → ◀ Zpět / Dál ▶ k dvojici, kterou jsem omylem přeskočil
+const MIX = {a:null, b:null, mode:ls('bt_mixmode', 'mine'), hist:[], pos:-1};
+function mixGo(d) {
+  const h = MIX.hist[MIX.pos + d]; if (!h) return;
+  MIX.pos += d; MIX.a = h.a; MIX.b = h.b;
+}
 // načte všechna moje videa za poslední 2 roky (≈1 jednotka za 50 videí; nahrávky jdou od nejnovějších)
 const MY_YEARS = 2;
 async function loadMyChannel(input) {
@@ -4057,6 +4062,8 @@ function reroll() {
   MIX.a = pick(mine);
   if (MIX.mode === 'trend') { const pool = trendPool(); MIX.b = pool.length ? pick(pool) : null; }
   else { const rest = mine.filter(v => v.id !== MIX.a.id); MIX.b = rest.length ? pick(rest) : MIX.a; }
+  // nová dvojice jde na konec historie (když jsem byl vrácený zpátky, „budoucnost“ za mnou se zahodí jako v prohlížeči)
+  MIX.hist = [...MIX.hist.slice(0, MIX.pos + 1), {a:MIX.a, b:MIX.b}].slice(-300); MIX.pos = MIX.hist.length - 1;
 }
 // u videa ze zahraničí (v.c = stát) se pod originál vždy ukáže český překlad
 const mixCard = (v, lbl) => v ? `<a class="mixcard" href="${ytUrl(v.id)}" target="_blank" rel="noopener">
@@ -4085,7 +4092,10 @@ function mixSection() {
       ${my.full ? '' : `<button id="btnMyFull" title="Teď máš jen posledních ${my.videos.length} videí">📅 Načíst všechna videa za ${MY_YEARS} roky</button>`}</div>
     <div class="mixbar">
       <span class="seg"><button data-mixmode="mine" class="${MIX.mode === 'mine' ? 'on' : ''}">Moje + moje</button><button data-mixmode="trend" class="${MIX.mode === 'trend' ? 'on' : ''}">Moje + trend ze zahraničí</button></span>
+      <button data-mixgo="-1" ${MIX.pos > 0 ? '' : 'disabled'} title="Předchozí zamíchaná dvojice">◀ Zpět</button>
       <button class="primary" id="btnMix">🎲 Zamíchat</button>
+      <button data-mixgo="1" ${MIX.pos < MIX.hist.length - 1 ? '' : 'disabled'} title="Další dvojice (kam ses vrátil zpátky)">Dál ▶</button>
+      ${MIX.hist.length > 1 ? `<span class="ch">${MIX.pos + 1} / ${MIX.hist.length}</span>` : ''}
     </div>
     <div class="mix">${mixCard(MIX.a, 'Moje video')}<div class="plus">+</div>${mixCard(MIX.b, MIX.mode === 'trend' ? 'Trend' : 'Moje video')}</div>
     <div class="addch"><input id="mixNote" placeholder="Můj nápad z téhle kombinace… (např. Hraju za svého mainu na účtu v jedné barvě)"><button id="btnMixSave">📌 Uložit nápad</button></div>
@@ -4590,6 +4600,7 @@ document.addEventListener('click', e => {
     renderMain();
   })();
   else if (b.id === 'btnMix') { reroll(); renderMain(); }
+  else if (b.dataset.mixgo) { mixGo(+b.dataset.mixgo); renderMain(); }
   else if (b.dataset.mixmode) { MIX.mode = b.dataset.mixmode; ss('bt_mixmode', MIX.mode); reroll(); renderMain(); }
   else if (b.id === 'btnMixSave') {
     if (!MIX.a || !MIX.b) return;
