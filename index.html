@@ -646,7 +646,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.127'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.128'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4179,10 +4179,12 @@ function topicsOf(it, terms) {
   if (terms) for (const w of tokens(t)) if (terms.has(w) && w.length >= 4 && !GENERIC.has(w) && !/^brawlers?$/.test(w)) out.push('🔥 ' + w);
   return [...new Set(out)];
 }
-function waveTopics() {
-  const terms = brawlTerms();
-  const foreign = weekMonth();
-  const cz = C('cz'), czList = ['week', 'month'].flatMap(p => getSet('cz', p)?.items || []).filter(it => langOk(it, cz));
+// ⏱️ jen videa z posledních N dní (staré vlny – minulé updaty – jinak zůstávaly nahoře)
+const WAVE_DAYS = [3, 7, 14, 30];
+function waveTopics(days = 30) {
+  const terms = brawlTerms(), since = Date.now() - days * 864e5;
+  const foreign = weekMonth().filter(it => new Date(it.pub) >= since);
+  const cz = C('cz'), czList = ['week', 'month'].flatMap(p => getSet('cz', p)?.items || []).filter(it => langOk(it, cz) && new Date(it.pub) >= since);
   const mine = (ls('bt_my', null)?.videos || []);
   const T = {};
   for (const it of foreign) for (const k of topicsOf(it, terms)) {
@@ -4198,11 +4200,13 @@ function waveTopics() {
     .sort((a, b) => b.score - a.score);
 }
 function waveHtml() {
-  const rows = waveTopics().slice(0, 20);
-  if (!rows.length) return '<div class="empty">Načti Týden (nebo Měsíc) u víc států – vlna se pozná, až se téma objeví aspoň ve dvou.</div>';
+  const days = ls('bt_wavedays', 7), rows = waveTopics(days).slice(0, 20);
+  const pick = `<div class="row"><span class="lbl">⏱️ Videa za</span><span class="seg">${WAVE_DAYS.map(d => `<button data-wavedays="${d}" class="${d === days ? 'on' : ''}">${d} ${d < 5 ? 'dny' : 'dní'}</button>`).join('')}</span>
+    <span class="ch">Bere se z videí, která stránka a robot stejně průběžně obnovují (Týden + Měsíc ze všech států) – hledání to nestojí.</span></div>`;
+  if (!rows.length) return pick + '<div class="empty">V tomhle období zatím žádná vlna – zkus delší dobu, nebo načti Týden u víc států.</div>';
   const tipOf = k => { const name = k.slice(3); return (TEMPLATES.find(x => x[0] === name) || [])[2] || (FORMATS.find(f => f[0] === name) || [])[2]
     || (k.startsWith('🦸') ? `Brawler ${name} je teď v kurzu venku – natoč s ním CZ video (build, tier, challenge, noob vs pro).` : `„${name}“ – nové téma/event, které venku letí. Natoč CZ verzi, dokud je čerstvé.`); };
-  return `<div class="fmts">${rows.map(r => {
+  return pick + `<div class="fmts">${rows.map(r => {
     const best = [...r.items].sort((a, b) => b.vph - a.vph);
     const perC = [...r.countries].map(id => C(id));
     const gap = r.cz === 0 ? '<span class="tag hot">🟢 MEZERA – v Česku nikdo</span>' : `<span class="tag">🇨🇿 ${r.cz} ${r.cz === 1 ? 'video' : r.cz < 5 ? 'videa' : 'videí'} v Česku</span>`;
@@ -4556,6 +4560,7 @@ document.addEventListener('click', e => {
   if (b.dataset.period === 'star' && !b.dataset.startab) { S.starTab = 'drop'; S.starWho = null; }
   if (b.dataset.period === 'cal') { S.calOff = 0; S.calJump = true; } // 🗓️ otevřít vždy na dnešku
   if (b.dataset.period === 'ideas') S.ideaSec = null; // 💡 záložka = vždy zpátky na dlaždice
+  if (b.dataset.wavedays) { ss('bt_wavedays', +b.dataset.wavedays); renderMain(); return; }
   if (b.dataset.ideasec !== undefined) { S.ideaSec = b.dataset.ideasec || null; renderMain(); scrollTo(0, 0); return; }
   if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); try { sessionStorage.setItem('bt_period_s', S.period); } catch {} if (TIME_PERIODS.includes(S.period) || S.period === 'arch') ss('bt_lastp', S.period); show(); }
   else if (b.dataset.startab) renderMain();
