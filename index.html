@@ -650,7 +650,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.130'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.131'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4298,8 +4298,10 @@ function gridFill(g) {
   };
   step();
 }
+let IDEA_LOADBOX = null; // souhrn „Načtení dat“ (stojí ~0,1 s) – spočítá se až po rozkliknutí
 document.addEventListener('toggle', e => {
   if (!e.target.open) return;
+  if (e.target.hasAttribute?.('data-loadbox') && !e.target.dataset.done && IDEA_LOADBOX) { e.target.dataset.done = '1'; e.target.insertAdjacentHTML('beforeend', IDEA_LOADBOX()); }
   const g = e.target.querySelector(':scope > .grid[data-lazy]'); if (g) gridFill(g);
 }, true);
 // 💡 dlaždice Nápadů: jeden název + vlastní obrázek (žádné opakující se emoji)
@@ -4364,7 +4366,7 @@ function renderIdeas() {
   const ever = L(() => FORMATS.map(f => ({name:f[0], tip:f[2], s:share(all.list, f[0]), views:all.list.filter(it => it.formats.includes(f)).reduce((a, b) => a + b.views, 0)})).filter(r => r.s > 0).sort((a, b) => b.views - a.views));
   const everBr = L(() => countBy(all.list, it => it.brawlers, it => it.views).slice(0, 12));
 
-  const loadBox = `<div class="summary">
+  const loadBox = () => `<div class="summary">
       <h3>💡 Nápady z celého světa (bez Česka)</h3>
       <div class="row"><span class="lbl">Novinky 24 h</span><span class="ch">${info('day')}</span>${btn('day', '⟳ Načíst novinky ze všech států')}</div>
       <div class="row"><span class="lbl">Týden</span><span class="ch">${info('week')}</span>${btn('week', 'Načíst týden')}</div>
@@ -4420,6 +4422,7 @@ function renderIdeas() {
       () => ever().length ? `<table><tr><th>Formát</th><th>Podíl v top videích</th><th>Zhlédnutí celkem</th></tr>${ever().map(r => `<tr><td><b>${esc(r.name)}</b><div class="ch">${esc(r.tip)}</div></td><td>${Math.round(r.s * 100)} %</td><td>${n(r.views)}</td></tr>`).join('')}</table>
       <div class="tags" style="margin-top:10px">${everBr().map(e => `<span class="tag ok">${esc(e.k)} · ${n(e.views)}</span>`).join('')}</div>` : '<div class="empty">Načti „Celá doba“ tlačítkem nahoře.</div>')}`;
   const open = SECS.find(s => s.id === S.ideaSec);
+  IDEA_LOADBOX = loadBox;
   LAZY.clear();
   if (open) {
     const t = IDEA_TILES[open.id] || {};
@@ -4427,7 +4430,7 @@ function renderIdeas() {
         <span class="ideaico">${t.img || ''}</span><h2>${esc(t.name || open.title)}</h2>${open.count && typeof open.count !== 'function' ? `<span class="tag">${open.count}</span>` : ''}</div>
       <div class="ch ideahint">${open.hint}</div>
       ${IDEA_DAYS_SECS.includes(open.id) ? ideaDaysPick() : ''}
-      ${['mix', 'tpl', 'season'].includes(open.id) ? '' : `<details class="ideaload"><summary class="ch">⟳ Načtení dat (novinky / týden / celá doba)</summary>${loadBox}</details>`}
+      ${['mix', 'tpl', 'season'].includes(open.id) ? '' : `<details class="ideaload" data-loadbox><summary class="ch">⟳ Načtení dat (novinky / týden / celá doba)</summary></details>`}
       <div class="ideabody"><div class="lazy ch">⏳ Počítám…</div></div>`;
     // obsah až v dalším kroku – stránka se nejdřív ukáže (záhlaví, ⏳) a nezamrzne na kliknutí
     IDEA_BODY = open.body; ideaBodyFill();
@@ -4435,7 +4438,7 @@ function renderIdeas() {
     // dlaždice hned nahoře, načítání dat až pod nimi (na mobilu by jinak zabralo celou obrazovku)
     $('#main').innerHTML = `<div class="ideatiles">${SECS.map(s => { const t = IDEA_TILES[s.id] || {};
       return `<button class="ideatile" data-ideasec="${s.id}" style="--g1:${t.c1};--g2:${t.c2}" title="${esc(s.title)}">
-        ${s.count ? `<span class="ideacount"${typeof s.count === 'function' ? ` data-cnt="${s.id}" hidden` : ''}>${typeof s.count === 'function' ? '' : esc(String(s.count))}</span>` : ''}<span class="ideaimg">${t.img || ''}</span><b>${esc(t.name || s.title)}</b></button>`; }).join('')}</div>` + loadBox;
+        ${s.count ? `<span class="ideacount"${typeof s.count === 'function' ? ` data-cnt="${s.id}" hidden` : ''}>${typeof s.count === 'function' ? '' : esc(String(s.count))}</span>` : ''}<span class="ideaimg">${t.img || ''}</span><b>${esc(t.name || s.title)}</b></button>`; }).join('')}</div><div id="ideaLoad"></div>`;
     IDEA_BODY = null;
     // počty na dlaždicích se dopočítají až po vykreslení, po jednom (dlaždice jsou vidět hned)
     const cnt = SECS.filter(s => typeof s.count === 'function'), run = ++IDEA_RUN;
@@ -4443,9 +4446,10 @@ function renderIdeas() {
       const el = $(`#main [data-cnt="${s.id}"]`), v = s.count(); if (el && v) { el.textContent = v; el.hidden = false; }
       setTimeout(step, 16); };
     setTimeout(step, 60);
+    setTimeout(() => { const el = $('#ideaLoad'); if (el && run === IDEA_RUN) el.innerHTML = loadBox(); }, 30);
   }
   autoTranslate();
-  aiCheck(COUNTRIES.flatMap(c => ['day', 'week'].flatMap(p => getSet(c.id, p)?.items || [])));
+  setTimeout(() => aiCheck(COUNTRIES.flatMap(c => ['day', 'week'].flatMap(p => getSet(c.id, p)?.items || []))), 400);
   translateMix();
 }
 
