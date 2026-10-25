@@ -51,6 +51,12 @@ button:disabled{opacity:.5;cursor:default}
 .phl{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--hot);z-index:4;pointer-events:none;box-shadow:0 0 6px var(--hot)}
 .phl::before{content:'';position:absolute;top:0;left:-6px;border:7px solid transparent;border-top:9px solid var(--hot)}
 .tlhint{color:var(--muted);font-size:12px;margin-top:4px}
+.tll[data-f]{cursor:pointer}
+.tlr.dim{opacity:.25}
+.tlr.hl .tlln i{box-shadow:0 0 0 2px #fff,0 0 8px var(--accent)}
+.tlg{position:absolute;top:18px;bottom:0;background:#ffcc0033;border-left:1px solid var(--accent);pointer-events:none;z-index:1}
+.moments{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px;font-size:12px}
+.moments button{font-size:11px;padding:2px 7px}
 </style></head><body>
 <div class="top"><h1>▶️ Náhled editu</h1><select id="proj"></select><span class="ch" id="info"></span></div>
 <div class="wrap">
@@ -69,6 +75,7 @@ button:disabled{opacity:.5;cursor:default}
     <div class="bar" id="bar"><div class="intro" id="introz"></div><div id="kap"></div><div id="bwz"></div><div class="ph" id="ph"></div></div>
   </div>
   <div class="tlbox" id="tlbox"><div class="tlin" id="tlin"></div></div>
+  <div class="moments" id="moments"></div>
   <div class="tlhint">Chyť červenou čáru (nebo klikni kamkoli do timeliny) a posuň ji – video jde s ní. Mezerník = přehrát odtud. Alt + kolečko = přiblížit, Ctrl + kolečko = posun do stran, na mobilu přiblížíš dvěma prsty. <button id="tlfit">↔ Celá timeline</button></div>
   <div class="leg"><span>Barvy pruhu = kapitoly a nálady hudby</span><span>šedá dole = černobílé části</span><span>šrafování = úvod</span></div>
   <div class="leg">Hrubý náhled: tvůj střih (hra + webka), velikost webky, punch, černobílé a hudba podle plánu Auto Editu. Bez efektů, zoomů, zvuků a Magic Masků – ty jsou až v Resolve.</div>
@@ -180,17 +187,23 @@ function drawTL() {
   for (const [s, v] of D.cam) { if (v === 'beze změny') continue; if (cur) cur[1] = s; cur = [s, L, v]; cam.push(cur); }
   const step = [1, 2, 5, 10, 30, 60, 120, 300, 600].find(x => x / L * W >= 64) || 900;
   const ruler = Array.from({length:Math.floor(L / step) + 1}, (_, i) => `<span style="left:${pc(i * step)}">${fmt(i * step)}</span>`).join('');
-  const row = (ic, title, html) => `<div class="tlr" title="${esc(title)}"><span class="tll">${ic}</span><div class="tlln">${html}</div></div>`;
+  // 🔦 klik na ikonu řádku = výrazně označit všechny jeho momenty + seznam ke skoku
+  const ROWS = TL.rows = [];
+  const row = (ic, title, html, items) => { const i = ROWS.length; ROWS.push({ic, title, items: items || []});
+    return `<div class="tlr${TL.focus == null ? '' : TL.focus === i ? ' hl' : ' dim'}" title="${esc(title)}"><span class="tll" data-f="${i}">${ic}</span><div class="tlln">${html}</div></div>`; };
   $('#tlin').style.width = (W + LBL) + 'px';
   $('#tlin').innerHTML = `<div class="tlr ruler"><span class="tll"></span><div class="tlln">${ruler}</div></div>`
-    + row('🎮', 'V1 – hra / tvůj střih', D.v1.map(c => blk(c[0], c[1], D.soubory[c[2]]?.webka ? '#9d4edd' : '#4f7cff', D.soubory[c[2]]?.name || '')).join(''))
-    + row('🎥', 'V2 – webka', D.v2.map(c => blk(c[0], c[1], '#2ec4b6', D.soubory[c[2]]?.name || '')).join(''))
-    + (cam.length ? row('📷', 'Velikost webky (plán)', cam.map(([s, e, v]) => blk(s, e, CAMC[v] || '#6c757d', v)).join('')) : '')
-    + (D.kapitoly.length ? row('📖', 'Kapitoly a nálady', D.kapitoly.map(([s, e, m], i) => blk(s, e, MOOD[m] || '#6c757d', `${i + 1}. ${m}`)).join('')) : '')
-    + (D.bw.length ? row('⚫', 'Černobílé', D.bw.map(([s, e]) => blk(s, e, '#adb5bd', 'ČB')).join('')) : '')
-    + (D.hudba.length ? row('🎵', 'Hudba', D.hudba.map(h => blk(h[0], h[1], '#2a9d8f', h[5])).join('')) : '')
-    + (D.punch.length ? row('💥', 'Punch ve hře', D.punch.map(p => blk(p, p + 0.4, '#ffcc00', 'punch')).join('')) : '')
+    + row('🎮', 'V1 – hra / tvůj střih', D.v1.map(c => blk(c[0], c[1], D.soubory[c[2]]?.webka ? '#9d4edd' : '#4f7cff', D.soubory[c[2]]?.name || '')).join(''), D.v1.map(c => [c[0], c[1], D.soubory[c[2]]?.name || '']))
+    + row('🎥', 'V2 – webka', D.v2.map(c => blk(c[0], c[1], '#2ec4b6', D.soubory[c[2]]?.name || '')).join(''), D.v2.map(c => [c[0], c[1], '']))
+    + (cam.length ? row('📷', 'Velikost webky (plán)', cam.map(([s, e, v]) => blk(s, e, CAMC[v] || '#6c757d', v)).join(''), cam) : '')
+    + (D.kapitoly.length ? row('📖', 'Kapitoly a nálady', D.kapitoly.map(([s, e, m], i) => blk(s, e, MOOD[m] || '#6c757d', `${i + 1}. ${m}`)).join(''), D.kapitoly.map(([s, e, m], i) => [s, e, `${i + 1}. ${m}`])) : '')
+    + (D.bw.length ? row('⚫', 'Černobílé', D.bw.map(([s, e]) => blk(s, e, '#adb5bd', 'ČB')).join(''), D.bw.map(([s, e]) => [s, e, 'ČB'])) : '')
+    + (D.hudba.length ? row('🎵', 'Hudba', D.hudba.map(h => blk(h[0], h[1], '#2a9d8f', h[5])).join(''), D.hudba.map(h => [h[0], h[1], h[5]])) : '')
+    + (D.punch.length ? row('💥', 'Punch ve hře', D.punch.map(p => blk(p, p + 0.4, '#ffcc00', 'punch')).join(''), D.punch.map(p => [p, p + 0.4, 'punch'])) : '')
     + '<div class="phl" id="phl"></div>';
+  const F = ROWS[TL.focus];
+  if (F) $('#tlin').insertAdjacentHTML('beforeend', F.items.slice(0, 400).map(([s, e]) => `<em class="tlg" style="left:${LBL + s / L * W}px;width:${Math.max(3, (e - s) / L * W)}px"></em>`).join(''));
+  $('#moments').innerHTML = F ? `<b>${F.ic} ${esc(F.title)}</b> – ${F.items.length}× (klikni = skok): ` + F.items.slice(0, 200).map(([s, , x]) => `<button data-go="${s}">${fmt(s)}${x ? ' · ' + esc(String(x).slice(0, 16)) : ''}</button>`).join('') + ' <button data-f="">✖ zrušit</button>' : '<span class="ch">Klikni na ikonu řádku (🎮 🎥 📷 📖 ⚫ 🎵 💥) – výrazně se označí všechny jeho momenty.</span>';
   tlPlayhead(now());
 }
 function tlPlayhead(t) {
@@ -243,6 +256,10 @@ box.addEventListener('touchmove', e => {
 }, {passive:false});
 box.addEventListener('touchend', e => { if (e.touches.length < 2) TL.pinch = null; });
 $('#tlfit').onclick = () => { TL.z = 1; drawTL(); box.scrollLeft = 0; };
+document.addEventListener('click', e => {
+  const f = e.target.closest('[data-f]'); if (f) { const i = f.dataset.f === '' ? null : +f.dataset.f; TL.focus = TL.focus === i ? null : i; drawTL(); return; }
+  const g = e.target.closest('[data-go]'); if (g) { const t = +g.dataset.go; if (TL.z < 12) TL.z = 12; drawTL(); seek(t); box.scrollLeft = tlX(t) - box.clientWidth / 2; }
+});
 addEventListener('resize', () => drawTL());
 function play() {
   if (!D) return;
