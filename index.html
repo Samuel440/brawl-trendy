@@ -74,6 +74,39 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .tag.tplstar{background:var(--accent);color:#111;font-weight:900;border-color:var(--accent)}
 .pingask{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0;padding:8px 10px;border:1px solid var(--accent);border-radius:10px;background:var(--panel2)}
 .calping{margin:4px 0}
+/* 🎬 Výroba */
+.vyrgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;margin:12px 0}
+.vyrcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0}
+.vyrcard.live{border-color:var(--hot);box-shadow:0 0 16px color-mix(in srgb,var(--hot) 25%,transparent)}
+.vyrcard.empty{opacity:.75}
+.vyrcard .row{display:flex;flex-wrap:wrap;gap:4px 14px}
+.vyrhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.vyrhead h3{margin:0}
+.vyrname{margin-left:auto;font-size:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vyrbig{display:flex;gap:10px;align-items:center;margin:10px 0 4px}
+.vyrbig b{font-size:22px;min-width:3.2em;text-align:right}
+.vyrbar{position:relative;flex:1;display:inline-block;height:10px;border-radius:5px;background:var(--line);overflow:hidden;min-width:60px}
+.vyrbig .vyrbar{height:16px;border-radius:8px}
+.vyrbar i{position:absolute;left:0;top:0;bottom:0;background:var(--ok);border-radius:inherit;transition:width .6s}
+.vyrbar.bad i{background:var(--hot)}
+.vyrbar u{position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.14);border-radius:inherit}
+.vyrbar.step i{background:var(--blue);opacity:.9}
+.vyrrows{display:flex;flex-direction:column;gap:5px;margin-top:10px}
+.vyrrow{display:grid;grid-template-columns:2.6em minmax(0,9em) 1fr auto auto;gap:8px;align-items:center;font-size:13px}
+.vyrrow.step{grid-template-columns:3em minmax(0,1.4fr) 1fr auto}
+.vyrrow .vyrlbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vyrrow.done,.vyrrow.hotovo,.vyrrow.preskoceno{opacity:.6}
+.vyrrow.bezi{font-weight:700}
+.vyrrow.bezi .vyrbar.step i{background:var(--accent)}
+.vyrrow.err b{color:var(--hot)}
+.vyrpct{min-width:3em;text-align:right;font-weight:700}
+.vyraxis{display:flex;justify-content:space-between;margin-top:-2px}
+.vyrlog{margin-top:10px}
+.vyrlog > div{max-height:260px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--panel2);border-radius:8px;padding:6px 8px;white-space:pre-wrap;word-break:break-word}
+.vyrpulse{animation:vyrpulse 1.4s ease-in-out infinite}
+@keyframes vyrpulse{50%{opacity:.45}}
+#tabs .vyrlive{box-shadow:inset 0 -3px 0 var(--hot)}
+@media (max-width:600px){.vyrgrid{grid-template-columns:1fr}.vyrrow{grid-template-columns:2.4em minmax(0,6.5em) 1fr auto}.vyrrow > .ch:last-child{display:none}.vyrrow.step{grid-template-columns:2.6em minmax(0,1fr) 34% auto}}
 /* 🔴 grafik uložil nové video */
 .staralert{background:var(--hot)!important;color:#fff!important;border-color:var(--hot)!important}
 .starnewsec{border:2px solid var(--hot);border-radius:14px;padding:10px 12px;margin:8px 0 14px}
@@ -610,6 +643,7 @@ const PERIODS = {
   star: {label:'⭐ Uložené', local:true},
   cal:  {label:'🗓️ Kalendář', local:true}, // hned vedle ⭐ Uložené
   ideas:{label:'💡 Nápady'},
+  vyr:  {label:'🛠️<span class="hidem"> Výroba</span>', local:true}, // průběh DABINGU a AUTO EDITU z PC (jen majitel)
 };
 const SHOW_STEP = 120;
 const TIME_PERIODS = ['day', 'week', 'month', 'all']; // jeden přepínač; archiv, uložené a nápady jsou zvlášť tlačítka
@@ -650,7 +684,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.132'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.133'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3827,11 +3861,12 @@ function renderHeader() {
   const inVideos = TIME_PERIODS.includes(S.period) || S.period === 'arch';
   const lastP = [...TIME_PERIODS, 'arch'].includes(ls('bt_lastp', 'week')) ? ls('bt_lastp', 'week') : 'week';
   $('#tabs').innerHTML = tab('cal') + `<button data-period="${inVideos ? S.period : lastP}" class="${inVideos ? 'on' : ''}">🎬 Videa</button>`
-    + tab('star').replace('class="', `${starAlert() ? 'title="Grafik uložil nová videa" ' : ''}class="${starAlert() ? 'staralert ' : ''}`) + tab('ideas');
+    + tab('star').replace('class="', `${starAlert() ? 'title="Grafik uložil nová videa" ' : ''}class="${starAlert() ? 'staralert ' : ''}`) + tab('ideas')
+    + (isOwner() ? tab('vyr').replace('class="', `class="${vyrRunning() ? 'vyrlive ' : ''}`) : '');
   $('#periods').style.display = inVideos ? 'flex' : 'none';
   $('#periods').innerHTML = TIME_PERIODS.map(tab).join('') + `<button data-period="arch" class="archbtn ${S.period === 'arch' ? 'on' : ''}" title="Archiv – jen z uložených dat, kvótu nebere">${PERIODS.arch.label}</button>`;
   STICK = stickFor(); setTimeout(applyStick); // 📱 přilepit záložky (stránka se někdy kreslí bez renderMain)
-  $('#countries').style.display = S.period === 'ideas' || S.period === 'star' || S.period === 'cal' ? 'none' : 'flex';
+  $('#countries').style.display = S.period === 'ideas' || S.period === 'star' || S.period === 'cal' || S.period === 'vyr' ? 'none' : 'flex';
   // 🖱️ státy jdou přetáhnout myší (na mobilu podržet prst) na jiné místo v řadě
   $('#countries').innerHTML = countryOrder().map(c => `<button data-country="${c.id}" draggable="true" data-drag="country" data-id="${c.id}" title="Přetáhni na jiné místo v řadě" class="${S.country === c.id ? 'on' : costAttr(openCost(c, S.period))}">${flag(c)}${esc(c.name)}</button>`).join('');
   const opt = (v, cur, l) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
@@ -3839,7 +3874,7 @@ function renderHeader() {
   // ostatní volby jsou v ⚙️ Nastavení
   const common = `<span class="seg">${seg('all', 'Obojí')}${seg('long', '🎬 Videa')}${seg('short', '📱 Shorts')}</span>`;
   const sortSel = `<label>Řadit <select data-set="sort">${opt('views', S.sort, 'Nejvíc zhlédnutí')}${opt('vph', S.sort, 'Nejrychleji rostoucí (views/h)')}${opt('outlier', S.sort, '💥 Bangery malých kanálů')}${opt('eng', S.sort, 'Engagement (lajky+komenty)')}${opt('new', S.sort, 'Nejnovější')}</select></label>`;
-  if (S.period === 'cal') {
+  if (S.period === 'cal' || S.period === 'vyr') {
     $('#controls').innerHTML = '';
   } else if (S.period === 'ideas') {
     $('#controls').innerHTML = common;
@@ -3865,7 +3900,7 @@ const driveGateHtml = () => `<div class="drivegate">☁️ <b>Nejdřív připoj 
   <button class="primary" id="btnDrive">Připojit Disk</button>${hintBox()}${driveUsedHere() ? '' : '<button id="btnNoDrive" title="Každé zařízení si pak stahuje samo a bere kvótu – jen když Disk vůbec nechceš">Používat bez Disku (bere kvótu)</button>'}</div>`;
 async function showCountry(force) {
   const token = ++S.loadToken, c = C(S.country), p = S.period;
-  if (p === 'arch' || p === 'star' || p === 'cal') { renderMain(); return; }
+  if (p === 'arch' || p === 'star' || p === 'cal' || p === 'vyr') { renderMain(); return; }
   let set = getSet(c.id, p);
   // Při zapnuté auto-aktualizaci jsou novinky/týden zastaralé po uplynutí intervalu (i když stránka byla mezitím zavřená)
   const maxAge = (S.auto && p !== 'all' ? S.interval : PERIODS[p].ttl) * 60e3;
@@ -4583,16 +4618,94 @@ function renderMain() {
   STICK = S.view ? null : stickFor(); // Nastavení si nastaví '.setnav' samo
   renderTrends();
   // v kalendáři vyhledávání nic nedělá → schovat
-  $('header .search').style.display = S.period === 'cal' && !S.view ? 'none' : '';
+  $('header .search').style.display = (S.period === 'cal' || S.period === 'vyr') && !S.view ? 'none' : '';
   applyStick();
   if (S.view === 'blocked') return renderBlocked();
   if (S.view === 'settings') return renderSettings();
-  if (S.period !== 'cal' && S.q.trim() && (S.qScope === 'all' || S.period === 'ideas')) return renderSearchAll();
+  if (S.period !== 'cal' && S.period !== 'vyr' && S.q.trim() && (S.qScope === 'all' || S.period === 'ideas')) return renderSearchAll();
   if (S.period === 'ideas') renderIdeas();
   else if (S.period === 'cal') renderCal();
+  else if (S.period === 'vyr') renderVyroba();
   else if (S.period === 'star') renderStars();
   else renderCountry(S.period === 'arch' ? getArchive(S.country) : S.period === 'all' ? allTimeSet(S.country) : getSet(S.country, S.period), C(S.country), S.period);
   fillBands(); // šedá pásma do malých grafů postupně, až po vykreslení
+}
+// ---------- 🛠️ Výroba: průběh DABINGU a AUTO EDITU z PC (i na mobilu) ----------
+// Programy na PC zapisují vyroba_dabing.json / vyroba_edit.json do složky na G: (Google Drive pro počítač je nahraje,
+// tools/vyroba_stav.py). Tady se jen čtou přes Disk – co 5 s, dokud je záložka otevřená. Nic se nikam neposílá.
+const VYR = {d:{}, mt:{}, at:0, err:'', busy:false, timer:null};
+const VYR_PROG = {dabing:{name:'🎙️ DABING', hint:'Spustíš S:\\DABING\\SPUSTIT.bat'}, edit:{name:'✂️ AUTO EDIT', hint:'Spustíš S:\\EDIT\\Auto Edit.bat'}};
+// běží něco teď? (soubor se obnovuje aspoň co 30 s; víc než 2 min ticho = program spadl / okno zavřené)
+const vyrAlive = d => d && d.stav === 'bezi' && Date.now() - (d.t || 0) < 120e3;
+const vyrRunning = () => Object.values(VYR.d).some(vyrAlive);
+async function vyrPull() {
+  if (VYR.busy || REMOTE !== DRIVE_BACKEND || !DRIVE.folder) return;
+  VYR.busy = true;
+  try {
+    const files = await dList(`'${DRIVE.folder}' in parents and name contains 'vyroba_' and trashed=false`);
+    let changed = false;
+    for (const f of files) {
+      const m = f.name.match(/^vyroba_(\w+)\.json$/); if (!m || VYR.mt[f.name] === f.modifiedTime) continue;
+      try { VYR.d[m[1]] = await (await dGet(f.id)).json(); VYR.mt[f.name] = f.modifiedTime; changed = true; } catch {}
+    }
+    VYR.at = Date.now(); VYR.err = '';
+    if (changed || S.period === 'vyr') { if (S.period === 'vyr' && !S.view) renderVyroba(); renderHeader(); }
+  } catch (e) { VYR.err = e.message; }
+  finally { VYR.busy = false; }
+}
+// co 5 s, když je záložka vidět; jinak co 2 min (jen kvůli značce „běží“ na záložce)
+setInterval(() => { if (!document.hidden && isOwner() && (S.period === 'vyr' || Date.now() - VYR.at > 120e3)) vyrPull(); }, 5e3);
+const hhmm = ms => new Date(ms).toLocaleTimeString('cs', {hour:'2-digit', minute:'2-digit'});
+function vyrGraph(h, start) {
+  if (!h || h.length < 2) return '';
+  const W = 600, H = 90, t0 = start || h[0][0], t1 = Math.max(h[h.length - 1][0], t0 + 1);
+  const X = t => 4 + (t - t0) / (t1 - t0) * (W - 8), Y = p => H - 4 - p / 100 * (H - 8);
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" class="hist vyrgraph">
+    ${[25, 50, 75].map(p => `<line x1="0" x2="${W}" y1="${Y(p)}" y2="${Y(p)}" stroke="rgba(255,255,255,.07)"/>`).join('')}
+    <polygon points="${X(h[0][0])},${Y(0)} ${h.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ')} ${X(h[h.length - 1][0])},${Y(0)}" fill="var(--accent)" opacity=".12"/>
+    <polyline points="${h.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2.2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
+    <div class="ch vyraxis"><span>${hhmm(t0)}</span><span>${hhmm(t1)}</span></div>`;
+}
+const vyrBar = (p, cls = '') => `<span class="vyrbar ${cls}"><i style="width:${Math.max(0, Math.min(100, p || 0))}%"></i></span>`;
+function vyrCard(key) {
+  const d = VYR.d[key], P = VYR_PROG[key] || {name:key, hint:''};
+  if (!d) return `<div class="vyrcard empty"><h3>${P.name}</h3><div class="ch">Zatím žádný běh. ${esc(P.hint)} – průběh se tu pak ukáže sám (i na mobilu).</div></div>`;
+  const alive = vyrAlive(d), silent = d.stav === 'bezi' && !alive;
+  const badge = alive ? '<span class="tag hot vyrpulse">● BĚŽÍ</span>' : silent ? `<span class="tag">⚠ bez signálu ${ago((Date.now() - d.t) / 3600e3).replace('před ', '')}</span>`
+    : d.stav === 'hotovo' ? '<span class="tag ok">✔ HOTOVO</span>' : '<span class="tag hot">✖ CHYBA</span>';
+  const left = d.zbyva_s, end = alive && left != null ? d.t + left * 1000 : null;
+  const head = `<div class="vyrhead"><h3>${P.name}</h3>${badge}<b class="vyrname">${esc(d.nazev || '')}</b></div>
+    <div class="vyrbig">${vyrBar(d.procenta, d.stav === 'chyba' ? 'bad' : '')}<b>${Math.round(d.procenta || 0)} %</b></div>
+    <div class="row ch">${d.faze ? `<span>▶ ${esc(d.faze)}</span>` : ''}<span>⏱️ běží ${ago(((d.konec || (alive ? Date.now() : d.t)) - d.start) / 3600e3).replace('před ', '')}</span>
+      ${alive && left != null ? `<span>zbývá ${d.presne === false ? '≈' : '~'}${Math.round(left / 60)} min · konec v <b>${hhmm(end)}</b></span>` : ''}
+      ${d.zprava ? `<span><b>${esc(d.zprava)}</b></span>` : ''}${d.rezim ? `<span>Výkon: ${esc(d.rezim)}</span>` : ''}
+      <span>aktualizováno ${ago((Date.now() - d.t) / 3600e3)}</span></div>
+    ${vyrGraph(d.historie, d.start)}`;
+  let body = '';
+  if (d.jazyky?.length) body = `<div class="vyrrows">${d.jazyky.map(j => `<div class="vyrrow ${j.stav === 'hotovo' ? 'done' : j.stav === 'chyba' ? 'err' : ''}">
+      <b>${esc(j.k)}</b><span class="vyrlbl">${esc(j.nazev)}</span>${vyrBar(j.pct)}<span class="vyrpct">${Math.round(j.pct)} %</span><span class="ch">${esc(j.stav)}${j.zbyva_s ? ` · ~${Math.round(j.zbyva_s / 60)} min` : ''}</span></div>`).join('')}</div>`;
+  if (d.kroky?.length) {
+    const mx = Math.max(...d.kroky.map(s => Math.max(s.odhad || 0, s.doba || 0)), 1);
+    body = `<div class="vyrrows">${d.kroky.map((s, i) => { const ic = {hotovo:'✔', bezi:'▶', preskoceno:'↷', ceka:'·'}[s.stav] || '·';
+      const dur = s.doba ?? (s.stav === 'bezi' && s.zacatek ? (d.t / 1000 - s.zacatek) : null);
+      return `<div class="vyrrow step ${s.stav}"><b>${ic} ${i + 1}</b><span class="vyrlbl">${esc(s.popis)}</span>
+        <span class="vyrbar step" title="šedě odhad, barevně skutečnost"><u style="width:${(s.odhad || 0) / mx * 100}%"></u>${dur != null ? `<i style="width:${Math.min(100, dur / mx * 100)}%"></i>` : ''}</span>
+        <span class="ch">${dur != null ? `${vyrCas(dur)}` : ''}${s.odhad ? ` / ~${vyrCas(s.odhad)}` : ''}</span></div>`; }).join('')}</div>`;
+  }
+  const log = (d.radky || []).slice().reverse().map(r => `<div><span class="ch">${hhmm(r[0])}</span> ${esc(r[1])}</div>`).join('');
+  return `<div class="vyrcard ${alive ? 'live' : ''}">${head}${body}${log ? `<details class="vyrlog"><summary class="ch">📜 Výpis (posledních ${d.radky.length} řádků)</summary><div>${log}</div></details>` : ''}</div>`;
+}
+const vyrCas = s => { s = Math.max(0, Math.round(s)); return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+function renderVyroba() {
+  if (!isOwner()) { $('#main').innerHTML = '<div class="empty">Výroba je jen pro Samka.</div>'; return; }
+  const open = [...document.querySelectorAll('#main .vyrlog')].map(x => x.open);
+  const noDrive = REMOTE !== DRIVE_BACKEND;
+  $('#main').innerHTML = `<div class="summary"><h3>🛠️ Výroba – dabing a střih z počítače</h3>
+      <div class="row ch">Průběh programů DABING a AUTO EDIT na PC – živě i z mobilu. Programy zapisují stav do složky na Google Disku (G:), odsud se čte co 5 s. Žádné video ani nic dalšího se nikam nenahrává.</div>
+      ${noDrive ? '<div class="drivegate">☁️ Připoj Google Disk – stav se čte z něj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : VYR.err ? `<div class="row ch">⚠ ${esc(VYR.err)}</div>` : ''}</div>
+    <div class="vyrgrid">${['dabing', 'edit', ...Object.keys(VYR.d).filter(k => !VYR_PROG[k])].map(vyrCard).join('')}</div>`;
+  document.querySelectorAll('#main .vyrlog').forEach((x, i) => { x.open = !!open[i]; });
+  if (!VYR.at && !noDrive) vyrPull();
 }
 // 🏆 Celá doba: hledání „nejsledovanější všech dob“ vrací hlavně oficiální anglická videa Brawl Stars (u Itálie 103 ze 107
 // skrytých jako jiný jazyk → prázdná stránka). Proto se přidají i nejsledovanější videa té země, která už máme
