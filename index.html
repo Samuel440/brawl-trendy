@@ -103,6 +103,22 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .vyraxis{display:flex;justify-content:space-between;margin-top:-2px}
 .vyrlog{margin-top:10px}
 .vyrlog > div{max-height:260px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--panel2);border-radius:8px;padding:6px 8px;white-space:pre-wrap;word-break:break-word}
+.vyrcard.wide{grid-column:1/-1}
+.vyrtl{margin-top:12px}
+.vyrtl .row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.vyrtl .seg button{font-size:12px;padding:4px 9px}
+.tlwrap{overflow-x:auto;overflow-y:hidden;margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);-webkit-overflow-scrolling:touch}
+.tlinner{position:relative;padding:0 0 6px}
+.tlruler{position:relative;height:18px;margin-left:36px;border-bottom:1px solid var(--line);font-size:10px;color:var(--muted)}
+.tlruler span{position:absolute;top:2px;padding-left:3px;border-left:1px solid var(--line);height:16px;white-space:nowrap}
+.tlmk{position:relative;height:10px;margin-left:36px}
+.tlmk b{position:absolute;top:1px;width:6px;height:8px;margin-left:-3px;border-radius:1px 1px 3px 3px}
+.tlrow{display:flex;height:15px;margin-top:2px}
+.tlrow.A:first-of-type,.tlrow.V + .tlrow.A{margin-top:8px}
+.tllbl{position:sticky;left:0;z-index:2;flex:0 0 32px;margin-right:4px;font-size:10px;font-weight:700;color:var(--muted);background:var(--panel2);text-align:center;line-height:15px}
+.tllane{position:relative;flex:1}
+.tllane i{position:absolute;top:0;bottom:0;border-radius:2px;background:#4f7cff;box-shadow:inset -1px 0 0 rgba(0,0,0,.35)}
+.tlrow.A .tllane i{background:#2ec4b6}
 .vyrpulse{animation:vyrpulse 1.4s ease-in-out infinite}
 @keyframes vyrpulse{50%{opacity:.45}}
 #tabs .vyrlive{box-shadow:inset 0 -3px 0 var(--hot)}
@@ -684,7 +700,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.134'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.135'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4652,7 +4668,8 @@ async function vyrPull() {
       try { VYR.d[m[1]] = await (await dGet(f.id)).json(); VYR.mt[f.name] = f.modifiedTime; changed = true; } catch {}
     }
     VYR.at = Date.now(); VYR.err = '';
-    if (changed || S.period === 'vyr') { if (S.period === 'vyr' && !S.view) renderVyroba(); renderHeader(); }
+    // překreslit jen při změně (timeline má tisíce klipů), jinak jednou za minutu kvůli „aktualizováno před…“
+    if (changed || Date.now() - (VYR.drawn || 0) > 60e3) { if (S.period === 'vyr' && !S.view) renderVyroba(); renderHeader(); }
   } catch (e) { VYR.err = e.message; }
   finally { VYR.busy = false; }
 }
@@ -4669,6 +4686,31 @@ function vyrGraph(h, start) {
     <polyline points="${h.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2.2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
     <div class="ch vyraxis"><span>${hhmm(t0)}</span><span>${hhmm(t1)}</span></div>`;
 }
+// 🎞️ timeline z DaVinci Resolve: snímky (tvůj střih → sestaveno → hotovo), stopy V nahoře, A dole, markery
+VYR.ui = {snap:null, zoom:1, scroll:0};
+const RES_COL = {Orange:'#e8743b', Apricot:'#f4a261', Yellow:'#e9c46a', Lime:'#a7c957', Olive:'#6a994e', Green:'#2a9d8f', Teal:'#219ebc',
+  Navy:'#3a5a8c', Blue:'#4895ef', Purple:'#9d4edd', Violet:'#c77dff', Pink:'#f28482', Tan:'#c8a27a', Beige:'#e9d8a6', Brown:'#8d5b4c', Chocolate:'#6f4518',
+  Red:'#e63946', Cyan:'#4cc9f0', Fuchsia:'#f72585', Rose:'#ff8fab', Lavender:'#bdb2ff', Sky:'#8ecae6', Mint:'#95d5b2', Lemon:'#fff3b0', Sand:'#d6ccc2', Cocoa:'#7f5539', Cream:'#fefae0'};
+const tlTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function vyrTimeline(T) {
+  const snaps = T.snimky || []; if (!snaps.length) return '';
+  const si = VYR.ui.snap != null && snaps[VYR.ui.snap] ? VYR.ui.snap : snaps.length - 1, s = snaps[si];
+  const dur = Math.max(1, s.delka), base = Math.max(300, Math.min(document.documentElement.clientWidth - 120, 1100));
+  const pps = base / dur * VYR.ui.zoom, W = Math.ceil(dur * pps);
+  const step = [5, 10, 30, 60, 120, 300, 600].find(x => x * pps >= 70) || 900;
+  const ruler = Array.from({length:Math.floor(dur / step) + 1}, (_, i) => `<span style="left:${i * step * pps}px">${tlTime(i * step)}</span>`).join('');
+  const stopy = s.stopy.filter(t => t.klipy.length);
+  const rows = stopy.map(t => `<div class="tlrow ${t.typ}"><span class="tllbl" title="${esc(t.nazev)}">${t.typ}${t.n}</span><div class="tllane">${t.klipy.map(k =>
+    `<i style="left:${(k[0] * pps).toFixed(1)}px;width:${Math.max(1, (k[1] - k[0]) * pps).toFixed(1)}px${k[3] && RES_COL[k[3]] ? `;background:${RES_COL[k[3]]}` : ''}" title="${esc(k[2])} · ${tlTime(k[0])}–${tlTime(k[1])}"></i>`).join('')}</div></div>`).join('');
+  const mk = s.markery.map(m => `<b style="left:${(m[0] * pps).toFixed(1)}px;background:${RES_COL[m[1]] || 'var(--accent)'}" title="${esc(m[2])} · ${tlTime(m[0])}"></b>`).join('');
+  const nk = stopy.reduce((a, t) => a + t.klipy.length, 0);
+  return `<div class="vyrtl"><div class="row"><b>🎞️ Timeline</b>
+      <span class="seg">${snaps.map((x, i) => `<button data-vyrsnap="${i}" class="${i === si ? 'on' : ''}">${esc(x.popis)}</button>`).join('')}</span>
+      <span class="seg"><button data-vyrzoom="-1" title="Oddálit">−</button><button data-vyrzoom="0" title="Celá timeline">${VYR.ui.zoom}×</button><button data-vyrzoom="1" title="Přiblížit">+</button></span>
+      <span class="ch">„${esc(s.timeline)}“ · ${tlTime(dur)} · ${stopy.length} stop · ${nk} klipů · ${s.markery.length} markerů · ${hhmm(s.t)}</span></div>
+    <div class="tlwrap"><div class="tlinner" style="width:${W + 40}px"><div class="tlruler">${ruler}</div><div class="tlmk">${mk}</div>${rows}</div></div></div>`;
+}
+document.addEventListener('scroll', e => { if (e.target.classList?.contains('tlwrap')) VYR.ui.scroll = e.target.scrollLeft; }, true);
 const vyrBar = (p, cls = '') => `<span class="vyrbar ${cls}"><i style="width:${Math.max(0, Math.min(100, p || 0))}%"></i></span>`;
 function vyrCard(key) {
   const d = VYR.d[key], P = VYR_PROG[key] || {name:key, hint:''};
@@ -4696,7 +4738,8 @@ function vyrCard(key) {
         <span class="ch">${dur != null ? `${vyrCas(dur)}` : ''}${s.odhad ? ` / ~${vyrCas(s.odhad)}` : ''}</span></div>`; }).join('')}</div>`;
   }
   const log = (d.radky || []).slice().reverse().map(r => `<div><span class="ch">${hhmm(r[0])}</span> ${esc(r[1])}</div>`).join('');
-  return `<div class="vyrcard ${alive ? 'live' : ''}">${head}${body}${log ? `<details class="vyrlog"><summary class="ch">📜 Výpis (posledních ${d.radky.length} řádků)</summary><div>${log}</div></details>` : ''}</div>`;
+  const tl = key === 'edit' && VYR.d.edit_tl?.start === d.start ? vyrTimeline(VYR.d.edit_tl) : '';
+  return `<div class="vyrcard ${alive ? 'live' : ''}${tl ? ' wide' : ''}">${head}${body}${tl}${log ? `<details class="vyrlog"><summary class="ch">📜 Výpis (posledních ${d.radky.length} řádků)</summary><div>${log}</div></details>` : ''}</div>`;
 }
 const vyrCas = s => { s = Math.max(0, Math.round(s)); return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 function renderVyroba() {
@@ -4706,8 +4749,10 @@ function renderVyroba() {
   $('#main').innerHTML = `<div class="summary"><h3>🛠️ Výroba – dabing a střih z počítače</h3>
       <div class="row ch">Průběh programů DABING a AUTO EDIT na PC – živě i z mobilu. Programy zapisují stav do složky na Google Disku (G:) zhruba co 15 s, odsud se čte co 5 s (Drive k tomu přidá pár vteřin na nahrání). Žádné video ani nic dalšího se nikam nenahrává.</div>
       ${noDrive ? '<div class="drivegate">☁️ Připoj Google Disk – stav se čte z něj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : VYR.err ? `<div class="row ch">⚠ ${esc(VYR.err)}</div>` : ''}</div>
-    <div class="vyrgrid">${['dabing', 'edit', ...Object.keys(VYR.d).filter(k => !VYR_PROG[k])].map(vyrCard).join('')}</div>`;
+    <div class="vyrgrid">${['dabing', 'edit', ...Object.keys(VYR.d).filter(k => !VYR_PROG[k] && !k.endsWith('_tl'))].map(vyrCard).join('')}</div>`;
   document.querySelectorAll('#main .vyrlog').forEach((x, i) => { x.open = !!open[i]; });
+  const w = $('#main .tlwrap'); if (w) w.scrollLeft = VYR.ui.scroll || 0;
+  VYR.drawn = Date.now();
   if (!VYR.at && !noDrive) vyrPull();
 }
 // 🏆 Celá doba: hledání „nejsledovanější všech dob“ vrací hlavně oficiální anglická videa Brawl Stars (u Itálie 103 ze 107
@@ -4790,6 +4835,14 @@ document.addEventListener('click', e => {
   if (b.dataset.period === 'star' && !b.dataset.startab) { S.starTab = 'drop'; S.starWho = null; }
   if (b.dataset.period === 'cal') { S.calOff = 0; S.calJump = true; } // 🗓️ otevřít vždy na dnešku
   if (b.dataset.period === 'ideas') S.ideaSec = null; // 💡 záložka = vždy zpátky na dlaždice
+  // 🎞️ Výroba: přepnutí snímku timeliny / přiblížení (střed obrazu zůstane na místě)
+  if (b.dataset.vyrsnap) { VYR.ui.snap = +b.dataset.vyrsnap; renderVyroba(); return; }
+  if (b.dataset.vyrzoom) {
+    const w = $('#main .tlwrap'), old = VYR.ui.zoom, d = +b.dataset.vyrzoom;
+    VYR.ui.zoom = d === 0 ? 1 : Math.max(1, Math.min(64, old * (d > 0 ? 2 : .5)));
+    if (w) { const mid = (w.scrollLeft + w.clientWidth / 2) / old; VYR.ui.scroll = Math.max(0, mid * VYR.ui.zoom - w.clientWidth / 2); }
+    renderVyroba(); return;
+  }
   // ⏱️ jen přepočítat obsah otevřené funkce, ne celé Nápady
   if (b.dataset.ideadays) {
     ss('bt_ideadays', +b.dataset.ideadays);
