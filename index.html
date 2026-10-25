@@ -650,7 +650,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.131'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.132'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3750,17 +3750,28 @@ async function queryVariants(q, langs) {
   }));
   ss('bt_qtr', QTR);
 }
+// ⚡ rozklad názvů na slova se pamatuje (dřív se při každém hledání znovu normalizovaly tisíce názvů)
+const QTOK = new Map(), QWS = new Map();
+function qTokens(it) {
+  const key = it.t + '\u0001' + (TR[it.t] || '') + '\u0001' + (it.ch || '');
+  let e = QTOK.get(key);
+  if (!e) {
+    if (QTOK.size > 60000) QTOK.clear();
+    // hledá se v názvu, jeho překladu i ve jménu kanálu (napíšeš „Eby“ → ukáže videa kanálu Eby)
+    // jméno kanálu i se zdrobnělinou / koncovkou: „Ebynovce“, „Štěpsovo“ najde kanál Eby / Štěps
+    e = {text:words(key.replace(/\u0001/g, ' ')), chToks:words(it.ch || '').filter(t => t.length >= 3)};
+    QTOK.set(key, e);
+  }
+  return e;
+}
+const qWords = v => { let ws = QWS.get(v); if (!ws) { const w = words(v).filter(w => w.length >= 3 && !STOP.has(w)); ws = w.length ? w : words(v); if (QWS.size > 500) QWS.clear(); QWS.set(v, ws); } return ws; };
 function matchQ(it) {
   const q = S.q.trim(); if (!q) return true;
-  // hledá se v názvu, jeho překladu i ve jménu kanálu (napíšeš „Eby“ → ukáže videa kanálu Eby)
-  const text = words(it.t + ' ' + (TR[it.t] || '') + ' ' + (it.ch || ''));
-  // jméno kanálu i se zdrobnělinou / koncovkou: „Ebynovce“, „Štěpsovo“ najde kanál Eby / Štěps
-  const chToks = words(it.ch || '').filter(t => t.length >= 3);
+  const {text, chToks} = qTokens(it);
   const variants = [q, QTR[it.c.lang + '|' + q]].filter(Boolean);
   // stačí, když sedí aspoň polovina významových slov (překlad nikdy nesedí slovo od slova)
   return variants.some(v => {
-    const ws = words(v).filter(w => w.length >= 3 && !STOP.has(w));
-    const list = ws.length ? ws : words(v);
+    const list = qWords(v);
     return list.filter(w => text.some(tok => wordHit(w, tok)) || chToks.some(t => w.startsWith(t))).length >= Math.ceil(list.length / 2);
   });
 }
@@ -3774,18 +3785,27 @@ function onSearchInput(v) {
   }, 450);
 }
 // Hledání ve všech uložených videích všech států (Novinky, Týden, Celá doba, Archiv)
-function renderSearchAll() {
-  const seen = new Set(), list = [];
+// všechna videa všech států připravená k hledání – pamatuje se, dokud se nezmění data/filtry (jako gather)
+let SALL = null;
+function searchPool() {
+  const key = [DATAVER, S.type, S.strict, S.noLive, Object.keys(BLOCK.videos).length, Object.keys(BLOCK.channels).length].join('|');
+  if (SALL?.key === key) return SALL.v;
+  const seen = new Set(), out = [];
   for (const c of COUNTRIES) {
     const raw = [...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])];
-    for (const it of prepare(raw, c)) if (!seen.has(it.id) && matchQ(it)) { seen.add(it.id); list.push(it); }
+    for (const it of prepare(raw, c)) if (!seen.has(it.id)) { seen.add(it.id); out.push(it); }
   }
+  return (SALL = {key, v:out}).v;
+}
+function renderSearchAll() {
+  const list = searchPool().filter(matchQ);
   list.sort(SORTS[S.sort]);
   const q = S.q.trim();
   const tr = [...new Set(COUNTRIES.map(c => QTR[c.lang + '|' + q]).filter(t => t && norm(t) !== norm(q)))];
   $('#main').innerHTML = `<div class="summary"><h3>🔎 „${esc(q)}“ ve všech uložených videích – ${list.length} výsledků</h3>
     ${tr.length ? `<div class="row ch">Hledáno i jako: ${tr.slice(0, 14).map(t => `<span class="tag blue">${esc(t)}</span>`).join('')}</div>` : ''}</div>
-    ${list.length ? `<div class="grid">${list.slice(0, 200).map((it, i) => card(it, i, true)).join('')}</div>` : '<div class="empty">Nic nenalezeno. Zkus jiné slovo nebo načti víc dat.</div>'}`;
+    ${list.length ? progCards(list.slice(0, 200), true) : '<div class="empty">Nic nenalezeno. Zkus jiné slovo nebo načti víc dat.</div>'}`;
+  document.querySelectorAll('#main .grid[data-prog]').forEach(gridFill);
   autoTranslate();
 }
 
@@ -3953,10 +3973,11 @@ function renderCountry(set, c, p) {
         <div class="addch"><input id="chInput" placeholder="@LukasBrawlStars nebo odkaz na kanál"><button id="btnAddCh">➕ Přidat kanál do ${esc(c.name)}</button></div></details>
       ${(() => { const d = discInfo(c.id); return `<div class="row ch">🔭 Objevování malých kanálů: ${d.last ? `naposledy ${ago((Date.now() - d.last) / 3600e3)}, celkem objeveno ${d.total || 0}` : 'ještě neproběhlo'}${S.discover ? ` · důkladně samo jednou za ${S.discDays} ${S.discDays === 1 ? 'den' : 'dní'}` : ' · vypnuté v Nastavení'} <button data-discover="${c.id}"${searchLeft() ? ' class="costly" title="1 hledání ze 100 denních + pár levných dotazů"' : ''}>🔭 Hledat malé kanály teď</button>${S.key && TIME_PERIODS.includes(S.period) ? ` <button data-refreshnow class="costly" title="Plné hledání nových videí v ${esc(c.name)} hned teď (1–2 hledání ze 100), bez čekání na časomíru">⟳ Aktualizovat vše teď</button>` : ''}</div>`; })()}
     </details></div>
-    ${list.length ? sections.map(([h, l]) => `<div class="sec"><h2>${h} <span class="ch">(${l.length})</span></h2>${l.length ? `<div class="grid">${l.slice(0, S.showN).map((it, i) => card(it, i)).join('')}</div>${l.length > S.showN ? `<button class="more" data-showmore>Zobrazit dalších ${Math.min(SHOW_STEP, l.length - S.showN)} (z ${l.length})</button>` : ''}` : '<div class="empty">Nic.</div>'}</div>`).join('') : '<div class="empty">Nic nenalezeno. Zkus jiný stát, nebo v ⚙️ Nastavení vypnout „Jen videa z daného státu“.</div>'}
+    ${list.length ? sections.map(([h, l]) => `<div class="sec"><h2>${h} <span class="ch">(${l.length})</span></h2>${l.length ? `${progCards(l.slice(0, S.showN), false)}${l.length > S.showN ? `<button class="more" data-showmore>Zobrazit dalších ${Math.min(SHOW_STEP, l.length - S.showN)} (z ${l.length})</button>` : ''}` : '<div class="empty">Nic.</div>'}</div>`).join('') : '<div class="empty">Nic nenalezeno. Zkus jiný stát, nebo v ⚙️ Nastavení vypnout „Jen videa z daného státu“.</div>'}
     ${set.next ? `<button class="more" id="btnMore">Načíst dalších 50 (1 hledání)</button>` : ''}`;
   // na mobilu si zapamatovat, že si statistiky otevřel (při překreslení se nezavřou)
   $('#main .sumd')?.addEventListener('toggle', ev => { S.sumOpen = ev.target.open; });
+  document.querySelectorAll('#main .grid[data-prog]').forEach(gridFill); // ⚡ zbytek karet postupně
   updateUpdated();
   autoTranslate();
   aiCheck(set.items.filter(it => !S.strict || langOk(it, c)));
@@ -4285,18 +4306,26 @@ function ideaBodyFill() {
 // 🃏 karty v rozbalovacích řádcích (vlny, šablony, formáty) se vytvoří až po rozkliknutí řádku – dřív se jich
 // najednou kreslilo i 160 (20 vln × 8 karet), i když byly schované
 const LAZY = new Map(); let LAZY_N = 0;
-function lazyGrid(items, max = 8) { const id = 'lz' + (++LAZY_N); LAZY.set(id, items.slice(0, max)); return `<div class="grid" data-lazy="${id}"></div>`; }
+function lazyGrid(items, max = 8) { const id = 'lz' + (++LAZY_N); LAZY.set(id, {items:items.slice(0, max), sc:true, from:0}); return `<div class="grid" data-lazy="${id}"></div>`; }
 // progGrid = mřížka, která se naplní hned po vykreslení, ale POSTUPNĚ (po 6 kartách) – jako šedá pásma v grafech
 const progGrid = (items, max = 60) => lazyGrid(items, max).replace('data-lazy', 'data-prog data-lazy');
+// progCards = prvních pár karet hned (je co vidět), zbytek postupně; sc = ukázat stát na kartě
+function progCards(items, sc, first = 12) {
+  // překreslení odscrollované stránky (obnova dat, „Zobrazit další“) kreslí vše hned – jinak by stránka byla
+  // na chvíli kratší a scroll by vyskočil nahoru; postupně jen čerstvě otevřený seznam nahoře
+  if (scrollY > 200) first = items.length;
+  const id = 'lz' + (++LAZY_N); LAZY.set(id, {items, sc, from:first});
+  return `<div class="grid" data-prog data-lazy="${id}">${items.slice(0, first).map((it, i) => card(it, i, sc)).join('')}</div>`;
+}
 function gridFill(g) {
   if (g.dataset.done) return; g.dataset.done = '1';
-  const items = LAZY.get(g.dataset.lazy) || []; let i = 0;
+  const e = LAZY.get(g.dataset.lazy) || {items:[]}; let i = e.from || 0;
   const step = () => {
     if (!g.isConnected) return;
-    g.insertAdjacentHTML('beforeend', items.slice(i, i + 6).map((it, k) => card(it, i + k, true)).join('')); i += 6;
-    if (i < items.length) setTimeout(step, 16); else { autoTranslate(); fillBands(); }
+    g.insertAdjacentHTML('beforeend', e.items.slice(i, i + 6).map((it, k) => card(it, i + k, e.sc)).join('')); i += 6;
+    if (i < e.items.length) setTimeout(step, 16); else { autoTranslate(); fillBands(); }
   };
-  step();
+  if (i < e.items.length) setTimeout(step, 16);
 }
 let IDEA_LOADBOX = null; // souhrn „Načtení dat“ (stojí ~0,1 s) – spočítá se až po rozkliknutí
 document.addEventListener('toggle', e => {
