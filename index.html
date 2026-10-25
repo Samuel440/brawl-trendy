@@ -646,7 +646,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.123'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.124'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1720,7 +1720,7 @@ async function ensureSet(c, p, force, light, extra) {
     const found = new Set(r.items.map(i => i.id));
     const kept = (set?.items || []).filter(i => !found.has(i.id) && new Date(i.pub) >= since);
     set = {ts:Date.now(), searchTs:Date.now(), newTs:r.dated ? Date.now() : set?.newTs, items:capItems([...r.items, ...kept]), next:r.next};
-    logEvent(`🔎 načetl ${c.name} – ${PERIODS[p].label} (${r.items.length} videí z hledání)`);
+    logEvent(`🔎 načetl ${c.name} – ${PERIODS[p].label} (${r.items.length} videí z hledání${p === 'all' ? ' a populárních videí kanálů' : ''})`);
   }
   putSet(c.id, p, set);
   // novinky se rovnou přesunou i do Týdne (z něj pak po 7 dnech zůstanou v Archivu)
@@ -2095,7 +2095,7 @@ function langOk(it, c) {
   if (it.cc && (c.regions || [c.region]).includes(it.cc)) return true;
   const known = chDb(c.id)[it.chId];
   if (known?.manual || known?.home) return true; // ručně přidaný / kanál už poznaný jako domácí
-  const L = it.lang.split('-')[0];
+  const L = (it.lang || '').split('-')[0];
   if (L === c.lang || it.chL === c.lang || (it.homeL || []).includes(c.lang)) return true;
   if (L || it.cc) return false;
   if (c.script) return c.script.test(it.t);
@@ -3925,6 +3925,7 @@ function renderCountry(set, c, p) {
       <div class="row"><span class="lbl">Časté slova</span>${wd.slice(0, 14).map(e => pill(e, 'blue')).join('') || '<span class="ch">–</span>'}</div>
       <div class="row" title="Slova, která teď používají aspoň 3 čistě Brawl kanály (ze všech států). Podle nich se poznají i videa bez „Brawl Stars“ v názvu."><span class="lbl">Slova sezóny</span>${termPills(15)}</div>
       <div class="row ch">${longs.length} videí · ${shorts.length} shorts${hidden ? ` · skryto: ${hidden}` : ''} · celkem ${n(list.reduce((a, b) => a + b.views, 0))} zhlédnutí${fromCh ? ` · ${fromCh} nalezeno jen přes sledované kanály` : ''}</div>
+      ${S.period === 'all' ? `<div class="row ch">🏆 Celá doba = hledání podle zhlédnutí + ${POP_PER} nejpopulárnějších videí a ${POP_PER} shorts od každého sledovaného kanálu (${discInfo(c.id).pop ? `prošlo ${ago((Date.now() - discInfo(c.id).pop) / 3600e3)}, znovu za ${POP_DAYS} dní` : 'projde se při načtení'}). ${S.type !== 'all' ? `Teď ukazuješ jen ${S.type === 'short' ? 'shorts' : 'videa'} – přepni na Obojí.` : ''}</div>` : ''}
       <details class="row ch" ${tracked.length ? '' : 'open'}><summary>📡 Sledované Brawl kanály: ${tracked.length}${tracked.length ? '' : ' (naučí se z výsledků, nebo si je přidej ručně)'}</summary>
         <div class="tags" style="margin-top:6px">${tracked.map(ch => `<span class="tag ${ch.manual ? 'ok' : ''}"><a href="https://www.youtube.com/channel/${esc(ch.id)}" target="_blank" rel="noopener" style="text-decoration:none">${ch.manual ? '📌 ' : ''}${esc(ch.name)}${ch.ids.length ? ' · ' + ch.ids.length + ' videí' : ''}</a>${ch.manual ? ` <button class="x" data-unch="${esc(ch.id)}" title="Přestat sledovat">✖</button>` : ''}</span>`).join('')}</div>
         <div class="addch"><input id="chInput" placeholder="@LukasBrawlStars nebo odkaz na kanál"><button id="btnAddCh">➕ Přidat kanál do ${esc(c.name)}</button></div></details>
