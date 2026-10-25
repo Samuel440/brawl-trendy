@@ -646,7 +646,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-25.124'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-25.125'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3541,7 +3541,9 @@ function card(it, i, showCountry) {
 // ---------- AI kontrola miniatur (model CLIP běží přímo v prohlížeči, zdarma) ----------
 // Porovná miniaturu s popisy různých her. Brawl od Minecraftu/Robloxu/vlogů pozná dobře, od Clash Royale hůř
 // (stejný styl Supercellu) – proto je jen pomocník ke „slovům sezóny“, ne hlavní rozhodčí.
-const AI = {ready:null, pending:new Set(), running:false};
+// pending = fronta podle ID videa (dřív Set objektů → každé překreslení přidalo stejné video znovu jako novou kopii)
+// bad = miniatury, které se nepodařilo načíst – do obnovení stránky je znovu nezkoušet
+const AI = {ready:null, pending:new Map(), bad:new Set(), running:false};
 const AI_CACHE = ls('bt_aicache', {});
 const AI_YES = ['a screenshot of the mobile game Brawl Stars', 'colorful cartoon characters from the game Brawl Stars', 'a YouTube thumbnail of a Brawl Stars video'];
 const AI_NO = ['a screenshot of Minecraft', 'a screenshot of Roblox', 'a screenshot of Fortnite', 'a screenshot of Clash Royale', 'a screenshot of Clash of Clans',
@@ -3624,17 +3626,17 @@ function aiBadge(it) {
 async function aiCheck(items) {
   if (!S.ai || AI.failed) return;
   // jiná hra v názvu nebo zablokované video = verdikt je jasný bez AI
-  items.filter(it => (it.cand || strictCh(it)) && !aiOf(it) && !otherGame(it) && !BLOCK.videos[it.id]).forEach(it => AI.pending.add(it));
+  items.filter(it => (it.cand || strictCh(it)) && !aiOf(it) && !otherGame(it) && !BLOCK.videos[it.id] && !AI.bad.has(it.id)).forEach(it => AI.pending.set(it.id, it));
   if (AI.running || !AI.pending.size) return;
   AI.running = true;
   let newCand = false, done = 0;
   try {
     await aiInit();
     while (AI.pending.size && S.ai) {
-      const it = AI.pending.values().next().value; AI.pending.delete(it);
+      const it = AI.pending.values().next().value; AI.pending.delete(it.id);
       if (aiOf(it)) continue;
       status(`🤖 Kontroluju miniatury… (${++done}, zbývá ${AI.pending.size})`);
-      try { AI_CACHE[it.id] = aiScore(await embed(thumb(it))); } catch { continue; }
+      try { AI_CACHE[it.id] = aiScore(await embed(thumb(it))); } catch { AI.bad.add(it.id); continue; }
       if (it.cand || strictCh(it)) newCand = true;
       document.querySelectorAll(`.card[data-id="${it.id}"] .tags`).forEach(el => {
         el.querySelector('[data-ai]')?.remove(); el.insertAdjacentHTML('afterbegin', aiBadge(it));
