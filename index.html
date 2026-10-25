@@ -684,7 +684,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.133'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.134'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4636,15 +4636,18 @@ function renderMain() {
 const VYR = {d:{}, mt:{}, at:0, err:'', busy:false, timer:null};
 const VYR_PROG = {dabing:{name:'🎙️ DABING', hint:'Spustíš S:\\DABING\\SPUSTIT.bat'}, edit:{name:'✂️ AUTO EDIT', hint:'Spustíš S:\\EDIT\\Auto Edit.bat'}};
 // běží něco teď? (soubor se obnovuje aspoň co 30 s; víc než 2 min ticho = program spadl / okno zavřené)
-const vyrAlive = d => d && d.stav === 'bezi' && Date.now() - (d.t || 0) < 120e3;
+const vyrAlive = d => d && d.stav === 'bezi' && Date.now() - (d.t || 0) < 180e3;
 const vyrRunning = () => Object.values(VYR.d).some(vyrAlive);
 async function vyrPull() {
   if (VYR.busy || REMOTE !== DRIVE_BACKEND || !DRIVE.folder) return;
   VYR.busy = true;
   try {
-    const files = await dList(`'${DRIVE.folder}' in parents and name contains 'vyroba_' and trashed=false`);
+    // (Drive pro počítač může při nahrávání nové verze založit i nový soubor – bere se vždy nejnovější se stejným jménem)
+    const newest = {};
+    for (const f of await dList(`'${DRIVE.folder}' in parents and name contains 'vyroba_' and trashed=false`))
+      if (!newest[f.name] || f.modifiedTime > newest[f.name].modifiedTime) newest[f.name] = f;
     let changed = false;
-    for (const f of files) {
+    for (const f of Object.values(newest)) {
       const m = f.name.match(/^vyroba_(\w+)\.json$/); if (!m || VYR.mt[f.name] === f.modifiedTime) continue;
       try { VYR.d[m[1]] = await (await dGet(f.id)).json(); VYR.mt[f.name] = f.modifiedTime; changed = true; } catch {}
     }
@@ -4701,7 +4704,7 @@ function renderVyroba() {
   const open = [...document.querySelectorAll('#main .vyrlog')].map(x => x.open);
   const noDrive = REMOTE !== DRIVE_BACKEND;
   $('#main').innerHTML = `<div class="summary"><h3>🛠️ Výroba – dabing a střih z počítače</h3>
-      <div class="row ch">Průběh programů DABING a AUTO EDIT na PC – živě i z mobilu. Programy zapisují stav do složky na Google Disku (G:), odsud se čte co 5 s. Žádné video ani nic dalšího se nikam nenahrává.</div>
+      <div class="row ch">Průběh programů DABING a AUTO EDIT na PC – živě i z mobilu. Programy zapisují stav do složky na Google Disku (G:) zhruba co 15 s, odsud se čte co 5 s (Drive k tomu přidá pár vteřin na nahrání). Žádné video ani nic dalšího se nikam nenahrává.</div>
       ${noDrive ? '<div class="drivegate">☁️ Připoj Google Disk – stav se čte z něj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : VYR.err ? `<div class="row ch">⚠ ${esc(VYR.err)}</div>` : ''}</div>
     <div class="vyrgrid">${['dabing', 'edit', ...Object.keys(VYR.d).filter(k => !VYR_PROG[k])].map(vyrCard).join('')}</div>`;
   document.querySelectorAll('#main .vyrlog').forEach((x, i) => { x.open = !!open[i]; });
