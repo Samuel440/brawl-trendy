@@ -1,0 +1,26 @@
+▶️ NÁHLED EDITU – hrubé sestavení z tvých souborů na PC
+==========================================================
+
+1) Spusť  S:\NÁPADY\BRAWL TRENDY\NÁHLED.bat  a nech okno otevřené.
+   (Poprvé se Windows zeptá na firewall pro Python → povol „Soukromé sítě“, jinak se na to mobil nedostane.)
+
+2) Otevři odkaz z okna, nebo na webu Brawl Trendy → záložka 🛠️ Výroba → tlačítko ▶️ Náhled editu:
+   - 💻 Na tomhle PC
+   - 📱 Doma (Wi-Fi) – mobil musí být na stejné Wi-Fi
+   - 🌍 Kdekoli (Tailscale) – viz bod 4
+
+3) U nového projektu klikni v přehrávači „⚙️ Připravit náhled“ – jednou se udělají lehké kopie videí
+   (S:\EDIT\_cache\nahled, grafika to zvládne asi 7× rychleji, než video trvá). Pak už to hraje hned.
+
+   Co náhled ukazuje: tvůj střih (hra + webka), velikost webky (malá / VELKÁ / FULL / punch), punch ve hře,
+   černobílé části a hudbu přesně podle plánu Auto Editu. Mikrofon z mic.wav.
+   Co NEukazuje: efekty, zoomy, zvukové efekty, texty a Magic Masky – ty jsou až v Resolve.
+   Ovládání: mezerník = přehrát/pauza, šipky = ±5 s, klik do pruhu = skok.
+
+4) Mobil kdekoli (mimo domov) – Tailscale (zdarma, soukromé spojení jen mezi tvými zařízeními):
+   a) Na PC: https://tailscale.com/download → nainstalovat → přihlásit se (např. Googlem).
+   b) Na mobilu: aplikace Tailscale z Google Play → přihlásit STEJNÝM účtem → zapnout.
+   c) Restartuj NÁHLED.bat – v okně i ve Výrobě přibude odkaz „🌍 Kdekoli (Tailscale)“.
+   Video jde přímo z tvého PC do mobilu, nikde se neukládá. PC musí být zapnuté a NÁHLED.bat spuštěný.
+
+Heslo do odkazů je v  tools\nahled_heslo.txt  (jen na tomhle PC). Bez něj server nic neukáže.
