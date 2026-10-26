@@ -313,7 +313,21 @@ function setFx(el, f, t) {
   el.style.transform = `translate(${x * 100}%, ${-y * 100}%)${r ? ` rotate(${-r}deg)` : ''} scale(${z}, ${zy})`;
   el.style.clipPath = cr.some(v => v > 1e-4) ? `inset(${cr[2] * 100}% ${cr[1] * 100}% ${cr[3] * 100}% ${cr[0] * 100}%)` : '';
 }
-function applyFx(el, c, t) { setFx(el, c[4] || {}, t); }
+function applyFx(el, c, t) {
+  const f = c[4] || {}, box = el.parentElement;
+  setFx(el, f, t);
+  // ⬜ bílé označení: v Resolve kopie hry s Magic Mask na věci + bílá úprava barev + GLOW → tady kopii oříznout
+  // na rámeček věci (zlomky zdroje; video je „contain“ – telefon 2712×1220 má nahoře a dole pruhy), zbělit a rozzářit
+  if (f.m && el.videoWidth) {
+    const A = el.videoWidth / el.videoHeight, S = 16 / 9, [cx, cy, w, h] = f.m;
+    const sx = A >= S ? 1 : A / S, sy = A >= S ? S / A : 1, ox = (1 - sx) / 2, oy = (1 - sy) / 2;
+    const l = ox + (cx - w / 2) * sx, r = 1 - (ox + (cx + w / 2) * sx), tp = oy + (cy - h / 2) * sy, b = 1 - (oy + (cy + h / 2) * sy);
+    el.style.clipPath = `inset(${(tp * 100).toFixed(2)}% ${(r * 100).toFixed(2)}% ${(b * 100).toFixed(2)}% ${(l * 100).toFixed(2)}% round 1.2%)`;
+    el.style.filter = 'brightness(2.5) saturate(0.1) contrast(1.05)';
+    if (box) box.style.filter = 'drop-shadow(0 0 0.5vw #fff) drop-shadow(0 0 1.2vw #fffc)';
+  } else if (el.style.filter) { el.style.filter = ''; if (box) box.style.filter = ''; }
+  if (box) box.style.opacity = f.o != null ? kv(f.o, t) : '';
+}
 // ---------- 🔊 zvuk se skutečnými hlasitostmi z editu (mikrofon +12 dB, hra −28 dB, hudba podle plánu) přes Web Audio
 let AC = null, AUDIO_DONE = false; const G = {};
 const dbv = db => Math.pow(10, db / 20);
@@ -502,7 +516,9 @@ function cileRows(row, blk) {
   const r = (ic, title, items, col) => items.length ? row(ic, title, items.map(([s, e, x]) => blk(s, e, col, x)).join(''), items) : '';
   return r('🏹', 'Šipky' + (sestaveno ? '' : ' (plán)'), it(sip, 'sipka', 'šipka'), '#e63946')
     + r('🟥', 'Červené čáry / křížky' + (sestaveno ? '' : ' (plán)'), it(car, 'cara', 'čára'), '#ff4d6d')
-    + r('⬜', 'Bílé označení (plán)', C.filter(c => c[2] === 'bile').map(c => [c[0], c[1], c[3] || 'označení']), '#f1f3f5')
+    + r('⬜', 'Bílé označení' + (sestaveno ? '' : ' (plán)'), sestaveno
+      ? it(spoj((D.vrstvy || []).flatMap(v => v.klipy.filter(k => k[4]?.m).map(k => [k[0], k[1]]))), 'bile', 'označení')
+      : C.filter(c => c[2] === 'bile').map(c => [c[0], c[1], c[3] || 'označení']), '#f1f3f5')
     + r('🎯', 'Zoomy na věc (plán)', C.filter(c => c[2] === 'zoom').map(c => [c[0], c[1], c[3] || 'zoom']), '#ffcc00');
 }
 function tlPlayhead(t) {

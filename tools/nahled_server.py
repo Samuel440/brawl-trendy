@@ -25,6 +25,7 @@ import threading
 import time
 import urllib.parse
 import zipfile
+import zlib
 import xml.etree.ElementTree as ET
 
 PORT = 8790
@@ -311,10 +312,38 @@ def _tf(c, L, t0, i0, mf):
     zy = tv((4, 43), fx.get((4, 42), 1.0))
     if zy != z:
         out["zy"] = zy
+    if (2, 1) in fx:  # průhlednost klipu (skupina 2 / param 1, 0–100 %) – bílé označení slábne a mizí
+        o = tv((2, 1), 100.0)
+        out["o"] = [[k[0], round(k[1] / 100, 4)] + k[2:] for k in o] if isinstance(o, list) else round(o / 100, 4)
     r = tv((4, 47), 0.0)
     if r:
         out["r"] = r
     return out
+
+
+def _maska(c):
+    """⬜ bílé označení (magic_glow.py): kopie herního klipu s Fusion Magic Mask. Z tahů masky (PosStrokes, zlomky zdroje,
+    Fusion Y nahoru) spočítá rámeček věci [střed x, střed y, šířka, výška] (Y dolů) – tah klikatě pokrývá prostředních
+    ~44 × 54 % věci (celá karta 80 × 84 %), Magic Mask se pak roztáhne k okrajům věci."""
+    try:
+        node = c.find("CompositionTable/Sm2TiCompositionTable/CompositionBA")
+        if node is None or not node.text:
+            return None
+        outer = zlib.decompress(bytes.fromhex(node.text)[4:])
+        j = outer.find(b"\x78\xda", outer.find(b"Compressed = true"))
+        inner = zlib.decompress(outer[j:]).decode("utf-8", "replace")
+        if "MagicMask" not in inner:
+            return None
+        m = re.search(r"PosStrokes = \{(.*?)\} \}", inner, re.S)
+        pts = [(float(x), 1 - float(y)) for x, y in re.findall(r"\{ (-?[\d.]+), (-?[\d.]+) \}", m.group(1) + "}")] if m else []
+        if len(pts) < 3:
+            return None
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        kx, ky = (0.80, 0.84) if len(pts) >= 21 else (0.44, 0.54) if len(pts) >= 15 else (1.6, 1.0)  # (dlouhý tah: postava)
+        return [round((min(xs) + max(xs)) / 2, 4), round((min(ys) + max(ys)) / 2, 4),
+                round(max(0.03, (max(xs) - min(xs)) / kx), 4), round(max(0.03, (max(ys) - min(ys)) / ky), 4)]
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _barva(c):
@@ -480,7 +509,11 @@ def sestaveno(proj, fidx):
                     continue
                 mf, t0 = _fps(c.findtext("MediaFrameRate")), s / TL_FPS
                 # keyframy (snímky zdroje) -> časy timeliny; kotva = zlomek šířky / výšky od středu, ořez L/P/N/D
-                kl.append([round(t0, 3), round((s + du) / TL_FPS, 3), fidx[mp], round(i / mf, 3), _tf(c, L, t0, i, mf)])
+                f = _tf(c, L, t0, i, mf)
+                mk = _maska(c)
+                if mk:
+                    f["m"] = mk  # ⬜ bílé označení – přehrávač kopii ořízne na věc, zbělí a rozzáří
+                kl.append([round(t0, 3), round((s + du) / TL_FPS, 3), fidx[mp], round(i / mf, 3), f])
             if kl:
                 hits += len(kl)
                 vrstvy.append({"stopa": ti, "klipy": sorted(kl)})
@@ -550,8 +583,21 @@ def _pockej_na_obs(st):
         time.sleep(20)
 
 
+def _kopie_ok(p):
+    """Hotová kopie jde přehrát? (dekóduje vteřinu uprostřed – rozbitá kopie = černá hra v náhledu)"""
+    try:
+        d = float(subprocess.run([os.path.join(os.path.dirname(FFMPEG), "ffprobe.exe"), "-v", "error", "-show_entries", "format=duration",
+                                  "-of", "csv=p=0", p], capture_output=True, text=True).stdout.strip() or 0)
+    except Exception:  # noqa: BLE001
+        d = 0
+    r = subprocess.run([FFMPEG, "-v", "error", "-ss", f"{max(0, d / 2):.1f}", "-i", p, "-t", "1", "-f", "null", "-"],
+                       capture_output=True, text=True, errors="replace")
+    return r.returncode == 0 and not r.stderr.strip()
+
+
 def _proxy(src, dst, webka, ifps=None):
-    tmp = dst + ".part.mp4"
+    # vlastní dočasný soubor pro každý převod: dřív po restartu serveru psaly dva ffmpegy do jednoho .part → rozbitá kopie
+    tmp = f"{dst}.{os.getpid()}.{threading.get_ident()}.part.mp4"
     # ifps: proměnlivá frekvence → obraz po snímcích (snímek N v čase N/ifps jako v Resolve), zvuk dál v reálném čase (taky jako Resolve)
     vf = (f"setpts=N/({ifps}*TB)," if ifps else "") + f"scale=-2:{360 if webka else 540}"
     common = ["-vf", vf, "-r", "30", "-g", "15", "-movflags", "+faststart"]
@@ -561,9 +607,14 @@ def _proxy(src, dst, webka, ifps=None):
                 ["-c:v", "libx264", "-preset", "veryfast", "-crf", "28"]):
         hw = ["-hwaccel", "auto"] if "nvenc" in enc[1] else []
         ok, err = _ffmpeg([*hw, "-i", src, "-map", "0:v:0", *([] if webka else ["-map", "0:a:0?"]), *common, *enc, *audio, tmp])
-        if ok:
+        if ok and _kopie_ok(tmp):
             os.replace(tmp, dst)
             return True, ""
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        err = err or "kopie nejde přehrát – zkouším jinak"
     return False, err
 
 
