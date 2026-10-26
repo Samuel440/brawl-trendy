@@ -93,11 +93,21 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .vyrbar.step i{background:var(--blue);opacity:.9}
 .vyrrows{display:flex;flex-direction:column;gap:5px;margin-top:10px}
 .vyrrow{display:grid;grid-template-columns:2.6em minmax(0,9em) 1fr auto auto;gap:8px;align-items:center;font-size:13px}
-.vyrrow.step{grid-template-columns:3em minmax(0,1.4fr) 1fr auto}
+.vyrrow.step{grid-template-columns:3em minmax(0,1.4fr) 1fr 104px}
+.vyrrow.step > .ch:last-child{text-align:right;white-space:nowrap}
 .vyrrow .vyrlbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vyrrow.done,.vyrrow.hotovo,.vyrrow.preskoceno{opacity:.6}
 .vyrrow.bezi{font-weight:700}
 .vyrrow.bezi .vyrbar.step i{background:var(--accent)}
+.vyrrow.hotovo .vyrbar.step i{background:var(--ok)}
+.vyrrow.preskoceno .vyrbar.step i{background:var(--muted)}
+.vyrrow.pozde .vyrbar.step i{background:#f4a261}
+.vyrrow.pozde .ch{color:#f4a261}
+.vyrbar.neurc i{background:repeating-linear-gradient(90deg,var(--accent) 0 12px,transparent 12px 24px);animation:neurc 1s linear infinite;width:100%!important}
+@keyframes neurc{to{background-position:24px 0}}
+.vyrdone{margin-top:8px}
+.vyrdone .vyrrows{margin-top:6px}
+.vyrlog.vyrdone > div{max-height:none;overflow:visible;font:inherit;background:none;padding:0;white-space:normal}
 .vyrrow.err b{color:var(--hot)}
 .vyrpct{min-width:3em;text-align:right;font-weight:700}
 .vyraxis{display:flex;justify-content:space-between;margin-top:-2px}
@@ -206,7 +216,7 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .vyrpulse{animation:vyrpulse 1.4s ease-in-out infinite}
 @keyframes vyrpulse{50%{opacity:.45}}
 #tabs .vyrlive{box-shadow:inset 0 -3px 0 var(--hot)}
-@media (max-width:600px){.vyrgrid{grid-template-columns:1fr}.vyrrow{grid-template-columns:2.4em minmax(0,6.5em) 1fr auto}.vyrrow > .ch:last-child{display:none}.vyrrow.step{grid-template-columns:2.6em minmax(0,1fr) 34% auto}}
+@media (max-width:600px){.vyrgrid{grid-template-columns:1fr}.vyrrow{grid-template-columns:2.4em minmax(0,6.5em) 1fr auto}.vyrrow > .ch:last-child{display:none}.vyrrow.step{grid-template-columns:2.4em minmax(0,1fr) 64px 78px}.vyrrow.step > .ch:last-child{display:block;font-size:11px;white-space:nowrap;text-align:right}}
 /* 🔴 grafik uložil nové video */
 .staralert{background:var(--hot)!important;color:#fff!important;border-color:var(--hot)!important}
 .starnewsec{border:2px solid var(--hot);border-radius:14px;padding:10px 12px;margin:8px 0 14px}
@@ -784,7 +794,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.146'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.147'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4903,12 +4913,21 @@ function vyrCard(key) {
   if (d.jazyky?.length) body = `<div class="vyrrows">${d.jazyky.map(j => `<div class="vyrrow ${j.stav === 'hotovo' ? 'done' : j.stav === 'chyba' ? 'err' : ''}">
       <b>${esc(j.k)}</b><span class="vyrlbl">${esc(j.nazev)}</span>${vyrBar(j.pct)}<span class="vyrpct">${Math.round(j.pct)} %</span><span class="ch">${esc(j.stav)}${j.zbyva_s ? ` · ~${Math.round(j.zbyva_s / 60)} min` : ''}</span></div>`).join('')}</div>`;
   if (d.kroky?.length) {
-    const mx = Math.max(...d.kroky.map(s => Math.max(s.odhad || 0, s.doba || 0)), 1);
-    body = `<div class="vyrrows">${d.kroky.map((s, i) => { const ic = {hotovo:'✔', bezi:'▶', preskoceno:'↷', ceka:'·'}[s.stav] || '·';
-      const dur = s.doba ?? (s.stav === 'bezi' && s.zacatek ? (d.t / 1000 - s.zacatek) : null);
-      return `<div class="vyrrow step ${s.stav}"><b>${ic} ${i + 1}</b><span class="vyrlbl">${esc(s.popis)}</span>
-        <span class="vyrbar step" title="šedě odhad, barevně skutečnost"><u style="width:${(s.odhad || 0) / mx * 100}%"></u>${dur != null ? `<i style="width:${Math.min(100, dur / mx * 100)}%"></i>` : ''}</span>
-        <span class="ch">${dur != null ? `${vyrCas(dur)}` : ''}${s.odhad ? ` / ~${vyrCas(s.odhad)}` : ''}</span></div>`; }).join('')}</div>`;
+    // každý pruh = průběh SVÉHO kroku (hotový celý, běžící uplynulo / odhad, čekající prázdný);
+    // nahoře běžící a čekající, hotové sbalené dole – na čem se pracuje, je vidět bez scrollování
+    const krok = (s, i) => { const ic = {hotovo:'✔', bezi:'▶', preskoceno:'↷', ceka:'·'}[s.stav] || '·';
+      const dur = s.doba ?? (s.stav === 'bezi' && s.zacatek ? ((alive ? Date.now() : d.t) / 1000 - s.zacatek) : null);
+      const pct = s.stav === 'hotovo' || s.stav === 'preskoceno' ? 100 : s.stav === 'bezi' ? (s.odhad ? Math.min(100, dur / s.odhad * 100) : 50) : 0;
+      const pozde = s.stav === 'bezi' && s.odhad && dur > s.odhad;
+      return `<div class="vyrrow step ${s.stav}${pozde ? ' pozde' : ''}"><b>${ic} ${i + 1}</b><span class="vyrlbl">${esc(s.popis)}</span>
+        <span class="vyrbar step${s.stav === 'bezi' && !s.odhad ? ' neurc' : ''}"><i style="width:${pct}%"></i></span>
+        <span class="ch"${pozde ? ' title="trvá déle, než byl odhad"' : ''}>${s.stav === 'bezi' ? `${vyrCas(dur || 0)}${s.odhad ? ` / ~${vyrCas(s.odhad)}` : ''}`
+          : s.stav === 'hotovo' ? vyrCas(dur || 0) : s.stav === 'preskoceno' ? 'přeskočeno' : s.odhad ? `~${vyrCas(s.odhad)}` : ''}</span></div>`; };
+    const all = d.kroky.map((s, i) => [s, i]);
+    const top = all.filter(([s]) => s.stav === 'bezi').concat(all.filter(([s]) => s.stav === 'ceka'));
+    const done = all.filter(([s]) => s.stav === 'hotovo' || s.stav === 'preskoceno');
+    body = `<div class="vyrrows">${top.map(([s, i]) => krok(s, i)).join('')}</div>`
+      + (done.length ? `<details class="vyrlog vyrdone"><summary class="ch">✔ Hotové kroky (${done.length} z ${d.kroky.length})</summary><div class="vyrrows">${done.map(([s, i]) => krok(s, i)).join('')}</div></details>` : '');
   }
   const log = (d.radky || []).slice().reverse().map(r => `<div><span class="ch">${hhmm(r[0])}</span> ${esc(r[1])}</div>`).join('');
   const tl = key === 'edit' && VYR.d.edit_tl?.start === d.start ? vyrTimeline(VYR.d.edit_tl) : '';
