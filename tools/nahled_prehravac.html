@@ -49,6 +49,7 @@ button:disabled{opacity:.5;cursor:default}
   -webkit-text-stroke:3px #000;text-shadow:0 6px 0 #000,0 0 24px #000a;animation:napis .35s cubic-bezier(.2,1.6,.4,1)}
 @keyframes napis{from{transform:scale(2.2) rotate(-6deg);opacity:0}}
 #layers video{will-change:transform}
+#layers .tvo,#layers .tv{position:absolute;inset:0}
 .moments .lg{font-size:12px;padding:3px 9px;border-radius:999px}
 .moments .lg.on{background:var(--accent);color:#111;border-color:var(--accent)}
 .mix{display:flex;flex-wrap:wrap;gap:4px 12px;flex-basis:100%;font-size:12px;color:var(--muted)}
@@ -160,6 +161,13 @@ function buildLayers() {
     const ly = document.createElement('div'); ly.className = 'ly napis';
     OVLS.push({stopa:+ti, napisy:list, div:ly, cur:-1});
   }
+  // 🟥 červené čáry, křížky, podtržení (Solid Color, i v compound clipu) – přesně podle Resolve
+  const byS = {};
+  for (const s of D.tvary || []) (byS[s[2]] ||= []).push(s);
+  for (const [ti, list] of Object.entries(byS)) {
+    const ly = document.createElement('div'); ly.className = 'ly';
+    OVLS.push({stopa:+ti, tvary:list, div:ly, els:[]});
+  }
   // vrstvy podle čísla stopy jako v Resolve (vyšší navrch)
   [...LAYERS, ...OVLS].sort((a, b) => a.stopa - b.stopa).forEach(L => box.append(L.div));
   AUDIO_DONE = false;
@@ -167,6 +175,22 @@ function buildLayers() {
 let OVLS = [];
 function syncOverlays(t) {
   for (const O of OVLS) {
+    if (O.tvary) { // každý aktivní tvar: vnější div = transformace compound clipu (+ stín), vnitřní = barevná plocha s vlastní transformací a ořezem
+      const on = O.tvary.filter(x => t >= x[0] && t < x[1]);
+      while (O.els.length < on.length) {
+        const o = document.createElement('div'), i = document.createElement('div');
+        o.className = 'tvo'; i.className = 'tv'; o.append(i); O.div.append(o); O.els.push(o);
+      }
+      O.els.forEach((o, k) => {
+        const s = on[k]; o.hidden = !s; if (!s) return;
+        const v = s[3], i = o.firstChild;
+        if (v.out) setFx(o, v.out, t); else { o.style.transform = ''; o.style.clipPath = ''; }
+        o.style.filter = v.stin ? 'drop-shadow(0 0 0.35vw #000c)' : '';
+        i.style.background = v.col; i.style.opacity = v.a ?? 1;
+        setFx(i, v.fx, t);
+      });
+      continue;
+    }
     if (O.napisy) { // ✍️ nápis: velký text, vyskočí při začátku
       const n = O.napisy.find(x => t >= x[0] && t < x[1]), id = n ? O.napisy.indexOf(n) : -1;
       if (id !== O.cur) { O.cur = id; O.div.innerHTML = n ? `<span>${esc(n[2])}</span>` : ''; }
@@ -190,8 +214,8 @@ function syncOverlays(t) {
   }
 }
 // transformace podle Resolve jako CSS: posun a kotva (zlomek šířky/výšky, Y nahoru), zoom kolem kotvy
-const tf = f => `translate(${(f.ax + f.x) * 100}%, ${(-f.ay - f.y) * 100}%) scale(${f.z}) translate(${-f.ax * 100}%, ${f.ay * 100}%)`;
-const fxAt = (f, t) => ({z:kv(f.z ?? 1, t), x:kv(f.x ?? 0, t), y:kv(f.y ?? 0, t), ax:kv(f.ax ?? 0, t), ay:kv(f.ay ?? 0, t)});
+const tf = f => `translate(${(f.ax + f.x) * 100}%, ${(-f.ay - f.y) * 100}%)${f.r ? ` rotate(${-f.r}deg)` : ''} scale(${f.z}, ${f.zy}) translate(${-f.ax * 100}%, ${f.ay * 100}%)`;
+const fxAt = (f, t) => { const z = kv(f.z ?? 1, t); return {z, zy:f.zy != null ? kv(f.zy, t) : z, r:kv(f.r ?? 0, t), x:kv(f.x ?? 0, t), y:kv(f.y ?? 0, t), ax:kv(f.ax ?? 0, t), ay:kv(f.ay ?? 0, t)}; };
 const active = (list, t) => (list || []).filter(x => t >= x[0] && t < x[1]);
 // 🔺 ZOOM 2 / CLICK = adjustment clipy: zvětšují všechno POD sebou (víc nad sebou = pyramida)
 function adjustLayers(t) {
@@ -251,20 +275,37 @@ function sounds(t) {
     if (e.g) e.g.gain.value = g; else e.volume = Math.min(1, g);
   }
 }
-const ease = x => x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2; // keyframy v Resolve jsou plynulé (ease)
+const ease = x => x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2; // jen pro napodobené přechody
+// keyframy jako v Resolve (ověřeno proti renderu, chyba ≤ 2 px): bez úchytů LINEÁRNĚ, s úchyty Bezierova křivka
+// keyframe = [čas, hodnota] nebo [čas, hodnota, lΔs, lΔhod, pΔs, pΔhod]
+function bezAt(p0, p1, p2, p3, t) {
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 30; k++) { const s = (lo + hi) / 2, x = (1 - s) ** 3 * p0[0] + 3 * (1 - s) ** 2 * s * p1[0] + 3 * (1 - s) * s * s * p2[0] + s ** 3 * p3[0]; if (x < t) lo = s; else hi = s; }
+  const s = (lo + hi) / 2;
+  return (1 - s) ** 3 * p0[1] + 3 * (1 - s) ** 2 * s * p1[1] + 3 * (1 - s) * s * s * p2[1] + s ** 3 * p3[1];
+}
 function kv(v, t) {
   if (!Array.isArray(v)) return v;
   if (t <= v[0][0]) return v[0][1];
-  for (let i = 1; i < v.length; i++) if (t < v[i][0]) { const [t0, a] = v[i - 1], [t1, b] = v[i]; return a + (b - a) * ease((t - t0) / Math.max(1e-6, t1 - t0)); }
+  for (let i = 1; i < v.length; i++) if (t < v[i][0]) {
+    const a = v[i - 1], b = v[i];
+    if (a.length < 6 && b.length < 6) return a[1] + (b[1] - a[1]) * (t - a[0]) / Math.max(1e-6, b[0] - a[0]);
+    const p1 = a.length >= 6 ? [Math.min(b[0], a[0] + a[4]), a[1] + a[5]] : [a[0], a[1]];
+    const p2 = b.length >= 6 ? [Math.max(a[0], b[0] + b[2]), b[1] + b[3]] : [b[0], b[1]];
+    return bezAt([a[0], a[1]], p1, p2, [b[0], b[1]], t);
+  }
   return v[v.length - 1][1];
 }
-// Resolve: bod p → (p − kotva) × zoom + kotva + posun (posun a kotva jako zlomek šířky / výšky, osa Y nahoru); ořez z okrajů
-function applyFx(el, c, t) {
-  const f = c[4] || {}, z = kv(f.z ?? 1, t), x = kv(f.x ?? 0, t), y = kv(f.y ?? 0, t), ax = kv(f.ax ?? 0, t), ay = kv(f.ay ?? 0, t), cr = f.c || [0, 0, 0, 0];
+// Resolve: bod p → R(rotace) · S(zoom X, zoom Y) · (p − kotva) + kotva + posun
+// (posun a kotva jako zlomek šířky / výšky, osa Y nahoru, rotace proti směru hodin); ořez z okrajů ještě před transformací
+function setFx(el, f, t) {
+  const z = kv(f.z ?? 1, t), zy = f.zy != null ? kv(f.zy, t) : z, r = kv(f.r ?? 0, t), x = kv(f.x ?? 0, t), y = kv(f.y ?? 0, t),
+    ax = kv(f.ax ?? 0, t), ay = kv(f.ay ?? 0, t), cr = (f.c || [0, 0, 0, 0]).map(v => kv(v, t));
   el.style.transformOrigin = `${50 + ax * 100}% ${50 - ay * 100}%`;
-  el.style.transform = `translate(${x * 100}%, ${-y * 100}%) scale(${z})`;
-  el.style.clipPath = cr.some(Boolean) ? `inset(${cr[2] * 100}% ${cr[1] * 100}% ${cr[3] * 100}% ${cr[0] * 100}%)` : '';
+  el.style.transform = `translate(${x * 100}%, ${-y * 100}%)${r ? ` rotate(${-r}deg)` : ''} scale(${z}, ${zy})`;
+  el.style.clipPath = cr.some(v => v > 1e-4) ? `inset(${cr[2] * 100}% ${cr[1] * 100}% ${cr[3] * 100}% ${cr[0] * 100}%)` : '';
 }
+function applyFx(el, c, t) { setFx(el, c[4] || {}, t); }
 // ---------- 🔊 zvuk se skutečnými hlasitostmi z editu (mikrofon +12 dB, hra −28 dB, hudba podle plánu) přes Web Audio
 let AC = null, AUDIO_DONE = false; const G = {};
 const dbv = db => Math.pow(10, db / 20);

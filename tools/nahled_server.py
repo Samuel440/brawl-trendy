@@ -71,6 +71,25 @@ def proxy_name(path):
     return hashlib.sha1(f"{path}|{st.st_size}|{int(st.st_mtime)}".encode("utf-8")).hexdigest()[:16]
 
 
+_VFR = {}
+
+
+def vfr(path):
+    """Má video proměnlivou snímkovou frekvenci (záznam z telefonu)? Resolve takové video bere jako pevných N fps
+    podle POŘADÍ snímku (snímek 66151 = 66151/61 s), kdežto prohlížeč podle časových značek → jiný moment hry.
+    (r_frame_rate 90000/1 vs. průměr 61,23 u Screenrecorderu.)"""
+    k = proxy_name(path)
+    if k not in _VFR:
+        try:
+            info = subprocess.run([FFMPEG, "-hide_banner", "-i", path], capture_output=True, text=True, errors="replace").stderr
+            m = re.search(r"Video:.*?([\d.]+) fps, ([\d.]+)(k?) tbr", info)
+            fps, tbr = float(m.group(1)), float(m.group(2)) * (1000 if m.group(3) else 1)
+            _VFR[k] = abs(fps - tbr) > 0.5  # „61.23 fps, 90k tbr“ = proměnlivá
+        except Exception:  # noqa: BLE001
+            _VFR[k] = False
+    return _VFR[k]
+
+
 _CACHE = {}
 
 
@@ -113,7 +132,10 @@ def projekt_now(proj):
                     continue
                 if p not in fidx:
                     fidx[p] = len(files)
-                    files.append({"path": p, "name": os.path.basename(p), "id": proxy_name(p), "webka": "webka" in p.lower()})
+                    # proměnlivá frekvence: kopie po snímcích jako v Resolve (jiné id → stará kopie podle časů se nepoužije)
+                    ifps = _fps(c.findtext("MediaFrameRate")) if vfr(p) else None
+                    files.append({"path": p, "name": os.path.basename(p), "id": proxy_name(p) + (f"i{ifps:g}" if ifps else ""),
+                                  "webka": "webka" in p.lower(), "ifps": ifps})
                 kl.append([round(s / TL_FPS, 3), round((s + d) / TL_FPS, 3), fidx[p], round(i / _fps(c.findtext("MediaFrameRate")), 3)])
             stopy[f"{kind}{ti}"] = sorted(kl)
     for f in files:
@@ -176,9 +198,11 @@ def _ovl_proxy(src, dst):
     return ok, err
 
 
-def _fx(c, L):
+def _fx(c, L, uchyty=None):
     """Transformace klipu ze sestaveného DRT: zoom (42), posun X/Y (40/41) – hodnota nebo keyframy [(snímek, hodnota)],
-    ořez (skupina 6: 54 vlevo, 55 vpravo, 56 nahoře, 57 dole), hlasitost (skupina 124, param 95 v dB)."""
+    ořez (skupina 6: 54 vlevo, 55 vpravo, 56 nahoře, 57 dole), hlasitost (skupina 124, param 95 v dB).
+    uchyty (dict): sem se doplní Bezierovy úchyty keyframů {(skupina, param): {snímek: (lΔsn, lΔhod, pΔsn, pΔhod)}} –
+    keyframe s příznakem 1 (flags 13) je má v datech hned za hodnotou; bez nich Resolve jede lineárně (ověřeno renderem)."""
     h = c.findtext("EffectFiltersBA")
     out = {}
     if not h:
@@ -202,8 +226,14 @@ def _fx(c, L):
             if kf is not None:
                 try:
                     # 2D hodnota (kotevní bod, příznak 0x20): x = první double, y = posledních 8 bajtů
+                    kfs = L.kf_parse(bytes(kf[2]))
                     val = [(k["frame"], (L.kf_value(k), struct.unpack_from("<d", k["data"], len(k["data"]) - 8)[0])
-                            if k["flags"] & 0x20 else L.kf_value(k)) for k in L.kf_parse(bytes(kf[2]))]
+                            if k["flags"] & 0x20 else L.kf_value(k)) for k in kfs]
+                    if uchyty is not None:
+                        hh = {k["frame"]: struct.unpack_from("<4d", k["data"], 8) for k in kfs
+                              if k["flags"] & 1 and not k["flags"] & 0x20 and len(k["data"]) >= 40}
+                        if hh:
+                            uchyty[(gid, pid)] = hh
                 except Exception:  # noqa: BLE001
                     val = None
             else:
@@ -221,6 +251,83 @@ def _fx(c, L):
     return out
 
 
+def _tf(c, L, t0, i0, mf):
+    """Celá transformace klipu pro přehrávač: zoom X/Y (42/43), posun (40/41), rotace ve stupních (47, proti směru hodin),
+    kotva (48) a ořez L/P/N/D (skupina 6) – hodnoty nebo keyframy převedené na časy timeliny.
+    Keyframe = [čas, hodnota] (lineárně) nebo [čas, hodnota, lΔs, lΔhod, pΔs, pΔhod] (Bezier s úchyty z Resolve)."""
+    uch = {}
+    fx = _fx(c, L, uch)
+
+    def tv(key, dflt, k=None):
+        v = fx.get(key, dflt)
+        pick = (lambda x: x[k] if isinstance(x, tuple) else (x if k == 0 else 0.0)) if k is not None else (lambda x: x)
+        if not isinstance(v, list):
+            return round(pick(v), 5)
+        hh = uch.get(key, {})
+        return [[round(t0 + (f - i0) / mf, 4), round(pick(x), 5)]
+                + ([round(hh[f][0] / mf, 4), round(hh[f][1], 6), round(hh[f][2] / mf, 4), round(hh[f][3], 6)] if f in hh else [])
+                for f, x in v]
+    z = tv((4, 42), 1.0)
+    out = {"z": z, "x": tv((4, 40), 0.0), "y": tv((4, 41), 0.0), "ax": tv((4, 48), (0.0, 0.0), 0), "ay": tv((4, 48), (0.0, 0.0), 1),
+           "c": [tv((6, k), 0.0) for k in (54, 55, 56, 57)]}
+    zy = tv((4, 43), fx.get((4, 42), 1.0))
+    if zy != z:
+        out["zy"] = zy
+    r = tv((4, 47), 0.0)
+    if r:
+        out["r"] = r
+    return out
+
+
+def _barva(c):
+    """Barva generátoru Solid Color: ve skupině 10 je QColor (1 | alfa | R | G | B po 16 bitech) – např. 01 ffff ffff 0000 0404."""
+    try:
+        for t in L_.pb_parse(L_.blob_decode(c.findtext("EffectFiltersBA"))):
+            m = re.search(rb"\x32\x0b\x01(..)(..)(..)(..)", bytes(t[2]), re.S)
+            if m and next((x[2] for x in L_.pb_parse(t[2]) if x[0] == 1), None) == 10:
+                a, r, g, b = (int.from_bytes(m.group(k), "big") >> 8 for k in (1, 2, 3, 4))
+                return "#%02x%02x%02x" % (r, g, b), round(a / 255, 3)
+    except Exception:  # noqa: BLE001
+        pass
+    return "#ffffff", 1.0
+
+
+def _compoundy(p):
+    """Obsah compound clipů ze .drt: DbId compound clipu (MediaRef na timeline) -> seznam generátorů uvnitř."""
+    import zipfile
+    out = {}
+    try:
+        z = zipfile.ZipFile(p)
+        mp = z.read("MediaPool/Master/MpFolder.xml").decode("utf-8", "replace")
+        seq_of = {m.group(1): m.group(2) for m in re.finditer(
+            r'<Sm2MpCompoundClip DbId="([^"]+)">.*?<Sm2Sequence DbId="([^"]+)"', mp, re.S)}
+        if not seq_of:
+            return out
+        by_seq = {}
+        for n in z.namelist():
+            if not n.startswith("SeqContainer/"):
+                continue
+            x = z.read(n).decode("utf-8", "replace")
+            if len(x) > 2_000_000:  # hlavní timeline – tu ne
+                continue
+            try:
+                root = ET.fromstring(re.sub(r"<(/?)([A-Za-z0-9_]+)::", r"<\1\2__", x))
+            except Exception:  # noqa: BLE001
+                continue
+            for tr in root.iter("Sm2TiTrack"):
+                if tr.findtext("Type") == "0":
+                    by_seq.setdefault(tr.findtext("Sequence"), []).extend(g for g in tr.iter("Sm2TiGenerator"))
+        for cid, sid in seq_of.items():
+            if by_seq.get(sid):
+                out[cid] = by_seq[sid]
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+L_ = None
+
+
 def sestaveno(proj, fidx):
     """Ze SKUTEČNĚ sestaveného editu (S:\\EDIT\\vystup\\AUTO EDIT N.drt, nejnovější k tomuto projektu) vezme vrstvy videa
     s tvými zdroji (hra, webka) i se zoomy, posuny a ořezy, a hlasitost hry a mikrofonu. Bez sestavení → ([], {})."""
@@ -230,6 +337,8 @@ def sestaveno(proj, fidx):
         import drt_lib as L
     except Exception:  # noqa: BLE001
         return [], {}
+    global L_
+    L_ = L
     cand = []
     for f in os.listdir(VYSTUP) if os.path.isdir(VYSTUP) else []:
         p = os.path.join(VYSTUP, f)
@@ -241,28 +350,46 @@ def sestaveno(proj, fidx):
         except Exception:  # noqa: BLE001
             continue
         vrstvy, hits = [], 0
-        ext = {"upravy": [], "shaky": [], "cb": [], "glow": [], "prechody": [], "zvuky": [], "_zvuky": [], "overlaye": [], "_ovl": [], "napisy": []}
+        ext = {"upravy": [], "shaky": [], "cb": [], "glow": [], "prechody": [], "zvuky": [], "_zvuky": [], "overlaye": [], "_ovl": [], "napisy": [],
+               "tvary": []}
+        comp = _compoundy(p)
         for ti, tr in enumerate(d.tracks("video"), 1):
             kl = []
             for c in L.Drt.items(tr):
                 mp = c.findtext("MediaFilePath")
+                # 🟥 červené čáry / křížky / podtržení: Solid Color (i uvnitř compound clipu) – barva, zoom X/Y, rotace, ořez
+                gens = [(c, None)] if c.tag == "Sm2TiGenerator" and c.findtext("PrettyType") == "Solid Color" else \
+                    [(g, c) for g in comp.get(c.findtext("MediaRef") or "", [])] if not mp and c.findtext("MediaRef") in comp else []
+                if gens:
+                    try:
+                        s, du = float(c.findtext("Start")), float(c.findtext("Duration"))
+                        i_out = float(c.findtext("In") or 0)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    t0 = s / TL_FPS
+                    for g, outer in gens:
+                        col, alpha = _barva(g)
+                        # vnitřní generátor: jeho snímky běží od začátku compound clipu (minus In vnějšího klipu)
+                        gs = float(g.findtext("Start") or 0) if outer is not None else 0.0
+                        inner = _tf(g, L, t0 + (gs - i_out) / TL_FPS, 0.0, TL_FPS)
+                        tvar = {"col": col, "a": alpha, "fx": inner}
+                        if outer is not None:
+                            tvar["out"] = _tf(outer, L, t0, i_out, TL_FPS)
+                            tvar["stin"] = b"dropshadow" in (L.blob_decode(outer.findtext("EffectFiltersBA") or "") if outer.findtext("EffectFiltersBA") else b"")
+                        ext["tvary"].append([round(t0, 3), round((s + du) / TL_FPS, 3), ti, tvar])
+                    continue
                 if mp and mp not in fidx and os.path.exists(mp) and os.path.splitext(mp)[1].lower() in OVL_EXT:
                     # 🖼️ překryvy: šipky, „lajk odběr“ (zelené pozadí → průhledná kopie), obrázky
                     try:
                         s, du, i = float(c.findtext("Start")), float(c.findtext("Duration")), float(c.findtext("In") or 0)
                     except Exception:  # noqa: BLE001
                         continue
-                    mf, t0, fx = _fps(c.findtext("MediaFrameRate")), s / TL_FPS, _fx(c, L)
-
-                    def tv3(v, k=None):
-                        pick = (lambda x: x[k] if isinstance(x, tuple) else (x if k == 0 else 0.0)) if k is not None else (lambda x: x)
-                        return [[round(t0 + (f - i) / mf, 3), round(pick(x), 4)] for f, x in v] if isinstance(v, list) else round(pick(v), 4)
-                    an = fx.get((4, 48), (0.0, 0.0))
+                    mf, t0 = _fps(c.findtext("MediaFrameRate")), s / TL_FPS
                     if mp not in ext["_ovl"]:
                         ext["_ovl"].append(mp)
-                    ext["overlaye"].append([round(t0, 3), round((s + du) / TL_FPS, 3), ext["_ovl"].index(mp), round(i / mf, 3), {
-                        "z": tv3(fx.get((4, 42), 1.0)), "x": tv3(fx.get((4, 40), 0.0)), "y": tv3(fx.get((4, 41), 0.0)),
-                        "ax": tv3(an, 0), "ay": tv3(an, 1)}, ti])
+                    # šipky: i rotace (např. −233°) a oddělený zoom X/Y – jinak by šipka mířila úplně jinam
+                    ext["overlaye"].append([round(t0, 3), round((s + du) / TL_FPS, 3), ext["_ovl"].index(mp), round(i / mf, 3),
+                                            _tf(c, L, t0, i, mf), ti])
                     continue
                 if mp not in fidx:
                     nm0 = (c.findtext("Name") or "").strip()
@@ -303,36 +430,19 @@ def sestaveno(proj, fidx):
                     elif up.startswith("GLOW"):
                         ext["glow"].append([a, b])
                     if c.findtext("PrettyType") == "Adjustment Clip" or up.startswith("ZOOM") or up.startswith("CLICK"):
-                        fx = _fx(c, L)
                         i0, mf, t0 = float(c.findtext("In") or 0), _fps(c.findtext("MediaFrameRate")), s / TL_FPS
-
-                        def tv2(v, k=None):
-                            pick = (lambda x: x[k] if isinstance(x, tuple) else (x if k == 0 else 0.0)) if k is not None else (lambda x: x)
-                            return [[round(t0 + (f - i0) / mf, 3), round(pick(x), 4)] for f, x in v] if isinstance(v, list) else round(pick(v), 4)
-                        an = fx.get((4, 48), (0.0, 0.0))
-                        z = tv2(fx.get((4, 42), 1.0))
-                        if z != 1.0 or fx.get((4, 40)) or fx.get((4, 41)):
-                            ext["upravy"].append([a, b, ti, {"z": z, "x": tv2(fx.get((4, 40), 0.0)), "y": tv2(fx.get((4, 41), 0.0)),
-                                                             "ax": tv2(an, 0), "ay": tv2(an, 1)}])
+                        f = _tf(c, L, t0, i0, mf)
+                        f.pop("c", None)  # ořez adjustment clipu náhled nedělá
+                        if f["z"] != 1.0 or f["x"] or f["y"] or f.get("r") or "zy" in f:
+                            ext["upravy"].append([a, b, ti, f])
                     continue
                 try:
                     s, du, i = float(c.findtext("Start")), float(c.findtext("Duration")), float(c.findtext("In") or 0)
                 except Exception:  # noqa: BLE001
                     continue
-                mf = _fps(c.findtext("MediaFrameRate"))
-                fx = _fx(c, L)
-                t0 = s / TL_FPS
-
-                def tv(v, k=None):  # keyframy (snímky zdroje) -> časy timeliny; k = složka 2D hodnoty
-                    pick = (lambda x: x[k] if isinstance(x, tuple) else (x if k == 0 else 0.0)) if k is not None else (lambda x: x)
-                    if isinstance(v, list):
-                        return [[round(t0 + (f - i) / mf, 3), round(pick(x), 4)] for f, x in v]
-                    return round(pick(v), 4)
-                an = fx.get((4, 48), (0.0, 0.0))
-                kl.append([round(t0, 3), round((s + du) / TL_FPS, 3), fidx[mp], round(i / mf, 3), {
-                    "z": tv(fx.get((4, 42), 1.0)), "x": tv(fx.get((4, 40), 0.0)), "y": tv(fx.get((4, 41), 0.0)),
-                    "ax": tv(an, 0), "ay": tv(an, 1),  # kotevní bod (zoom kolem něj), zlomek šířky / výšky od středu
-                    "c": [round(fx.get((6, k), 0.0) if not isinstance(fx.get((6, k)), list) else 0.0, 4) for k in (54, 55, 56, 57)]}])
+                mf, t0 = _fps(c.findtext("MediaFrameRate")), s / TL_FPS
+                # keyframy (snímky zdroje) -> časy timeliny; kotva = zlomek šířky / výšky od středu, ořez L/P/N/D
+                kl.append([round(t0, 3), round((s + du) / TL_FPS, 3), fidx[mp], round(i / mf, 3), _tf(c, L, t0, i, mf)])
             if kl:
                 hits += len(kl)
                 vrstvy.append({"stopa": ti, "klipy": sorted(kl)})
@@ -380,13 +490,33 @@ PRIPRAVA = {}  # projekt -> {"hotovo": n, "celkem": n, "bezi": bool, "chyba": st
 
 
 def _ffmpeg(args):
-    r = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *args], capture_output=True, text=True, errors="replace")
+    # nižší priorita: převod nesmí brát výkon hře / OBS (BELOW_NORMAL_PRIORITY_CLASS)
+    r = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *args], capture_output=True, text=True, errors="replace",
+                       creationflags=0x4000 if os.name == "nt" else 0)
     return r.returncode == 0, r.stderr[-500:]
 
 
-def _proxy(src, dst, webka):
+def obs_nahrava():
+    """OBS právě nahrává / streamuje (běží jeho muxer) → těžké převody počkají, ať nevypadávají snímky v nahrávce."""
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq obs-ffmpeg-mux.exe", "/NH"], capture_output=True, text=True,
+                             errors="replace", creationflags=0x08000000).stdout
+        return "obs-ffmpeg-mux" in out.lower()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _pockej_na_obs(st):
+    while obs_nahrava():
+        st["aktualni"] = "⏸ čekám – OBS nahrává (převod by ti bral výkon)"
+        time.sleep(20)
+
+
+def _proxy(src, dst, webka, ifps=None):
     tmp = dst + ".part.mp4"
-    common = ["-vf", f"scale=-2:{360 if webka else 540}", "-r", "30", "-g", "15", "-movflags", "+faststart"]
+    # ifps: proměnlivá frekvence → obraz po snímcích (snímek N v čase N/ifps jako v Resolve), zvuk dál v reálném čase (taky jako Resolve)
+    vf = (f"setpts=N/({ifps}*TB)," if ifps else "") + f"scale=-2:{360 if webka else 540}"
+    common = ["-vf", vf, "-r", "30", "-g", "15", "-movflags", "+faststart"]
     # webka: bez zvuku (mikrofon jde z mic.wav, ať není dvakrát); hra: zvuk hry mono
     audio = ["-an"] if webka else ["-c:a", "aac", "-b:a", "96k", "-ac", "1"]
     for enc in (["-c:v", "h264_nvenc", "-preset", "p4", "-b:v", "700k" if webka else "1200k"],
@@ -413,6 +543,7 @@ def priprav(proj):
 
     def run():
         try:
+            _pockej_na_obs(st)
             if mic_dst and not os.path.exists(mic_dst):
                 st["aktualni"] = "mikrofon"
                 ok, err = _ffmpeg(["-i", mic, "-c:a", "aac", "-b:a", "96k", "-ac", "1", mic_dst + ".part.m4a"])
@@ -422,12 +553,14 @@ def priprav(proj):
                     st["chyba"] = "mikrofon: " + err
                 st["hotovo"] += 1
             for f in todo:
+                _pockej_na_obs(st)
                 st["aktualni"] = f["name"]
-                ok, err = _proxy(f["path"], os.path.join(CACHE, f["id"] + ".mp4"), f["webka"])
+                ok, err = _proxy(f["path"], os.path.join(CACHE, f["id"] + ".mp4"), f["webka"], f.get("ifps"))
                 if not ok:
                     st["chyba"] = f"{f['name']}: {err}"
                 st["hotovo"] += 1
             for p, o in ovl:  # šipky, lajk odběr: zelené pozadí pryč (průhledné .webm)
+                _pockej_na_obs(st)
                 st["aktualni"] = o["name"]
                 ok, err = _ovl_proxy(p, os.path.join(CACHE, o["id"] + ".webm"))
                 if not ok:
