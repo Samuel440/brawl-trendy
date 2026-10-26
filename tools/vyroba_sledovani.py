@@ -84,6 +84,38 @@ def uloz(data):
         pass
 
 
+DABING_HOTOVO = r"S:\DABING\hotovo"
+POSLEDNI = os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Recent")
+
+
+def dabing_yt(minule):
+    """📺 Který dabing nejnovějšího videa už je nahraný v YouTube Studiu: soubor „<video>_<jazyk>.mp3/mp4“ vybraný
+    v okně „Otevřít“ (tak ho nahráváš do Studia) zapíše Windows do Posledních položek („<video>_<jazyk>.lnk“).
+    Ruční opravy dělá web (vyroba_dabyt_rucne.json). Vrací data, nebo None beze změny."""
+    import re
+    try:
+        slozky = [e for e in os.scandir(DABING_HOTOVO) if e.is_dir()]
+        if not slozky:
+            return None
+        sl = max(slozky, key=lambda e: e.stat().st_mtime)
+        video = sl.name
+        jazyky = {}
+        for e in os.scandir(sl.path):
+            m = re.match(re.escape(video) + r"_([a-z]{2,3})\.(mp3|mp4|m4a|wav)$", e.name, re.I)
+            if m:
+                k = m.group(1).lower()
+                jazyky[k] = max(jazyky.get(k, 0), e.stat().st_mtime)
+        nahrano = {}
+        for k, t in jazyky.items():
+            lnk = os.path.join(POSLEDNI, f"{video}_{k}.lnk")
+            if os.path.exists(lnk) and os.path.getmtime(lnk) >= t - 5:
+                nahrano[k] = int(os.path.getmtime(lnk) * 1000)
+        data = {"video": video, "jazyky": sorted(jazyky), "nahrano": nahrano}
+        return None if data == minule else data
+    except Exception:  # noqa: BLE001
+        return None
+
+
 KROK_S = 5        # tak často se kouká, co děláš (čas se přičítá po 5 s)
 ZAPIS_S = 60      # vyroba_live.json běžně co minutu…
 ZMENA_S = 15      # …ale přepnutí projektu hned (nejvýš co 15 s – Drive nesnese častější přepis)
@@ -122,8 +154,22 @@ def main():
     data = nacti()
     posledni = {"projekt": None, "aktivni": False}
     zapsano, zapsany_projekt, ulozeno = 0.0, None, time.time()
+    dyt, dyt_kontrola = None, 0.0
+    # soubor pro ruční opravy z webu musí založit tenhle počítač (účet vlastníka složky) – mobil na Disku zakládat nemůže
+    try:
+        p = os.path.join(vyroba_stav.SLOZKA, "vyroba_dabyt_rucne.json")
+        if os.path.isdir(vyroba_stav.SLOZKA) and not os.path.exists(p):
+            vyroba_stav.uloz("dabyt_rucne", {})
+    except Exception:  # noqa: BLE001
+        pass
     while True:
         try:
+            if time.time() - dyt_kontrola >= 20:  # 📺 dabing nahraný do YouTube Studia
+                dyt_kontrola = time.time()
+                nove = dabing_yt(dyt)
+                if nove is not None:
+                    dyt = nove
+                    vyroba_stav.uloz("dabyt", dict(nove, t=int(time.time() * 1000)))
             den = dt.date.today().isoformat()
             exe = popredi_exe()
             v_resolve = exe in ("resolve.exe",)
