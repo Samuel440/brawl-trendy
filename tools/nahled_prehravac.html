@@ -94,7 +94,7 @@ button:disabled{opacity:.5;cursor:default}
   </div>
   <div class="tlbox" id="tlbox"><div class="tlin" id="tlin"></div></div>
   <div class="moments" id="moments"></div>
-  <div class="tlhint">Chyť červenou čáru (nebo klikni kamkoli do timeliny) a posuň ji – video jde s ní. Mezerník = přehrát odtud. Alt + kolečko = přiblížit, Ctrl + kolečko = posun do stran, na mobilu přiblížíš dvěma prsty. <button id="tlfit">↔ Celá timeline</button></div>
+  <div class="tlhint">Chyť červenou čáru (nebo klikni kamkoli do timeliny) a posuň ji – video jde s ní. Mezerník = přehrát odtud. Alt + kolečko = přiblížit, Ctrl + kolečko = posun do stran, na mobilu přiblížíš dvěma prsty. <button id="tlfit">↔ Celá timeline</button> <b id="tlzv"></b></div>
   <div class="leg"><span>Barvy pruhu = kapitoly a nálady hudby</span><span>šedá dole = černobílé části</span><span>šrafování = úvod</span></div>
   <div class="leg" id="mode"></div>
 </div>
@@ -344,11 +344,21 @@ function gains(seg) {
   for (const k in G) if (/^(v\d|m\d)/.test(k)) G[k].gain.value = MIX.hra / 100;
 }
 function find(clips, t) { let lo = 0, hi = clips.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1, c = clips[m]; if (t < c[0]) hi = m - 1; else if (t >= c[1]) lo = m + 1; else return m; } return -1; }
-function srcOf(c) { const f = D.soubory[c[2]]; return f && f.ready ? url(`/px/${f.id}.mp4`) : ''; }
+// zdroj: lehká kopie (všude), nebo na tomhle PC rovnou originál, dokud kopie není hotová
+function srcOf(c) {
+  const f = D.soubory[c[2]]; if (!f) return '';
+  if (f.ready) return url(`/px/${f.id}.mp4`);
+  return D.lokal && f.orig ? url(`/orig/${f.id}`) : '';
+}
+// čas ve zdroji; originál s proměnlivou frekvencí (záznam z telefonu): čas podle snímku jako v Resolve → skutečná časová značka
+function srcT(c, t, el) {
+  const w = c[3] + (t - c[0]), f = D.soubory[c[2]];
+  return f?.mapa && (el ? el.dataset.src?.includes('/orig/') : !f.ready) ? kv(f.mapa, w) : w;
+}
 function load(el, c, t) {
   const s = srcOf(c); if (!s) return false;
   if (el.dataset.src !== s) { el.src = s; el.dataset.src = s; }
-  const want = c[3] + (t - c[0]);
+  const want = srcT(c, t, el);
   if (Math.abs(el.currentTime - want) > 0.05) { try { el.currentTime = want; } catch {} }
   return true;
 }
@@ -370,7 +380,10 @@ function syncTrack(tr, clips, t) {
     pre.pause();
     if (n && n[0] - c[1] < 0.1 && load(pre, n, n[0])) tr.next = i + 1;
   } else {
-    const el = tr.els[tr.a], want = c[3] + (t - c[0]);
+    const el = tr.els[tr.a];
+    // mezitím se dodělala lehká kopie → přepnout na ni (jinak by originál a kopie měly jiný čas a video by skákalo dokola)
+    if (srcOf(c) && el.dataset.src !== srcOf(c)) { load(el, c, t); if (playing) el.play().catch(() => {}); return c; }
+    const want = srcT(c, t, el);
     if (playing && el.paused) el.play().catch(() => {});
     if (!playing && !el.paused) el.pause();
     if (Math.abs(el.currentTime - want) > (playing ? 0.3 : 0.04)) { try { el.currentTime = want; } catch {} }
@@ -393,7 +406,8 @@ function tick() {
     syncTrack(tracks.v1, D.v1, t);
     c2 = syncTrack(tracks.v2, D.v2, t);
     const cam = $('#cam');
-    cam.className = 'cam ' + (!c2 ? 'off' : st === 'VELKÁ' ? 'VELKA' : st.startsWith('FULL') ? 'FULL' : '') + (st === 'punch' && lastCamPunch !== String(Math.floor(t)) ? ' punch' : '');
+    // bez videa (kopie ještě není) rámeček schovat – jinak vpravo nahoře visí prázdný obdélník se stínem
+    cam.className = 'cam ' + (!c2 || !srcOf(c2) ? 'off' : st === 'VELKÁ' ? 'VELKA' : st.startsWith('FULL') ? 'FULL' : '') + (st === 'punch' && lastCamPunch !== String(Math.floor(t)) ? ' punch' : '');
     // punch ve hře: krátké „ťuknutí“ obrazu
     const p = D.punch.findIndex(x => x <= t && t - x < 0.35);
     if (p >= 0 && p !== lastPunch) { lastPunch = p; const m = tracks.v1.els[tracks.v1.a]; m.classList.remove('punch'); void m.offsetWidth; m.classList.add('punch'); }
@@ -457,7 +471,7 @@ function drawTL() {
   if (F) $('#tlin').insertAdjacentHTML('beforeend', F.items.slice(0, 400).map(([s, e]) => `<em class="tlg" style="left:${LBL + s / L * W}px;width:${Math.max(3, (e - s) / L * W)}px"></em>`).join(''));
   $('#moments').innerHTML = F ? `<button class="unfocus" data-f="">✖ ZRUŠIT OZNAČENÍ</button> <b>${F.ic} ${esc(F.title)}</b> – ${F.items.length}× (klikni = skok): ` + F.items.slice(0, 200).map(([s, , x]) => `<button data-go="${s}">${fmt(s)}${x ? ' · ' + esc(String(x).slice(0, 16)) : ''}</button>`).join('')
     : '<span class="ch">Zvýraznit na timelině:</span> ' + ROWS.map((r, i) => `<button class="lg" data-f="${i}">${r.ic} ${esc(r.title)} <b>${r.items.length}</b></button>`).join('');
-  tlPlayhead(now());
+  tlPlayhead(now()); tlZoomLabel();
 }
 function tlPlayhead(t) {
   const p = $('#phl'); if (!p || !D) return;
@@ -511,25 +525,37 @@ box.addEventListener('touchstart', e => {
 ['touchstart', 'wheel', 'pointerdown'].forEach(ev => box.addEventListener(ev, () => { TL.userAt = Date.now(); if (ev === 'touchstart') TL.touching = true; }, {passive:true}));
 ['touchend', 'touchcancel'].forEach(ev => box.addEventListener(ev, e => { if (!e.touches.length) { TL.touching = false; TL.userAt = Date.now(); } }, {passive:true}));
 box.addEventListener('scroll', () => { if (TL.touching) TL.userAt = Date.now(); }, {passive:true});
-// během sevření se timeline jen plynule ROZTÁHNE (žádné přepočítávání = žádné škubání), přepočítá se až po puštění prstů
+// během sevření se mění jen ŠÍŘKA timeliny (bloky jsou v %, takže se posunou samy) – text se nenatahuje, nic se
+// nepřestavuje (žádné škubání); místo pod prsty zůstává pod prsty; po puštění se překreslí pravítko
 box.addEventListener('touchstart', e => {
-  if (e.touches.length !== 2) return;
+  if (!D || e.touches.length !== 2) return;
   TL.tap = null; TL.drag = false;
-  TL.pinch = {d:dist(e.touches), z:TL.z, zn:TL.z, ax:(e.touches[0].clientX + e.touches[1].clientX) / 2 - box.getBoundingClientRect().left};
+  const ax = (e.touches[0].clientX + e.touches[1].clientX) / 2 - box.getBoundingClientRect().left;
+  TL.pinch = {d:dist(e.touches), z:TL.z, ax, t:(box.scrollLeft + ax - LBL) / tlW() * D.delka};
+  document.querySelectorAll('#tlin .tlg').forEach(g => g.remove()); // zvýraznění jsou v px – po puštění se vrátí
 }, {passive:true});
 box.addEventListener('touchmove', e => {
   if (!TL.pinch || e.touches.length !== 2) return;
   e.preventDefault();
-  const P = TL.pinch, r = Math.max(1 / P.z, Math.min(400 / P.z, dist(e.touches) / P.d));
-  P.zn = P.z * r;
-  const tin = $('#tlin'); tin.style.transformOrigin = `${box.scrollLeft + P.ax}px 0`; tin.style.transform = `scaleX(${r})`;
+  const P = TL.pinch;
+  P.zn = Math.max(1, Math.min(400, P.z * dist(e.touches) / P.d));
+  if (P.raf) return;
+  P.raf = setTimeout(() => {
+    P.raf = 0; if (TL.pinch !== P) return;
+    TL.z = P.zn;
+    $('#tlin').style.width = (tlW() + LBL) + 'px';
+    box.scrollLeft = tlX(P.t) - P.ax;
+    tlPlayhead(now()); tlZoomLabel();
+  }, 16);
 }, {passive:false});
 box.addEventListener('touchend', e => {
   if (!TL.pinch || e.touches.length >= 2) return;
   const P = TL.pinch; TL.pinch = null;
-  $('#tlin').style.transform = '';
-  if (Math.abs(P.zn - P.z) > 0.01) tlZoom(P.zn, P.ax);
+  if (P.raf) clearTimeout(P.raf);
+  TL.z = P.zn ?? P.z; drawTL(); box.scrollLeft = tlX(P.t) - P.ax;
 });
+// 🔍 kolik je timeline přiblížená
+function tlZoomLabel() { const el = $('#tlzv'); if (el) el.textContent = TL.z > 1.05 ? `🔍 ${TL.z < 10 ? TL.z.toFixed(1).replace('.', ',') : Math.round(TL.z)}×` : ''; }
 $('#tlfit').onclick = () => { TL.z = 1; drawTL(); box.scrollLeft = 0; };
 document.addEventListener('click', e => {
   const f = e.target.closest('[data-f]'); if (f) { const i = f.dataset.f === '' ? null : +f.dataset.f; TL.focus = TL.focus === i ? null : i; drawTL(); return; }
@@ -570,7 +596,7 @@ function drawPrep() {
   if (!miss && !pr.bezi) { $('#prep').innerHTML = ''; return; }
   const pct = pr.celkem ? Math.round(pr.hotovo / pr.celkem * 100) : 0;
   $('#prep').innerHTML = `<div class="prep"><b>⚙️ Lehké kopie videí pro přehrávání</b>
-    <div class="ch">Tvoje originály jsou na přehrávání přes Wi-Fi/mobil moc těžké, proto se z nich jednou udělají lehké kopie (540p) – grafika to zvládne asi 7× rychleji, než video trvá. Pak už to jde hned.</div>
+    <div class="ch">${D.lokal ? '💻 <b>Na tomhle PC už to hraje rovnou z originálů</b> – nemusíš na nic čekat. ' : ''}Pro mobil / Wi-Fi jsou originály moc těžké, proto se z nich samy dělají lehké kopie (540p, hned jak Auto Edit založí projekt; nikdy když nahráváš v OBS).${D.lokal ? '' : ' Co je hotové, už jde přehrát – zbytek je zatím černý.'}</div>
     ${pr.bezi ? `<div class="pb"><i style="width:${pct}%"></i></div><div class="ch">${pr.hotovo}/${pr.celkem} · teď: ${pr.aktualni || '…'}</div>` : `<p><button class="primary" id="go">⚙️ Připravit náhled (${miss} ${miss === 1 ? 'soubor' : miss < 5 ? 'soubory' : 'souborů'})</button></p>`}
     ${pr.chyba ? `<div class="err">⚠ ${pr.chyba}</div>` : ''}</div>`;
   $('#go')?.addEventListener('click', async () => { await api('/api/priprav', {p:P}); refresh(); });
@@ -580,7 +606,7 @@ async function refresh() {
   D = await api('/api/projekt', {p:P});
   if (!was || was.projekt !== D.projekt || (was.zisk?.soubor !== D.zisk?.soubor)) { for (const k in MED) delete MED[k]; buildLayers(); drawBar(); TL.z = 1; drawTL(); seek(0); }
   $('#mode').innerHTML = D.vrstvy?.length
-    ? `🎞️ <b>Podle sestaveného editu</b> (${esc(D.zisk.soubor)}): skutečné vrstvy, zoomy, posuny, ořez webky a hlasitosti z Resolve. Chybí jen texty, šipky, efekty, zvukové efekty a Magic Masky.`
+    ? `🎞️ <b>Podle sestaveného editu</b> (${esc(D.zisk.soubor)}): skutečné vrstvy, zoomy, posuny, ořez webky, hlasitosti, šipky a červené čáry / křížky přesně z Resolve. Nápisy, některé efekty a Magic Masky jsou jen přibližně.`
     : '📋 Zatím jen podle plánu (edit ještě není sestavený): tvůj střih, velikost webky, punch, černobílé a hudba – přibližně.';
   $('#info').textContent = `${fmt(D.delka)} · ${D.v1.length} střihů · ${D.soubory.length} zdrojových videí`;
   drawPrep(); tick();

@@ -72,6 +72,26 @@ def proxy_name(path):
 
 
 _VFR = {}
+_MAPA = {}
+ORIG_CT = {".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/mp4", ".mkv": "video/webm", ".webm": "video/webm"}
+
+
+def mapa(path, ifps):
+    """Proměnlivá frekvence: [[čas podle snímku (n/ifps), skutečná časová značka]] co 60 snímků – aby originál na PC
+    ukazoval stejný snímek jako Resolve (ten jede po snímcích). Čte jen značky paketů (pár vteřin), nic nedekóduje."""
+    k = proxy_name(path)
+    if k not in _MAPA:
+        _MAPA[k] = None
+        try:
+            fp = os.path.join(os.path.dirname(FFMPEG), "ffprobe.exe")
+            out = subprocess.run([fp, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", path],
+                                 capture_output=True, text=True, creationflags=0x4000 if os.name == "nt" else 0).stdout
+            pts = sorted(float(x) for x in out.split() if x and x != "N/A")
+            if pts:
+                _MAPA[k] = [[round(n / ifps, 4), round(pts[n], 4)] for n in range(0, len(pts), 60)] + [[round((len(pts) - 1) / ifps, 4), round(pts[-1], 4)]]
+        except Exception:  # noqa: BLE001
+            pass
+    return _MAPA[k]
 
 
 def vfr(path):
@@ -135,7 +155,7 @@ def projekt_now(proj):
                     # proměnlivá frekvence: kopie po snímcích jako v Resolve (jiné id → stará kopie podle časů se nepoužije)
                     ifps = _fps(c.findtext("MediaFrameRate")) if vfr(p) else None
                     files.append({"path": p, "name": os.path.basename(p), "id": proxy_name(p) + (f"i{ifps:g}" if ifps else ""),
-                                  "webka": "webka" in p.lower(), "ifps": ifps})
+                                  "webka": "webka" in p.lower(), "ifps": ifps, "orig": os.path.splitext(p)[1].lower() in ORIG_CT})
                 kl.append([round(s / TL_FPS, 3), round((s + d) / TL_FPS, 3), fidx[p], round(i / _fps(c.findtext("MediaFrameRate")), 3)])
             stopy[f"{kind}{ti}"] = sorted(kl)
     for f in files:
@@ -610,6 +630,14 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _lokal(self):
+        """Dotaz z tohohle počítače – i když jde přes jeho adresu v síti (odkaz „Doma (Wi-Fi)“ otevřený na PC = 192.168.x.x)."""
+        ip = self.client_address[0].removeprefix("::ffff:")
+        if ip in ("127.0.0.1", "::1"):
+            return True
+        lan, ts = adresy()
+        return ip in lan or ip in ts
+
     def _file(self, path, ctype):
         size = os.path.getsize(path)
         rng = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
@@ -656,7 +684,20 @@ class H(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/projekt":
                 d = projekt(proj)
                 d["priprava"] = {k: v for k, v in PRIPRAVA.get(proj, {}).items()}
-                return self._send(200, json.dumps({k: v for k, v in d.items() if not k.startswith("_")}, ensure_ascii=False))
+                r = {k: v for k, v in d.items() if not k.startswith("_")}
+                # 💻 na tomhle PC jde hrát rovnou z originálů (kopie jsou jen kvůli Wi-Fi / mobilu)
+                lokal = self._lokal()
+                r["lokal"] = lokal
+                if lokal:
+                    r["soubory"] = [dict(s, orig=f["orig"], mapa=mapa(f["path"], f["ifps"]) if f.get("ifps") and not f["ready"] else None)
+                                    for s, f in zip(r["soubory"], d["_files"])]
+                    r["mic_ready"] = r["mic_ready"] or bool(d["mic"])
+                return self._send(200, json.dumps(r, ensure_ascii=False))
+            if u.path.startswith("/orig/"):  # originál – jen pro tenhle počítač
+                f = next((f for f in projekt(proj)["_files"] if f["id"] == u.path[6:]), None)
+                if not self._lokal() or not f or not f["orig"]:
+                    return self._send(404, "{}")
+                return self._file(f["path"], ORIG_CT[os.path.splitext(f["path"])[1].lower()])
             if u.path == "/api/priprav":
                 priprav(proj)
                 return self._send(200, '{"ok":true}')
@@ -670,7 +711,11 @@ class H(http.server.BaseHTTPRequestHandler):
             if u.path == "/mic":
                 d = projekt(proj)
                 p = os.path.join(CACHE, proxy_name(d["_mic"]) + ".m4a") if d["mic"] else ""
-                return self._file(p, "audio/mp4") if p and os.path.exists(p) else self._send(404, "{}")
+                if p and os.path.exists(p):
+                    return self._file(p, "audio/mp4")
+                if d["mic"] and self._lokal():  # na PC i bez kopie rovnou mic.wav
+                    return self._file(d["_mic"], "audio/wav")
+                return self._send(404, "{}")
             if u.path.startswith("/ov/"):  # překryv: průhledná kopie videa, nebo obrázek – jen soubory z editu
                 i = int(u.path[4:])
                 d = projekt(proj)
@@ -713,8 +758,24 @@ def oznam(lan, ts):
         pass
 
 
+class Srv(http.server.ThreadingHTTPServer):
+    # na Windows by allow_reuse_address dovolilo DVA servery na stejném portu – dotazy by se náhodně dělily mezi ně
+    # (příprava běží v jednom, stav se ptá druhého → přehrávač čeká donekonečna). Port jen pro jeden.
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def main():
-    srv = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), H)
+    try:
+        srv = Srv(("0.0.0.0", PORT), H)
+    except OSError:
+        print("▶️  Náhled už běží (jiné okno / na pozadí) – stačí otevřít Výrobu na webu. Tohle okno můžeš zavřít.")
+        time.sleep(8)
+        return
     lan, ts = adresy()
     print("=" * 64)
     print("  ▶️  NÁHLED editu běží – nech tohle okno otevřené")
@@ -739,6 +800,21 @@ def main():
                 pass
             time.sleep(1800)
     threading.Thread(target=statistiky, daemon=True).start()
+
+    def sama_priprava():  # ⚙️ nový / rozdělaný projekt (Auto Edit právě běží): lehké kopie hned, ať jde náhled pustit bez čekání
+        while True:
+            try:
+                for proj in projekty()[:1]:
+                    if time.time() - os.path.getmtime(os.path.join(ANALYZA, proj, "base.drt")) > 12 * 3600:
+                        continue
+                    d = projekt(proj)
+                    if not PRIPRAVA.get(proj, {}).get("bezi") and (not all(f["ready"] for f in d["_files"])
+                                                                   or not all(o["ready"] for o in d.get("ovl", []))):
+                        priprav(proj)
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(30)
+    threading.Thread(target=sama_priprava, daemon=True).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
