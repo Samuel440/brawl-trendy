@@ -509,6 +509,11 @@ svg.hist.bandin polygon,svg.hist.bandin polyline[stroke-dasharray]{animation:ban
 .dropfile:has(img){flex-direction:column;align-items:stretch}
 .dropicon{font-size:34px}
 .droph{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.dropup{border-color:var(--accent)}
+.dropup.err{border-color:var(--hot)}
+.upbar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.upbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+.uperr{color:var(--hot);font-weight:700;font-size:13px}
 [data-drag]{cursor:grab}
 /* mobil: podržení prstu nesmí otevřít menu obrázku / označit text */
 @media (pointer:coarse){[data-drag]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}}
@@ -801,7 +806,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.153'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.154'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3294,17 +3299,48 @@ function dropAdd(item) {
   logEvent(item.kind === 'text' ? `📤 poslal text ${shortT(item.text)}` : `📤 poslal soubor ${item.name}`);
   renderMain();
 }
+// ⬆ nahrávání s průběhem: položka se v seznamu ukáže HNED (s náhledem a pruhem %), ne až po nahrání celé fotky
+const DROP_UP = new Map(); // id → {name, size, mime, p, err, url}
+function dUploadProg(name, parent, blob, onProg) {
+  return new Promise((res, rej) => {
+    if (!DRIVE.token || Date.now() > DRIVE.exp - 60e3) return rej(new Error('připoj znovu Disk (přihlášení vypršelo)'));
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify({name, parents:[parent]})], {type:'application/json'}));
+    form.append('file', blob);
+    const x = new XMLHttpRequest();
+    x.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime');
+    x.setRequestHeader('Authorization', 'Bearer ' + DRIVE.token);
+    x.upload.onprogress = e => { if (e.lengthComputable) onProg(e.loaded / e.total); };
+    x.onload = () => {
+      if (x.status >= 200 && x.status < 300) return res(JSON.parse(x.responseText));
+      let why = ''; try { why = JSON.parse(x.responseText).error?.errors?.[0]?.reason || ''; } catch {}
+      rej(new Error(/storageQuota|quotaExceeded/i.test(why) ? `Google Disk účtu ${DRIVE.email} je plný – uvolni místo, nebo se tu přihlas jiným účtem`
+        : x.status === 401 ? 'připoj znovu Disk (přihlášení vypršelo)' : `Google Disk odpověděl chybou ${x.status}${why ? ' ' + why : ''}`));
+    };
+    x.onerror = () => rej(new Error('spojení se přerušilo – zkus to znovu'));
+    x.send(form);
+  });
+}
+function dropUpDraw(id) { // jen pruh a číslo – bez překreslení celé stránky
+  const u = DROP_UP.get(id), el = document.querySelector(`[data-up="${id}"]`); if (!u || !el) return;
+  el.querySelector('.upbar i').style.width = Math.round(u.p * 100) + '%';
+  el.querySelector('.uppct').textContent = u.p >= 1 ? 'dokončuji…' : Math.round(u.p * 100) + ' %';
+}
 async function dropFiles(files) {
   if (REMOTE !== DRIVE_BACKEND) { status('📤 Přenos souborů jde jen s připojeným ☁️ Diskem.', true); return; }
   for (const f of files) {
-    if (f.size > DROP_MAX) { status(`📤 ${f.name} je moc velký (max 100 MB).`, true); continue; }
-    const at = Date.now(), name = f.name || `obrazek-${new Date(at).toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
-    status(`📤 Nahrávám ${name} (${n(Math.round(f.size / 1024))} kB)…`);
+    const at = Date.now(), name = f.name || `obrazek-${new Date(at).toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`, id = 'u' + at;
+    const u = {name, size:f.size, mime:f.type || '', p:0, err:'', url:/^image\//.test(f.type) ? URL.createObjectURL(f) : ''};
+    DROP_UP.set(id, u);
+    if (f.size > DROP_MAX) u.err = 'moc velký soubor (max 100 MB)';
+    if (onDropTab()) renderMain();
+    if (u.err) continue;
     try {
-      const r = await dUpload(`${at}~${name}`, await dropFolder(), f);
+      const r = await dUploadProg(`${at}~${name}`, await dropFolder(), f, p => { u.p = p; dropUpDraw(id); });
+      DROP_UP.delete(id); if (u.url) DROPBLOB.set(r.id, u.url); // náhled hned z vybrané fotky, nestahovat znovu
       dropAdd({at, kind:'file', name, mime:f.type || 'application/octet-stream', size:f.size, fid:r.id, dev:devIcon()});
       status(`📤 ${name} odesláno – na druhém zařízení se objeví do pár vteřin.`);
-    } catch (e) { status('📤 Nahrání se nepovedlo: ' + e.message, true); }
+    } catch (e) { u.err = e.message; if (onDropTab()) renderMain(); }
   }
 }
 async function dropBlob(it) {
@@ -3408,6 +3444,12 @@ function renderDrop(tabs, who) {
         <div><b>${esc(it.name)}</b><div class="ch">${size(it.size)}</div></div></div>
       <div class="actions"><button data-dropdl="${it.at}">⬇ Stáhnout</button>${/^image\//.test(it.mime) ? `<button data-dropimgcopy="${it.at}">📋 Kopírovat</button>` : ''}${mine ? `<button class="blockbtn" data-dropdel="${it.at}" title="Smazat i z Disku">✖</button>` : ''}</div>`}
   </div>`;
+  // ⬆ právě se nahrává (jen na tomhle zařízení): náhled + pruh %, při chybě důvod přímo tady
+  const up = mine ? [...DROP_UP].map(([id, u]) => `<div class="drop dropup${u.err ? ' err' : ''}" data-up="${id}">
+    <div class="ch droph"><span>${devIcon()} ${u.err ? '⚠ nepodařilo se' : '⬆ nahrávám…'}</span>${u.err ? `<button class="blockbtn" data-updel="${id}" title="Zavřít">✖</button>` : ''}</div>
+    <div class="dropfile">${u.url ? `<img src="${u.url}" alt="">` : '<span class="dropicon">📦</span>'}<div><b>${esc(u.name)}</b><div class="ch">${size(u.size)}</div></div></div>
+    ${u.err ? `<div class="uperr">${esc(u.err)}</div>` : `<div class="upbar"><i style="width:${Math.round(u.p * 100)}%"></i></div><div class="ch uppct">${Math.round(u.p * 100)} %</div>`}
+  </div>`).join('') : '';
   const inFoldView = !!openFold('drop', who);
   $('#main').innerHTML = tabs + (inFoldView ? head : `<div class="summary"><h3>📤 Přenos – ${esc(whoLabel(who))} – ${all.length}</h3>
     <div class="row ch">Pošli si text, fotku nebo soubor z jednoho zařízení a hned si ho stáhni / zkopíruj na druhém (PC ↔ mobil ↔ Mac). Jde to přes tvůj Google Disk, nic se neposílá jinam.</div></div>`)
@@ -3418,7 +3460,7 @@ function renderDrop(tabs, who) {
         <label class="filebtn">📎 Poslat fotku / soubor<input type="file" id="dropFile" multiple hidden></label>
         <span class="ch">nebo sem přetáhni soubor / vlož obrázek Ctrl+V</span></div></div>` : ''}
     ${inFoldView ? '' : head}
-    ${list.length ? `<div class="droplist">${list.map(row).join('')}</div>` : `<div class="empty">${inFoldView ? 'Kolekce je zatím prázdná – u položky klikni na 📁 a přidej ji sem.' : 'Zatím nic.'}</div>`}`;
+    ${list.length || up ? `<div class="droplist">${up}${list.map(row).join('')}</div>` : `<div class="empty">${inFoldView ? 'Kolekce je zatím prázdná – u položky klikni na 📁 a přidej ji sem.' : 'Zatím nic.'}</div>`}`;
   if (drive) fillDropPreviews();
 }
 function renderStars() {
@@ -5392,6 +5434,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.dropdl) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropdl); if (it) dropDownload(it, b); }
   else if (b.dataset.dropimgcopy) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropimgcopy); if (it) dropCopyImage(it, b); }
   else if (b.dataset.dropdel) dropDelete(+b.dataset.dropdel);
+  else if (b.dataset.updel) { const u = DROP_UP.get(b.dataset.updel); if (u?.url) URL.revokeObjectURL(u.url); DROP_UP.delete(b.dataset.updel); renderMain(); }
   else if (b.dataset.hist !== undefined) showHistory(CARD_ITEMS.get(b.closest('.card').dataset.id));
   else if (b.dataset.copytxt !== undefined) { navigator.clipboard?.writeText(b.dataset.copytxt).then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.dataset.jump) { const el = document.getElementById(b.dataset.jump), hd = $('header'); if (el) scrollTo({top:el.getBoundingClientRect().top + scrollY - (getComputedStyle(hd).position === 'sticky' ? hd.offsetHeight + (parseFloat(hd.style.top) || 0) : 0) - 10, behavior:'smooth'}); }
