@@ -100,18 +100,32 @@ def _yt_get(u):
     return urllib.request.urlopen(urllib.request.Request(u, headers=h), timeout=20).read().decode("utf-8", "replace")
 
 
-def yt_zverejneno(od_ts):
-    """Nejnovější video kanálu zveřejněné po vytvoření dabingu (od_ts) a jeho zveřejněné zvukové stopy – z veřejné
-    stránky videa (RSS + watch, bez API a kvóty). → {"id", "nazev", "jazyky": [..]} nebo {} (video ještě není veřejné)."""
+def _stopy(vid):
+    """Zveřejněné zvukové stopy videa z jeho stránky (veřejné i NEVEŘEJNÉ video; soukromé stránku nemá)."""
+    import re
+    html = _yt_get(f"https://www.youtube.com/watch?v={vid}")
+    return sorted({m.split(".")[0].split("-")[0].lower() for m in re.findall(r'"audioTrack":\{"displayName":"[^"]+","id":"([^"]+)"', html)})
+
+
+def yt_zverejneno(dabing_ts):
+    """Video k dabingu a jeho zveřejněné zvukové stopy – bez API a kvóty:
+    1) nejnovější video, které web našel přes propojení YouTube (jen čtení) – i NEVEŘEJNÉ (vyroba_dabyt_video.json),
+    2) jinak nejnovější VEŘEJNÉ video z RSS kanálu.
+    Nahrané do Studia smí být nejvýš 48 h před dabingem; veřejné z RSS zveřejněné nejvýš 6 h před ním (jinak by se
+    nový dabing spároval se včerejším videem). → {"id", "nazev", "jazyky": [..], "stav"} nebo {}"""
     import datetime as _dt
     import re
+    try:
+        v = json.load(open(os.path.join(vyroba_stav.SLOZKA, "vyroba_dabyt_video.json"), encoding="utf-8"))
+        if v.get("id") and (v.get("nahrano") or 0) / 1000 >= dabing_ts - 48 * 3600:
+            return {"id": v["id"], "nazev": v.get("nazev", ""), "stav": v.get("stav", ""), "jazyky": _stopy(v["id"]) if v.get("stav") != "private" else []}
+    except Exception:  # noqa: BLE001
+        pass
     rss = _yt_get(f"https://www.youtube.com/feeds/videos.xml?channel_id={KANAL}")
     for vid, title, pub in re.findall(r"<yt:videoId>([^<]+)</yt:videoId>.*?<title>([^<]+)</title>.*?<published>([^<]+)</published>", rss, re.S):
-        if _dt.datetime.fromisoformat(pub).timestamp() < od_ts:
+        if _dt.datetime.fromisoformat(pub).timestamp() < dabing_ts - 6 * 3600:
             break  # RSS je od nejnovějšího – starší videa už k tomuhle dabingu nepatří
-        html = _yt_get(f"https://www.youtube.com/watch?v={vid}")
-        jaz = sorted({m.split(".")[0].split("-")[0].lower() for m in re.findall(r'"audioTrack":\{"displayName":"[^"]+","id":"([^"]+)"', html)})
-        return {"id": vid, "nazev": title, "jazyky": jaz}
+        return {"id": vid, "nazev": title, "stav": "public", "jazyky": _stopy(vid)}
     return {}
 
 
@@ -144,7 +158,7 @@ def dabing_yt(minule):
         if jazyky and not hotovo_vse and time.time() - _YT["t"] >= YT_KAZDYCH_S:
             _YT["t"] = time.time()
             try:
-                yt = yt_zverejneno(min(jazyky.values()) - 6 * 3600)  # (video může být nahrané do Studia už před dabingem)
+                yt = yt_zverejneno(min(jazyky.values()))
                 _YT.update(video=video, data=yt)
             except Exception:  # noqa: BLE001 – bez internetu / YouTube nedostupný: zkusí se příště
                 pass
@@ -195,6 +209,13 @@ def main():
     posledni = {"projekt": None, "aktivni": False}
     zapsano, zapsany_projekt, ulozeno = 0.0, None, time.time()
     dyt, dyt_kontrola = None, 0.0
+    # soubor pro ID nejnovějšího videa (zapisuje ho web po propojení YouTube jen pro čtení) musí založit tenhle počítač –
+    # účet vlastníka složky; mobil na Disku zakládat nemůže, jen přepsat
+    try:
+        if os.path.isdir(vyroba_stav.SLOZKA) and not os.path.exists(os.path.join(vyroba_stav.SLOZKA, "vyroba_dabyt_video.json")):
+            vyroba_stav.uloz("dabyt_video", {})
+    except Exception:  # noqa: BLE001
+        pass
     while True:
         try:
             if time.time() - dyt_kontrola >= 20:  # 📺 dabing nahraný do YouTube Studia
