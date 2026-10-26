@@ -179,6 +179,8 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .vyrmini .vyrnahled{flex-basis:100%;margin:2px 0 0}
 /* 📺 jazyky dabingu podle YouTube (samo): světle zelená = nahrává se ve Studiu, zelená = publikováno */
 .vyrrow.ytk > b,.vyrrow.ytk > .vyrlbl{transition:color .4s}
+.ytbtn{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:8px 0 2px}
+.vyrmini .ytbtn{flex-basis:100%;margin:2px 0 0}
 .vyrrow.ytk.nahr,.vyrrow.ytk.pub{opacity:1}
 .vyrrow.ytk.nahr > b,.vyrrow.ytk.nahr > .vyrlbl{color:#a8f0bd}
 .vyrrow.ytk.pub > b,.vyrrow.ytk.pub > .vyrlbl{color:var(--ok);font-weight:800}
@@ -799,7 +801,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.151'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.152'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1046,6 +1048,58 @@ async function driveSignIn(pick) {
     }).requestAccessToken({prompt:pick ? 'select_account' : ''});
   });
 }
+// 📺 YouTube jen pro ČTENÍ (vlastní přihlášení – u kanálu-značky se ve výběru volí kanál ULTRA SAMI, ne účet Disku):
+// najde nejnovější video kanálu i NEVEŘEJNÉ / soukromé a jeho ID zapíše na Disk – sledování (vyroba_sledovani.py) pak
+// z veřejné stránky videa přečte zveřejněné jazyky dabingu (neveřejné video ji má, soukromé ne)
+const YT_KANAL = 'UCNTZ-KNhpz9TZDSQSRlyhPQ';
+const YTR = {token:null, exp:0, busy:false, at:0, err:''};
+try { const t = JSON.parse(sessionStorage.getItem('bt_yttok') || 'null'); if (t && t.exp > Date.now()) Object.assign(YTR, {token:t.t, exp:t.exp}); } catch {}
+const ytPropojeno = () => { try { return localStorage.getItem('bt_ytro') === '1'; } catch { return false; } };
+async function ytConnect(pick) {
+  if (!gClientId()) throw new Error('Chybí Client ID pro přihlášení Googlem.');
+  await loadGis();
+  await new Promise((res, rej) => google.accounts.oauth2.initTokenClient({
+    client_id:gClientId(), scope:'https://www.googleapis.com/auth/youtube.readonly',
+    callback:r => {
+      if (r.error) return rej(new Error(r.error_description || r.error));
+      YTR.token = r.access_token; YTR.exp = Date.now() + r.expires_in * 1000;
+      try { sessionStorage.setItem('bt_yttok', JSON.stringify({t:YTR.token, exp:YTR.exp})); localStorage.setItem('bt_ytro', '1'); } catch {}
+      res();
+    },
+    error_callback:e => rej(new Error(e.type === 'popup_closed' ? 'Přihlášení zavřeno.' : 'Přihlašovací okno se neotevřelo (blokované vyskakovací okno?).')),
+  }).requestAccessToken({prompt:pick ? 'select_account' : ''}));
+}
+async function ytNejnovejsi() {
+  const get = async u => { const r = await fetch('https://www.googleapis.com/youtube/v3/' + u, {headers:{Authorization:'Bearer ' + YTR.token}});
+    if (r.status === 401) { YTR.token = null; throw new Error('auth'); } if (!r.ok) throw new Error('YouTube odpověděl chybou ' + r.status); return r.json(); };
+  const c = (await get('channels?part=contentDetails,snippet&mine=true')).items?.[0];
+  if (!c) throw new Error('Vybraný účet nemá kanál – při propojení vyber kanál ULTRA SAMI.');
+  if (c.id !== YT_KANAL) { try { localStorage.removeItem('bt_ytro'); } catch {} throw new Error(`Vybraný kanál „${c.snippet.title}“ není ULTRA SAMI – propoj znovu a vyber ULTRA SAMI.`); }
+  const v = (await get(`playlistItems?part=contentDetails,snippet,status&maxResults=3&playlistId=${c.contentDetails.relatedPlaylists.uploads}`)).items?.[0];
+  return v ? {id:v.contentDetails.videoId, nazev:v.snippet.title, stav:v.status?.privacyStatus || '', nahrano:Date.parse(v.snippet.publishedAt) || 0, t:Date.now()} : null;
+}
+async function ytHledej(gesto) { // gesto = klik (jen tehdy smí vyskočit okno Googlu, když vypršelo přihlášení)
+  if (!isOwner() || !ytPropojeno() || YTR.busy || REMOTE !== DRIVE_BACKEND) return;
+  if (!gesto && Date.now() - YTR.at < 180e3) return;
+  YTR.busy = true;
+  try {
+    if (!YTR.token || Date.now() > YTR.exp - 60e3) { if (!gesto) return; await ytConnect(false); }
+    const v = await ytNejnovejsi(); YTR.at = Date.now(); YTR.err = '';
+    const old = VYR.d.dabyt_video;
+    if (v && (!old || old.id !== v.id || old.stav !== v.stav)) {
+      VYR.d.dabyt_video = v;
+      const id = VYR.id?.dabyt_video; // soubor založil počítač (sledování) – mobil ho jen přepíše
+      if (id) { const r = await dUpload('vyroba_dabyt_video.json', DRIVE.folder, new Blob([JSON.stringify(v)], {type:'application/json'}), id); if (r?.modifiedTime) VYR.mt['vyroba_dabyt_video.json'] = r.modifiedTime; }
+    }
+  } catch (e) { if (e.message !== 'auth') YTR.err = e.message; }
+  finally { YTR.busy = false; }
+}
+document.addEventListener('click', async e => {
+  if (!e.target.closest?.('#ytConnect')) return;
+  try { await ytConnect(true); YTR.at = 0; await ytHledej(true); status('📺 YouTube propojený (jen čtení) – nejnovější video se teď najde samo, i neveřejné.'); }
+  catch (err) { status('⚠ ' + err.message); }
+  if (S.period === 'vyr') renderVyroba();
+});
 async function gfetch(url, opts = {}) {
   if (!DRIVE.token || Date.now() > DRIVE.exp - 60e3) throw new Error('auth');
   const r = await fetch(url, {...opts, headers:{...(opts.headers || {}), Authorization:'Bearer ' + DRIVE.token}});
@@ -4772,6 +4826,7 @@ async function vyrPull() {
     VYR.at = Date.now(); VYR.err = '';
     // překreslit jen při změně (timeline má tisíce klipů), jinak jednou za minutu kvůli „aktualizováno před…“
     if (changed || Date.now() - (VYR.drawn || 0) > 60e3) { if (S.period === 'vyr' && !S.view) renderVyroba(); renderHeader(); }
+    if (S.period === 'vyr') ytHledej(false); // co 3 min (bez okna – jen když přihlášení k YouTube ještě platí)
   } catch (e) { VYR.err = e.message; }
   finally { VYR.busy = false; }
 }
@@ -4899,7 +4954,10 @@ function vyrCard(key) {
   if (!d) return key === 'dabing' ? '' // dabing, který nikdy neběžel, nemá co ukazovat
     : `<div class="vyrcard empty"><h3>${P.name}</h3><div class="ch">Zatím žádný běh. ${esc(P.hint)} – průběh se tu pak ukáže sám (i na mobilu).</div>${key === 'edit' ? vyrNahled() : ''}</div>`;
   const alive = vyrAlive(d), silent = d.stav === 'bezi' && !alive;
-  const nahled = key === 'edit' ? vyrNahled() : '';
+  // 📺 jednorázové propojení YouTube (jen čtení) – tlačítko zmizí, jakmile je propojeno
+  const ytBtn = key === 'dabing' && isOwner() && REMOTE === DRIVE_BACKEND && (!ytPropojeno() || YTR.err)
+    ? `<div class="ytbtn">${ytPropojeno() ? '' : '<button id="ytConnect">📺 Propojit YouTube (jen čtení)</button><span class="ch">aby se jazyky zbarvily samy i u neveřejného videa</span>'}${YTR.err ? `<span class="ch">⚠ ${esc(YTR.err)}${ytPropojeno() ? '' : ''}</span>` : ''}</div>` : '';
+  const nahled = key === 'edit' ? vyrNahled() : ytBtn;
   // ✔ hotový běh nepřekáží: ✖ ho skryje hned, jinak se sám sbalí 8 h po dokončení (zůstane jen tenký řádek)
   const hidden = (() => { try { return JSON.parse(localStorage.getItem('vyr_skryte') || '{}'); } catch { return {}; } })();
   const old = !alive && ((d.konec && Date.now() - d.konec > 8 * 3600e3) || (!d.konec && Date.now() - d.t > 12 * 3600e3));
@@ -4942,7 +5000,7 @@ function vyrCard(key) {
   const log = (d.radky || []).slice().reverse().map(r => `<div><span class="ch">${hhmm(r[0])}</span> ${esc(r[1])}</div>`).join('');
   const tl = key === 'edit' && VYR.d.edit_tl?.start === d.start ? vyrTimeline(VYR.d.edit_tl) : '';
   const close = alive ? '' : `<button class="vyrclose" data-vyrhide="${key}" title="Skrýt hotový běh (sbalí se na jeden řádek)">✖</button>`;
-  return `<div class="vyrcard ${alive ? 'live' : ''}${tl ? ' wide' : ''}">${close}${head}${key === 'edit' ? nahled : ''}${tl}${vyrGraph(d.historie, d.start)}${body}${log ? `<details class="vyrlog"><summary class="ch">📜 Výpis (posledních ${d.radky.length} řádků)</summary><div>${log}</div></details>` : ''}</div>`;
+  return `<div class="vyrcard ${alive ? 'live' : ''}${tl ? ' wide' : ''}">${close}${head}${nahled}${tl}${vyrGraph(d.historie, d.start)}${body}${log ? `<details class="vyrlog"><summary class="ch">📜 Výpis (posledních ${d.radky.length} řádků)</summary><div>${log}</div></details>` : ''}</div>`;
 }
 const vyrCas = s => { s = Math.max(0, Math.round(s)); return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 // ⏱️ tikající čas: hodnota „b“ sekund platila v čase t0, web k ní sám přičítá vteřinu po vteřině – ale nejvýš do „max“
@@ -5118,7 +5176,7 @@ function renderVyroba() {
   const open = [...document.querySelectorAll('#main .vyrlog')].map(x => x.open);
   const noDrive = REMOTE !== DRIVE_BACKEND;
   // běžící program první; DABING, když neběží, jen tenký řádek (nezabírá místo při editu)
-  const keys = ['edit', 'dabing', ...Object.keys(VYR.d).filter(k => !VYR_PROG[k] && !k.endsWith('_tl') && !['nahled', 'statistiky', 'live', 'dabyt', 'dabyt_rucne'].includes(k))]
+  const keys = ['edit', 'dabing', ...Object.keys(VYR.d).filter(k => !VYR_PROG[k] && !k.endsWith('_tl') && !['nahled', 'statistiky', 'live', 'dabyt', 'dabyt_rucne', 'dabyt_video'].includes(k))]
     .sort((a, b) => (VYR.d[b] && vyrAlive(VYR.d[b]) ? 1 : 0) - (VYR.d[a] && vyrAlive(VYR.d[a]) ? 1 : 0));
   $('#main').innerHTML = (noDrive || VYR.err ? `<div class="summary">
       ${noDrive ? '<div class="drivegate">☁️ Připoj Google Disk – stav DABINGU a AUTO EDITU se čte z něj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : `<div class="row ch">⚠ ${esc(VYR.err)}</div>`}</div>` : '')
@@ -5240,7 +5298,8 @@ document.addEventListener('click', e => {
     ideaBodyFill(); return;
   }
   if (b.dataset.ideasec !== undefined) { S.ideaSec = b.dataset.ideasec || null; renderMain(); scrollTo(0, 0); return; }
-  if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); try { sessionStorage.setItem('bt_period_s', S.period); } catch {} if (TIME_PERIODS.includes(S.period) || S.period === 'arch') ss('bt_lastp', S.period); show(); }
+  if (b.dataset.period) { S.view = null; S.period = b.dataset.period; ss('bt_period', S.period); try { sessionStorage.setItem('bt_period_s', S.period); } catch {} if (TIME_PERIODS.includes(S.period) || S.period === 'arch') ss('bt_lastp', S.period); show();
+    if (S.period === 'vyr') ytHledej(true); } // 📺 nejnovější video (i neveřejné) – klik smí obnovit přihlášení k YouTube
   else if (b.dataset.startab) renderMain();
   else if (b.id === 'btnExport') exportData();
   else if (b.id === 'btnDrive') driveConnect(false);
