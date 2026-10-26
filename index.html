@@ -510,6 +510,8 @@ svg.hist.bandin polygon,svg.hist.bandin polyline[stroke-dasharray]{animation:ban
 .dropicon{font-size:34px}
 .droph{display:flex;justify-content:space-between;align-items:center;gap:6px}
 .dropup{border-color:var(--accent)}
+.loadnote{margin:8px 16px 0;padding:8px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--accent);font-weight:700;font-size:13px;animation:lnpuls 1.4s ease-in-out infinite}
+@keyframes lnpuls{50%{border-color:var(--line)}}
 .dropup.err{border-color:var(--hot)}
 .upbar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
 .upbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
@@ -806,7 +808,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.154'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.155'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4123,7 +4125,27 @@ const driveUsedHere = () => !!ls('bt_gemail', '') || ls('bt_gdrive', false);
 const driveGate = () => !!gClientId() && REMOTE !== DRIVE_BACKEND && (!ls('bt_nodrive', false) || driveUsedHere());
 const driveGateHtml = () => `<div class="drivegate">☁️ <b>Nejdřív připoj Google Disk.</b> Co už načetla jiná zařízení, se stáhne zdarma a z YouTube se bude stahovat jen to, co chybí.
   <button class="primary" id="btnDrive">Připojit Disk</button>${hintBox()}${driveUsedHere() ? '' : '<button id="btnNoDrive" title="Každé zařízení si pak stahuje samo a bere kvótu – jen když Disk vůbec nechceš">Používat bez Disku (bere kvótu)</button>'}</div>`;
+// je na Disku soubor klíče k (třeba bt_c_en_day, i rozdělený na části) novější než ts? – jeden rychlý dotaz místo
+// stažení všeho sdíleného; při chybě radši „ano“ (pak se stáhne jako dřív)
+async function diskNewer(k, ts) {
+  try {
+    const since = new Date(Math.max(0, (ts || 0) - 60e3)).toISOString();
+    return (await dList(`'${DRIVE.folder}' in parents and name contains 's_${dEsc(k)}' and modifiedTime > '${since}' and trashed=false`)).length > 0;
+  } catch { return true; }
+}
+// 🔄 viditelná poznámka nad seznamem videí (dřív jen v nenápadném řádku nahoře – vypadalo to, že se 20 s nic neděje)
+function loadNote(t) { // (nad #main, ať ji překreslení seznamu nesmaže)
+  let el = document.querySelector('#loadNote');
+  if (!t) { el?.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'loadNote'; el.className = 'loadnote'; $('#main').before(el); }
+  el.textContent = t;
+}
 async function showCountry(force) {
+  const moje = S.loadToken + 1; // (showCountryInner si token zvýší; když mezitím klikneš jinam, poznámku nechá novějšímu)
+  try { return await showCountryInner(force); }
+  finally { if (S.loadToken === moje) loadNote(''); }
+}
+async function showCountryInner(force) {
   const token = ++S.loadToken, c = C(S.country), p = S.period;
   if (p === 'arch' || p === 'star' || p === 'cal' || p === 'vyr') { renderMain(); return; }
   let set = getSet(c.id, p);
@@ -4143,10 +4165,11 @@ async function showCountry(force) {
   const stale = () => Date.now() - set.ts >= S.interval * 60e3;
   const needs = () => force || !set || (p === 'all' ? Date.now() - set.ts >= maxAge : S.auto ? (due || stale()) && Date.now() - set.ts >= 5 * 60e3 : Date.now() - set.ts >= maxAge);
   // (i před hledáním „nejnovějších“ – to mohl před chvílí udělat mobil)
+  // ⚡ dřív se tu stahovalo CELÉ sdílení z Disku (25 dotazů, ~8 s) a před hledáním znovu (~5 s) – a nic nebylo vidět.
+  // Teď jeden rychlý dotaz: je soubor TOHOHLE státu/období na Disku novější než naše data? Jen pak stáhnout.
   if (!force && set && (needs() || ((p === 'day' || p === 'week') && newestDue(c))) && REMOTE === DRIVE_BACKEND && Date.now() - (SYNC.last || 0) > 20e3) {
-    await new Promise(r => setTimeout(r, Math.random() * 1500));
-    await pullShared().catch(() => {});
-    set = getSet(c.id, p);
+    loadNote('🔄 Kontroluji, jestli jiné zařízení nemá novější data…');
+    if (await diskNewer(ckey(c.id, p), set.ts)) { await pullShared().catch(() => {}); set = getSet(c.id, p); }
     if (token !== S.loadToken) return;
   }
   if (!S.key) { renderMain(); return; } // 👀 bez klíče jen data z Disku – stahují ostatní
@@ -4155,7 +4178,8 @@ async function showCountry(force) {
   // jiné zařízení (třeba mobil před 10 s na pomalém internetu), nehledat a počkat na jeho data
   const willSearch = () => (needs() && costFor(c, p, true) > 0) || ((p === 'day' || p === 'week') && newestDue(c) && searchLeft());
   if (REMOTE === DRIVE_BACKEND && willSearch()) {
-    if (await syncPull(true).catch(() => false)) reloadMemory();
+    // (znovu jen ten jeden soubor – celé stažení před chvílí proběhlo, nebo nebylo potřeba)
+    if (await diskNewer(ckey(c.id, p), set?.ts || 0)) { if (await syncPull(true).catch(() => false)) reloadMemory(); }
     set = getSet(c.id, p);
     if (token !== S.loadToken) return;
     if (willSearch() && !await claimSearch(c.id)) {
@@ -4166,6 +4190,7 @@ async function showCountry(force) {
   }
   if (needs()) {
     status(`Načítám ${c.name} – ${PERIODS[p].label}…`);
+    loadNote(`⏳ Načítám nová videa – ${c.name}, ${PERIODS[p].label}…`);
     try { set = await ensureSet(c, p, true, !force, true); status(''); }
     catch (e) { status(e.message, true); failed = true; }
     // čerstvá data hned na Disk (ne až za 10 s), ať je ostatní zařízení vidí a nestahují totéž
@@ -4187,6 +4212,7 @@ async function showCountry(force) {
       if (n && REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
     } catch (e) { status(e.message, true); }
   }
+  loadNote('');
   if (token !== S.loadToken) return;
   S.nextAuto = (set && !failed ? set.ts : Date.now()) + S.interval * 60e3;
   renderMain();
