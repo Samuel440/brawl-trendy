@@ -39,6 +39,11 @@ button:disabled{opacity:.5;cursor:default}
 .pb i{display:block;height:100%;background:var(--ok)}
 .ch{color:var(--muted);font-size:12px}
 .err{color:var(--hot)}
+.back{color:var(--accent);text-decoration:none;font-weight:800;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+#layers .ly{position:absolute;inset:0;pointer-events:none}
+#layers video{will-change:transform}
+.moments .lg{font-size:12px;padding:3px 9px;border-radius:999px}
+.moments .lg.on{background:var(--accent);color:#111;border-color:var(--accent)}
 /* timeline jako v DaVinci: posuvná čára, Alt+kolečko přiblížit, Ctrl+kolečko posun, dva prsty = přiblížit */
 .tlbox{position:relative;margin-top:10px;overflow-x:auto;overflow-y:hidden;background:var(--panel);border:1px solid var(--line);border-radius:10px;touch-action:pan-x;user-select:none;-webkit-user-select:none}
 .tlin{position:relative;min-width:100%;padding-bottom:4px}
@@ -58,19 +63,20 @@ button:disabled{opacity:.5;cursor:default}
 .moments{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px;font-size:12px}
 .moments button{font-size:11px;padding:2px 7px}
 </style></head><body>
-<div class="top"><h1>▶️ Náhled editu</h1><select id="proj"></select><span class="ch" id="info"></span></div>
+<div class="top"><a class="back" href="https://samuel440.github.io/brawl-trendy/">◀ Zpět na Brawl Trendy</a><h1>▶️ Náhled editu</h1><select id="proj"></select><span class="ch" id="info"></span></div>
 <div class="wrap">
   <div id="prep"></div>
   <div class="stage" id="stage">
     <video class="main" id="m0" playsinline preload="auto"></video><video class="main" id="m1" playsinline preload="auto"></video>
     <div class="cam off" id="cam"><video id="c0" playsinline muted preload="auto"></video><video id="c1" playsinline muted preload="auto"></video></div>
+    <div id="layers"></div>
     <div class="tag" id="tag"></div>
     <button class="big" id="big">▶</button>
   </div>
   <div class="ctrl">
     <button id="play">▶ Přehrát</button><button data-skip="-10">−10 s</button><button data-skip="10">+10 s</button>
     <span class="t" id="time">0:00 / 0:00</span>
-    <label class="ch"><input type="checkbox" id="loud"> hudba hlasitěji</label>
+    <label class="ch"><input type="checkbox" id="loud"> hudba hlasitěji</label><label class="ch"><input type="checkbox" id="quiet"> hra tišeji</label>
     <button id="fs">⛶ Celá obrazovka</button>
     <div class="bar" id="bar"><div class="intro" id="introz"></div><div id="kap"></div><div id="bwz"></div><div class="ph" id="ph"></div></div>
   </div>
@@ -78,7 +84,7 @@ button:disabled{opacity:.5;cursor:default}
   <div class="moments" id="moments"></div>
   <div class="tlhint">Chyť červenou čáru (nebo klikni kamkoli do timeliny) a posuň ji – video jde s ní. Mezerník = přehrát odtud. Alt + kolečko = přiblížit, Ctrl + kolečko = posun do stran, na mobilu přiblížíš dvěma prsty. <button id="tlfit">↔ Celá timeline</button></div>
   <div class="leg"><span>Barvy pruhu = kapitoly a nálady hudby</span><span>šedá dole = černobílé části</span><span>šrafování = úvod</span></div>
-  <div class="leg">Hrubý náhled: tvůj střih (hra + webka), velikost webky, punch, černobílé a hudba podle plánu Auto Editu. Bez efektů, zoomů, zvuků a Magic Masků – ty jsou až v Resolve.</div>
+  <div class="leg" id="mode"></div>
 </div>
 <script>
 const $ = s => document.querySelector(s);
@@ -102,9 +108,59 @@ function seek(t) {
   t = Math.max(0, Math.min(D?.delka || 0, t));
   Tstart = t; T0 = performance.now();
   if (D?.mic_ready && mic.src) mic.currentTime = t;
-  for (const k in tracks) { tracks[k].cur = -1; tracks[k].next = -1; }
+  for (const tr of [...Object.values(tracks), ...LAYERS]) { tr.cur = -1; tr.next = -1; }
   mus.dataset.seg = '';
   tick();
+}
+// ---------- 🎞️ vrstvy ze SESTAVENÉHO editu (S:\EDIT\vystup\AUTO EDIT N.drt): každá stopa videa = jedna vrstva,
+// se skutečnými zoomy, posuny, kotevními body a ořezy z Resolve (i keyframy)
+let LAYERS = [];
+function buildLayers() {
+  const box = $('#layers'); box.innerHTML = ''; LAYERS = [];
+  const on = !!D.vrstvy?.length;
+  ['#m0', '#m1', '#cam'].forEach(s => { $(s).hidden = on; });
+  if (!on) return;
+  for (const v of D.vrstvy) { // pořadí = stopy V1, V2… → vyšší stopa navrch jako v Resolve
+    const ly = document.createElement('div'); ly.className = 'ly';
+    const els = [0, 1].map(() => { const e = document.createElement('video'); e.playsInline = true; e.preload = 'auto'; ly.append(e); return e; });
+    box.append(ly);
+    LAYERS.push({els, cur:-1, a:0, next:-1, main:true, clips:v.klipy, stopa:v.stopa});
+  }
+  AUDIO_DONE = false;
+}
+const ease = x => x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2; // keyframy v Resolve jsou plynulé (ease)
+function kv(v, t) {
+  if (!Array.isArray(v)) return v;
+  if (t <= v[0][0]) return v[0][1];
+  for (let i = 1; i < v.length; i++) if (t < v[i][0]) { const [t0, a] = v[i - 1], [t1, b] = v[i]; return a + (b - a) * ease((t - t0) / Math.max(1e-6, t1 - t0)); }
+  return v[v.length - 1][1];
+}
+// Resolve: bod p → (p − kotva) × zoom + kotva + posun (posun a kotva jako zlomek šířky / výšky, osa Y nahoru); ořez z okrajů
+function applyFx(el, c, t) {
+  const f = c[4] || {}, z = kv(f.z ?? 1, t), x = kv(f.x ?? 0, t), y = kv(f.y ?? 0, t), ax = kv(f.ax ?? 0, t), ay = kv(f.ay ?? 0, t), cr = f.c || [0, 0, 0, 0];
+  el.style.transformOrigin = `${50 + ax * 100}% ${50 - ay * 100}%`;
+  el.style.transform = `translate(${x * 100}%, ${-y * 100}%) scale(${z})`;
+  el.style.clipPath = cr.some(Boolean) ? `inset(${cr[2] * 100}% ${cr[1] * 100}% ${cr[3] * 100}% ${cr[0] * 100}%)` : '';
+}
+// ---------- 🔊 zvuk se skutečnými hlasitostmi z editu (mikrofon +12 dB, hra −28 dB, hudba podle plánu) přes Web Audio
+let AC = null, AUDIO_DONE = false; const G = {};
+const dbv = db => Math.pow(10, db / 20);
+function audioInit() {
+  if (!window.AudioContext && !window.webkitAudioContext) return;
+  AC ||= new (window.AudioContext || window.webkitAudioContext)();
+  if (!G.out) { G.out = AC.createDynamicsCompressor(); G.out.connect(AC.destination); }
+  const node = (el, key) => { if (G[key] || el.dataset.ac) return; el.dataset.ac = '1'; const g = AC.createGain(); AC.createMediaElementSource(el).connect(g).connect(G.out); G[key] = g; };
+  try {
+    node(mic, 'mic'); node(mus, 'mus');
+    if (!AUDIO_DONE) { LAYERS.forEach(L => L.els.forEach((e, i) => node(e, `v${L.stopa}_${i}`))); ['m0', 'm1'].forEach(id => node($('#' + id), id)); AUDIO_DONE = true; }
+  } catch (e) { console.warn('zvuk', e); }
+  AC.resume?.();
+}
+function gains(seg) {
+  const Z = D.zisk || {}, hra = dbv(Z.A1 ?? -28) * ($('#quiet').checked ? 0.4 : 1);
+  if (G.mic) G.mic.gain.value = dbv(Z.A2 ?? 12) * 0.5; // (jistota proti přebuzení – poměry zůstávají)
+  if (G.mus) G.mus.gain.value = (seg ? dbv(seg[4]) : 0) * ($('#loud').checked ? 3 : 1) * 0.5;
+  for (const k in G) if (/^(v\d|m\d)/.test(k)) G[k].gain.value = hra * 0.5;
 }
 function find(clips, t) { let lo = 0, hi = clips.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1, c = clips[m]; if (t < c[0]) hi = m - 1; else if (t >= c[1]) lo = m + 1; else return m; } return -1; }
 function srcOf(c) { const f = D.soubory[c[2]]; return f && f.ready ? url(`/px/${f.id}.mp4`) : ''; }
@@ -146,25 +202,33 @@ function tick() {
   if (!D) return;
   const t = now();
   if (t >= D.delka) { pause(); }
-  syncTrack(tracks.v1, D.v1, t);
-  const c2 = syncTrack(tracks.v2, D.v2, t);
-  const st = camAt(t), cam = $('#cam');
-  cam.className = 'cam ' + (!c2 ? 'off' : st === 'VELKÁ' ? 'VELKA' : st.startsWith('FULL') ? 'FULL' : '') + (st === 'punch' && lastCamPunch !== String(Math.floor(t)) ? ' punch' : '');
-  // punch ve hře: krátké „ťuknutí“ obrazu
-  const p = D.punch.findIndex(x => x <= t && t - x < 0.35);
-  if (p >= 0 && p !== lastPunch) { lastPunch = p; const m = tracks.v1.els[tracks.v1.a]; m.classList.remove('punch'); void m.offsetWidth; m.classList.add('punch'); }
+  const st = camAt(t);
+  let c2 = null;
+  if (LAYERS.length) {
+    // přesně podle sestaveného editu: každá vrstva svůj klip, zoom, posun, kotva, ořez
+    for (const L of LAYERS) { const c = syncTrack(L, L.clips, t); if (c) applyFx(L.els[L.a], c, t); if (L.stopa === 2) c2 = c; }
+  } else {
+    syncTrack(tracks.v1, D.v1, t);
+    c2 = syncTrack(tracks.v2, D.v2, t);
+    const cam = $('#cam');
+    cam.className = 'cam ' + (!c2 ? 'off' : st === 'VELKÁ' ? 'VELKA' : st.startsWith('FULL') ? 'FULL' : '') + (st === 'punch' && lastCamPunch !== String(Math.floor(t)) ? ' punch' : '');
+    // punch ve hře: krátké „ťuknutí“ obrazu
+    const p = D.punch.findIndex(x => x <= t && t - x < 0.35);
+    if (p >= 0 && p !== lastPunch) { lastPunch = p; const m = tracks.v1.els[tracks.v1.a]; m.classList.remove('punch'); void m.offsetWidth; m.classList.add('punch'); }
+  }
   $('#stage').classList.toggle('bw', D.bw.some(([s, e]) => t >= s && t < e));
   // hudba
   const seg = D.hudba.find(x => t >= x[0] && t < x[1]);
   if (seg) {
     const id = String(seg[2]);
     if (mus.dataset.seg !== id) { mus.src = url(`/hudba/${seg[2]}`); mus.dataset.seg = id; mus.currentTime = seg[3] + (t - seg[0]); }
-    mus.volume = Math.min(1, Math.pow(10, seg[4] / 20) * ($('#loud').checked ? 4 : 1));
+    if (!G.mus) mus.volume = Math.min(1, Math.pow(10, seg[4] / 20) * ($('#loud').checked ? 4 : 1)); // (bez Web Audio)
     const want = seg[3] + (t - seg[0]);
     if (playing && Math.abs(mus.currentTime - want) > 0.4) mus.currentTime = want;
     if (playing && mus.paused) mus.play().catch(() => {});
   } else if (!mus.paused) mus.pause();
   if (!playing && !mus.paused) mus.pause();
+  gains(seg);
   // popisky
   const kap = D.kapitoly.findIndex(([s, e]) => t >= s && t < e);
   $('#tag').innerHTML = [t < D.intro ? '🎬 úvod' : '', kap >= 0 ? `📖 ${kap + 1}. ${D.kapitoly[kap][2]}` : '', c2 ? `🎥 ${st}` : '', seg ? `🎵 ${seg[5]}` : ''].filter(Boolean).map(x => `<span>${x}</span>`).join('');
@@ -203,14 +267,17 @@ function drawTL() {
     + '<div class="phl" id="phl"></div>';
   const F = ROWS[TL.focus];
   if (F) $('#tlin').insertAdjacentHTML('beforeend', F.items.slice(0, 400).map(([s, e]) => `<em class="tlg" style="left:${LBL + s / L * W}px;width:${Math.max(3, (e - s) / L * W)}px"></em>`).join(''));
-  $('#moments').innerHTML = F ? `<b>${F.ic} ${esc(F.title)}</b> – ${F.items.length}× (klikni = skok): ` + F.items.slice(0, 200).map(([s, , x]) => `<button data-go="${s}">${fmt(s)}${x ? ' · ' + esc(String(x).slice(0, 16)) : ''}</button>`).join('') + ' <button data-f="">✖ zrušit</button>' : '<span class="ch">Klikni na ikonu řádku (🎮 🎥 📷 📖 ⚫ 🎵 💥) – výrazně se označí všechny jeho momenty.</span>';
+  $('#moments').innerHTML = F ? `<b>${F.ic} ${esc(F.title)}</b> – ${F.items.length}× (klikni = skok): ` + F.items.slice(0, 200).map(([s, , x]) => `<button data-go="${s}">${fmt(s)}${x ? ' · ' + esc(String(x).slice(0, 16)) : ''}</button>`).join('') + ' <button data-f="">✖ zrušit</button>'
+    : '<span class="ch">Zvýraznit na timelině:</span> ' + ROWS.map((r, i) => `<button class="lg" data-f="${i}">${r.ic} ${esc(r.title)} <b>${r.items.length}</b></button>`).join('');
   tlPlayhead(now());
 }
 function tlPlayhead(t) {
   const p = $('#phl'); if (!p || !D) return;
   const x = tlX(t); p.style.left = x + 'px';
   // při přehrávání čára nesmí utéct z obrazu
-  if (playing && !TL.drag && (x < box.scrollLeft + LBL || x > box.scrollLeft + box.clientWidth - 30)) box.scrollLeft = x - LBL - box.clientWidth * 0.25;
+  // (ne když timelinu zrovna posouváš prstem/myší – dřív ji to hned vracelo a posun šel jen kousek)
+  if (playing && !TL.drag && !TL.touching && Date.now() - (TL.userAt || 0) > 4000
+      && (x < box.scrollLeft + LBL || x > box.scrollLeft + box.clientWidth - 30)) box.scrollLeft = x - LBL - box.clientWidth * 0.25;
 }
 function tlZoom(z, ax) {
   if (!D) return;
@@ -246,15 +313,35 @@ box.addEventListener('pointerup', e => {
 });
 // 🤏 dva prsty = přiblížit / oddálit (kolem středu mezi prsty), jako na mapách
 const dist = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
-box.addEventListener('touchstart', e => { if (e.touches.length === 2) { TL.tap = null; TL.drag = false; TL.pinch = {d:dist(e.touches), z:TL.z}; } }, {passive:true});
+// 👆 prst na červené čáře = táhne se ČÁRA, ne timeline (dřív se pod prstem zároveň posouvala timeline a čára jela jen kousek)
+box.addEventListener('touchstart', e => {
+  if (!D || e.touches.length !== 1) return;
+  const r = box.getBoundingClientRect(), x = e.touches[0].clientX - r.left;
+  if (x >= LBL && Math.abs(tlX(now()) - (x + box.scrollLeft)) < 26) e.preventDefault();
+}, {passive:false});
+// ruční posun timeliny: chvíli ji nepřetahovat za čárou
+['touchstart', 'wheel', 'pointerdown'].forEach(ev => box.addEventListener(ev, () => { TL.userAt = Date.now(); if (ev === 'touchstart') TL.touching = true; }, {passive:true}));
+['touchend', 'touchcancel'].forEach(ev => box.addEventListener(ev, e => { if (!e.touches.length) { TL.touching = false; TL.userAt = Date.now(); } }, {passive:true}));
+box.addEventListener('scroll', () => { if (TL.touching) TL.userAt = Date.now(); }, {passive:true});
+// během sevření se timeline jen plynule ROZTÁHNE (žádné přepočítávání = žádné škubání), přepočítá se až po puštění prstů
+box.addEventListener('touchstart', e => {
+  if (e.touches.length !== 2) return;
+  TL.tap = null; TL.drag = false;
+  TL.pinch = {d:dist(e.touches), z:TL.z, zn:TL.z, ax:(e.touches[0].clientX + e.touches[1].clientX) / 2 - box.getBoundingClientRect().left};
+}, {passive:true});
 box.addEventListener('touchmove', e => {
   if (!TL.pinch || e.touches.length !== 2) return;
   e.preventDefault();
-  const ax = (e.touches[0].clientX + e.touches[1].clientX) / 2 - box.getBoundingClientRect().left;
-  const z = TL.pinch.z * dist(e.touches) / TL.pinch.d;
-  clearTimeout(zt); zt = setTimeout(() => tlZoom(z, ax), 0);
+  const P = TL.pinch, r = Math.max(1 / P.z, Math.min(400 / P.z, dist(e.touches) / P.d));
+  P.zn = P.z * r;
+  const tin = $('#tlin'); tin.style.transformOrigin = `${box.scrollLeft + P.ax}px 0`; tin.style.transform = `scaleX(${r})`;
 }, {passive:false});
-box.addEventListener('touchend', e => { if (e.touches.length < 2) TL.pinch = null; });
+box.addEventListener('touchend', e => {
+  if (!TL.pinch || e.touches.length >= 2) return;
+  const P = TL.pinch; TL.pinch = null;
+  $('#tlin').style.transform = '';
+  if (Math.abs(P.zn - P.z) > 0.01) tlZoom(P.zn, P.ax);
+});
 $('#tlfit').onclick = () => { TL.z = 1; drawTL(); box.scrollLeft = 0; };
 document.addEventListener('click', e => {
   const f = e.target.closest('[data-f]'); if (f) { const i = f.dataset.f === '' ? null : +f.dataset.f; TL.focus = TL.focus === i ? null : i; drawTL(); return; }
@@ -264,13 +351,14 @@ addEventListener('resize', () => drawTL());
 function play() {
   if (!D) return;
   playing = true; T0 = performance.now();
+  audioInit(); // (Web Audio smí začít až po kliknutí)
   if (D.mic_ready) { if (!mic.src) { mic.src = url('/mic'); mic.currentTime = Tstart; } mic.play().catch(() => {}); }
   $('#play').textContent = '⏸ Pauza'; $('#big').hidden = true;
   clearInterval(timer); timer = setInterval(tick, 40); tick();
 }
 function pause() {
   Tstart = now(); playing = false; mic.pause(); mus.pause();
-  for (const k in tracks) tracks[k].els.forEach(e => e.pause());
+  for (const tr of [...Object.values(tracks), ...LAYERS]) tr.els.forEach(e => e.pause());
   $('#play').textContent = '▶ Přehrát'; $('#big').hidden = false; clearInterval(timer); tick();
 }
 $('#play').onclick = $('#big').onclick = () => playing ? pause() : play();
@@ -301,7 +389,10 @@ function drawPrep() {
 async function refresh() {
   const was = D;
   D = await api('/api/projekt', {p:P});
-  if (!was || was.projekt !== D.projekt) { drawBar(); TL.z = 1; drawTL(); seek(0); }
+  if (!was || was.projekt !== D.projekt || (was.zisk?.soubor !== D.zisk?.soubor)) { buildLayers(); drawBar(); TL.z = 1; drawTL(); seek(0); }
+  $('#mode').innerHTML = D.vrstvy?.length
+    ? `🎞️ <b>Podle sestaveného editu</b> (${esc(D.zisk.soubor)}): skutečné vrstvy, zoomy, posuny, ořez webky a hlasitosti z Resolve. Chybí jen texty, šipky, efekty, zvukové efekty a Magic Masky.`
+    : '📋 Zatím jen podle plánu (edit ještě není sestavený): tvůj střih, velikost webky, punch, černobílé a hudba – přibližně.';
   $('#info').textContent = `${fmt(D.delka)} · ${D.v1.length} střihů · ${D.soubory.length} zdrojových videí`;
   drawPrep(); tick();
   clearTimeout(poll);

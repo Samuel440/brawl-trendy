@@ -78,7 +78,8 @@ def projekt(proj):
     """Totéž co projekt_now, ale pamatuje si výsledek, dokud se soubory projektu nezmění (přehrávač se ptá často)."""
     folder = os.path.join(ANALYZA, proj)
     key = tuple(os.path.getmtime(os.path.join(folder, f)) if os.path.exists(os.path.join(folder, f)) else 0
-                for f in ("base.drt", "plan_v4.json", "plan_bw.json", "plan_music.json", "chapters.json", "mic.wav"))
+                for f in ("base.drt", "plan_v4.json", "plan_bw.json", "plan_music.json", "chapters.json", "mic.wav")) + (
+        max([os.path.getmtime(os.path.join(VYSTUP, f)) for f in os.listdir(VYSTUP) if f.endswith(".drt")] or [0]) if os.path.isdir(VYSTUP) else 0,)
     hit = _CACHE.get(proj)
     if hit and hit[0] == key and time.time() - hit[2] < 5:
         d = hit[1]
@@ -121,7 +122,9 @@ def projekt_now(proj):
     music = _rd(proj, "plan_music.json", []) or []
     mic = os.path.join(ANALYZA, proj, "mic.wav")
     delka = max([k[1] for t in stopy.values() for k in t] or [0])
+    vrstvy, zisk = sestaveno(proj, {f["path"]: i for i, f in enumerate(files)})
     return {
+        "vrstvy": vrstvy, "zisk": zisk,
         "projekt": proj, "delka": delka, "soubory": [{k: f[k] for k in ("name", "id", "ready", "webka")} for f in files],
         "v1": stopy.get("V1", []), "v2": stopy.get("V2", []),
         "intro": ((_rd(proj, "intro.json", {}) or {}).get("intro_end") or 0) / TL_FPS,
@@ -134,6 +137,113 @@ def projekt_now(proj):
         "mic": os.path.exists(mic), "mic_ready": os.path.exists(os.path.join(CACHE, proxy_name(mic) + ".m4a")) if os.path.exists(mic) else False,
         "_files": files, "_music": music, "_mic": mic,
     }
+
+
+VYSTUP = r"S:\EDIT\vystup"
+
+
+def _fx(c, L):
+    """Transformace klipu ze sestaveného DRT: zoom (42), posun X/Y (40/41) – hodnota nebo keyframy [(snímek, hodnota)],
+    ořez (skupina 6: 54 vlevo, 55 vpravo, 56 nahoře, 57 dole), hlasitost (skupina 124, param 95 v dB)."""
+    h = c.findtext("EffectFiltersBA")
+    out = {}
+    if not h:
+        return out
+    try:
+        top = L.pb_parse(L.blob_decode(h))
+    except Exception:  # noqa: BLE001
+        return out
+    for t in top:
+        if t[0] != 1 or t[1] != 2:
+            continue
+        g = L.pb_parse(t[2])
+        gid = next((x[2] for x in g if x[0] == 1), None)
+        for p in g:
+            if p[0] != 9 or p[1] != 2 or not p[2]:
+                continue
+            sub = L.pb_parse(p[2])
+            pid = next((q[2] for q in sub if q[0] == 1), None)
+            kf = next((q for q in sub if q[0] == 10 and q[1] == 2), None)
+            val = None
+            if kf is not None:
+                try:
+                    # 2D hodnota (kotevní bod, příznak 0x20): x = první double, y = posledních 8 bajtů
+                    val = [(k["frame"], (L.kf_value(k), struct.unpack_from("<d", k["data"], len(k["data"]) - 8)[0])
+                            if k["flags"] & 0x20 else L.kf_value(k)) for k in L.kf_parse(bytes(kf[2]))]
+                except Exception:  # noqa: BLE001
+                    val = None
+            else:
+                for q in sub:
+                    if q[0] == 3 and q[1] == 2:
+                        for r in L.pb_parse(q[2]):
+                            if r[0] == 1 and r[1] == 2:
+                                for x in L.pb_parse(r[2]):
+                                    if x[0] == 2 and x[1] == 1:
+                                        val = struct.unpack("<d", x[2])[0]
+                                    elif x[0] == 7 and x[1] == 2 and len(x[2]) == 16:  # kotevní bod (x, y)
+                                        val = struct.unpack(">dd", x[2])  # (tady big-endian: 0x3fd36c09… = 0,3035)
+            if val is not None:
+                out[(gid, pid)] = val
+    return out
+
+
+def sestaveno(proj, fidx):
+    """Ze SKUTEČNĚ sestaveného editu (S:\\EDIT\\vystup\\AUTO EDIT N.drt, nejnovější k tomuto projektu) vezme vrstvy videa
+    s tvými zdroji (hra, webka) i se zoomy, posuny a ořezy, a hlasitost hry a mikrofonu. Bez sestavení → ([], {})."""
+    base = os.path.join(ANALYZA, proj, "base.drt")
+    try:
+        sys.path.insert(0, r"S:\EDIT\tools")
+        import drt_lib as L
+    except Exception:  # noqa: BLE001
+        return [], {}
+    cand = []
+    for f in os.listdir(VYSTUP) if os.path.isdir(VYSTUP) else []:
+        p = os.path.join(VYSTUP, f)
+        if f.lower().endswith(".drt") and not f.startswith("_") and os.path.getmtime(p) >= os.path.getmtime(base):
+            cand.append((os.path.getmtime(p), p))
+    for _, p in sorted(cand, reverse=True):
+        try:
+            d = L.Drt(p)
+        except Exception:  # noqa: BLE001
+            continue
+        vrstvy, hits = [], 0
+        for ti, tr in enumerate(d.tracks("video"), 1):
+            kl = []
+            for c in L.Drt.items(tr):
+                mp = c.findtext("MediaFilePath")
+                if mp not in fidx:
+                    continue  # titulky, šipky, Fusion, cizí videa – náhled je neumí
+                try:
+                    s, du, i = float(c.findtext("Start")), float(c.findtext("Duration")), float(c.findtext("In") or 0)
+                except Exception:  # noqa: BLE001
+                    continue
+                mf = _fps(c.findtext("MediaFrameRate"))
+                fx = _fx(c, L)
+                t0 = s / TL_FPS
+
+                def tv(v, k=None):  # keyframy (snímky zdroje) -> časy timeliny; k = složka 2D hodnoty
+                    pick = (lambda x: x[k] if isinstance(x, tuple) else (x if k == 0 else 0.0)) if k is not None else (lambda x: x)
+                    if isinstance(v, list):
+                        return [[round(t0 + (f - i) / mf, 3), round(pick(x), 4)] for f, x in v]
+                    return round(pick(v), 4)
+                an = fx.get((4, 48), (0.0, 0.0))
+                kl.append([round(t0, 3), round((s + du) / TL_FPS, 3), fidx[mp], round(i / mf, 3), {
+                    "z": tv(fx.get((4, 42), 1.0)), "x": tv(fx.get((4, 40), 0.0)), "y": tv(fx.get((4, 41), 0.0)),
+                    "ax": tv(an, 0), "ay": tv(an, 1),  # kotevní bod (zoom kolem něj), zlomek šířky / výšky od středu
+                    "c": [round(fx.get((6, k), 0.0) if not isinstance(fx.get((6, k)), list) else 0.0, 4) for k in (54, 55, 56, 57)]}])
+            if kl:
+                hits += len(kl)
+                vrstvy.append({"stopa": ti, "klipy": sorted(kl)})
+        if hits < 10:
+            continue  # sestavení jiného projektu
+        zisk = {}
+        for ti, tr in enumerate(d.tracks("audio"), 1):
+            vols = sorted(v for c in L.Drt.items(tr) for v in [_fx(c, L).get((124, 95))] if isinstance(v, float))
+            if vols:
+                zisk[f"A{ti}"] = round(vols[len(vols) // 2], 1)
+        zisk["soubor"] = os.path.basename(p)
+        return vrstvy, zisk
+    return [], {}
 
 
 def projekty():
