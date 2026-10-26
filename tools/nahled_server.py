@@ -90,6 +90,7 @@ def projekt(proj):
         f["ready"] = os.path.exists(os.path.join(CACHE, f["id"] + ".mp4"))
     d["soubory"] = [{k: f[k] for k in ("name", "id", "ready", "webka")} for f in d["_files"]]
     d["mic_ready"] = bool(d["mic"]) and os.path.exists(os.path.join(CACHE, proxy_name(d["_mic"]) + ".m4a"))
+    d["ovl"] = [ovl_info(p) for p in d.get("_ovl", [])]
     return d
 
 
@@ -125,6 +126,7 @@ def projekt_now(proj):
     vrstvy, zisk, ext = sestaveno(proj, {f["path"]: i for i, f in enumerate(files)})
     return {
         "vrstvy": vrstvy, "zisk": zisk, **{k: v for k, v in ext.items() if not k.startswith("_")}, "_zvuky": ext.get("_zvuky", []),
+        "_ovl": ext.get("_ovl", []),
         "projekt": proj, "delka": delka, "soubory": [{k: f[k] for k in ("name", "id", "ready", "webka")} for f in files],
         "v1": stopy.get("V1", []), "v2": stopy.get("V2", []),
         "intro": ((_rd(proj, "intro.json", {}) or {}).get("intro_end") or 0) / TL_FPS,
@@ -140,6 +142,38 @@ def projekt_now(proj):
 
 
 VYSTUP = r"S:\EDIT\vystup"
+OVL_EXT = {".mp4", ".mov", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".webp"}
+IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+def ovl_info(p):
+    """Překryv: obrázek (jde rovnou) nebo video se zeleným pozadím → průhledná kopie .webm (VP9 s alfou)."""
+    img = os.path.splitext(p)[1].lower() in IMG_EXT
+    oid = proxy_name(p)
+    return {"name": os.path.basename(p), "id": oid, "img": img, "ready": img or os.path.exists(os.path.join(CACHE, oid + ".webm"))}
+
+
+def _key_color(p):
+    """Barva pozadí (roh obrazu v 1. vteřině) – zelená plocha pro klíčování."""
+    try:
+        r = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-ss", "0.5", "-i", p, "-frames:v", "1", "-vf", "scale=4:2",
+                            "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
+        b = r.stdout
+        return "0x%02X%02X%02X" % (b[0], b[1], b[2]) if len(b) >= 3 else "0x00FF00"
+    except Exception:  # noqa: BLE001
+        return "0x00FF00"
+
+
+def _ovl_proxy(src, dst):
+    tmp = dst + ".part.webm"
+    kc = _key_color(src)
+    r, g, b = int(kc[2:4], 16), int(kc[4:6], 16), int(kc[6:8], 16)
+    key = f"chromakey={kc}:0.2:0.08," if g > 150 and r < 140 and b < 140 else ""  # klíčovat jen opravdu zelené pozadí
+    ok, err = _ffmpeg(["-i", src, "-an", "-vf", f"{key}scale=-2:540,format=yuva420p", "-r", "30",
+                       "-c:v", "libvpx-vp9", "-b:v", "900k", "-deadline", "realtime", "-cpu-used", "8", "-auto-alt-ref", "0", tmp])
+    if ok:
+        os.replace(tmp, dst)
+    return ok, err
 
 
 def _fx(c, L):
@@ -207,12 +241,39 @@ def sestaveno(proj, fidx):
         except Exception:  # noqa: BLE001
             continue
         vrstvy, hits = [], 0
-        ext = {"upravy": [], "shaky": [], "cb": [], "glow": [], "prechody": [], "zvuky": [], "_zvuky": []}
+        ext = {"upravy": [], "shaky": [], "cb": [], "glow": [], "prechody": [], "zvuky": [], "_zvuky": [], "overlaye": [], "_ovl": [], "napisy": []}
         for ti, tr in enumerate(d.tracks("video"), 1):
             kl = []
             for c in L.Drt.items(tr):
                 mp = c.findtext("MediaFilePath")
+                if mp and mp not in fidx and os.path.exists(mp) and os.path.splitext(mp)[1].lower() in OVL_EXT:
+                    # 🖼️ překryvy: šipky, „lajk odběr“ (zelené pozadí → průhledná kopie), obrázky
+                    try:
+                        s, du, i = float(c.findtext("Start")), float(c.findtext("Duration")), float(c.findtext("In") or 0)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    mf, t0, fx = _fps(c.findtext("MediaFrameRate")), s / TL_FPS, _fx(c, L)
+
+                    def tv3(v, k=None):
+                        pick = (lambda x: x[k] if isinstance(x, tuple) else (x if k == 0 else 0.0)) if k is not None else (lambda x: x)
+                        return [[round(t0 + (f - i) / mf, 3), round(pick(x), 4)] for f, x in v] if isinstance(v, list) else round(pick(v), 4)
+                    an = fx.get((4, 48), (0.0, 0.0))
+                    if mp not in ext["_ovl"]:
+                        ext["_ovl"].append(mp)
+                    ext["overlaye"].append([round(t0, 3), round((s + du) / TL_FPS, 3), ext["_ovl"].index(mp), round(i / mf, 3), {
+                        "z": tv3(fx.get((4, 42), 1.0)), "x": tv3(fx.get((4, 40), 0.0)), "y": tv3(fx.get((4, 41), 0.0)),
+                        "ax": tv3(an, 0), "ay": tv3(an, 1)}, ti])
+                    continue
                 if mp not in fidx:
+                    nm0 = (c.findtext("Name") or "").strip()
+                    # ✍️ nápisy / samolepky (Fusion kompozice v adjustment clipu: NO, MANY, RIZZ…) – jen text, napodobený
+                    if c.findtext("PrettyType") == "Adjustment Clip" and nm0 and not re.match(
+                            r"(?i)^(zoom|click|rage|čb|cb|glow|úvod|uvod|další|solid|compound)", nm0) and len(nm0) <= 24:
+                        try:
+                            s, du = float(c.findtext("Start")), float(c.findtext("Duration"))
+                            ext["napisy"].append([round(s / TL_FPS, 3), round((s + du) / TL_FPS, 3), nm0, ti])
+                        except Exception:  # noqa: BLE001
+                            pass
                     # 🎬 efekty, které náhled umí napodobit: přechody, ZOOM 2 (pyramidy), shaky, černobílé, GLOW
                     try:
                         s, du = float(c.findtext("Start")), float(c.findtext("Duration"))
@@ -220,7 +281,17 @@ def sestaveno(proj, fidx):
                         continue
                     nm, a, b = (c.findtext("Name") or ""), round(s / TL_FPS, 3), round((s + du) / TL_FPS, 3)
                     if c.tag == "Sm2TiTransition":
-                        ext["prechody"].append([a, b, nm[:40]])
+                        # skutečný typ je v FieldsBlob („…Transitions/Edit/Parallax Pan/Out 1 - Left“) – jméno může být
+                        # přejmenované (u tebe „DALŠÍ“ = Parallax Pan Out Left)
+                        typ = nm
+                        try:
+                            mm = re.search(rb"Transitions/Edit/([ -~]{3,80})", bytes.fromhex((c.findtext("FieldsBlob") or "").strip()))
+                            if mm:
+                                typ = re.sub(r"\s+", " ", mm.group(1).decode("ascii", "replace")).strip()
+                        except Exception:  # noqa: BLE001
+                            pass
+                        if not any(x[0] == a and x[1] == b for x in ext["prechody"]):  # stejný přechod na V1 i V2
+                            ext["prechody"].append([a, b, nm[:40], typ[:60]])
                         continue
                     up = nm.upper()
                     if up.startswith("CLICK"):
@@ -334,9 +405,10 @@ def priprav(proj):
         return
     d = projekt(proj)
     todo = [f for f in d["_files"] if not os.path.exists(os.path.join(CACHE, f["id"] + ".mp4"))]
+    ovl = [(p, o) for p, o in zip(d.get("_ovl", []), d.get("ovl", [])) if not o["ready"]]
     mic = d["_mic"]
     mic_dst = os.path.join(CACHE, proxy_name(mic) + ".m4a") if os.path.exists(mic) else None
-    st = PRIPRAVA[proj] = {"hotovo": 0, "celkem": len(todo) + (1 if mic_dst and not os.path.exists(mic_dst) else 0),
+    st = PRIPRAVA[proj] = {"hotovo": 0, "celkem": len(todo) + len(ovl) + (1 if mic_dst and not os.path.exists(mic_dst) else 0),
                            "bezi": True, "chyba": "", "aktualni": ""}
 
     def run():
@@ -354,6 +426,12 @@ def priprav(proj):
                 ok, err = _proxy(f["path"], os.path.join(CACHE, f["id"] + ".mp4"), f["webka"])
                 if not ok:
                     st["chyba"] = f"{f['name']}: {err}"
+                st["hotovo"] += 1
+            for p, o in ovl:  # šipky, lajk odběr: zelené pozadí pryč (průhledné .webm)
+                st["aktualni"] = o["name"]
+                ok, err = _ovl_proxy(p, os.path.join(CACHE, o["id"] + ".webm"))
+                if not ok:
+                    st["chyba"] = f"{o['name']}: {err}"
                 st["hotovo"] += 1
         finally:
             st["bezi"] = False
@@ -460,6 +538,17 @@ class H(http.server.BaseHTTPRequestHandler):
                 d = projekt(proj)
                 p = os.path.join(CACHE, proxy_name(d["_mic"]) + ".m4a") if d["mic"] else ""
                 return self._file(p, "audio/mp4") if p and os.path.exists(p) else self._send(404, "{}")
+            if u.path.startswith("/ov/"):  # překryv: průhledná kopie videa, nebo obrázek – jen soubory z editu
+                i = int(u.path[4:])
+                d = projekt(proj)
+                if not 0 <= i < len(d["_ovl"]):
+                    return self._send(404, "{}")
+                p, o = d["_ovl"][i], d["ovl"][i]
+                if o["img"]:
+                    ct = {".png": "image/png", ".webp": "image/webp"}.get(os.path.splitext(p)[1].lower(), "image/jpeg")
+                    return self._file(p, ct)
+                q = os.path.join(CACHE, o["id"] + ".webm")
+                return self._file(q, "video/webm") if os.path.exists(q) else self._send(404, "{}")
             if u.path.startswith("/zvuk/"):  # zvukový efekt / hudba ze sestaveného editu (jen soubory, které edit používá)
                 i = int(u.path[6:])
                 z = projekt(proj).get("_zvuky", [])
@@ -507,6 +596,16 @@ def main():
     print("  Odkaz je i v záložce 🛠️ Výroba na webu.")
     oznam(lan, ts)
     threading.Thread(target=lambda: [time.sleep(600) or oznam(*adresy()) for _ in iter(int, 1)], daemon=True).start()
+
+    def statistiky():  # 📊 čas a peníze pro Výrobu – hned a pak co 30 min
+        while True:
+            try:
+                import vyroba_statistiky
+                vyroba_statistiky.spocitej()
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(1800)
+    threading.Thread(target=statistiky, daemon=True).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

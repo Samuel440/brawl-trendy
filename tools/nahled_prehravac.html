@@ -42,9 +42,19 @@ button:disabled{opacity:.5;cursor:default}
 .back{color:var(--accent);text-decoration:none;font-weight:800;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
 #layers{position:absolute;inset:0;overflow:hidden}
 #layers .ly{position:absolute;inset:0;pointer-events:none}
+#layers .ovimg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0}
+#layers .ovimg.on{opacity:1}
+#layers .napis{display:flex;align-items:center;justify-content:center}
+#layers .napis span{font:900 clamp(28px,11vw,120px)/1 Impact,'Arial Black',system-ui,sans-serif;color:#fff;letter-spacing:2px;
+  -webkit-text-stroke:3px #000;text-shadow:0 6px 0 #000,0 0 24px #000a;animation:napis .35s cubic-bezier(.2,1.6,.4,1)}
+@keyframes napis{from{transform:scale(2.2) rotate(-6deg);opacity:0}}
 #layers video{will-change:transform}
 .moments .lg{font-size:12px;padding:3px 9px;border-radius:999px}
 .moments .lg.on{background:var(--accent);color:#111;border-color:var(--accent)}
+.mix{display:flex;flex-wrap:wrap;gap:4px 12px;flex-basis:100%;font-size:12px;color:var(--muted)}
+.mix label{display:flex;align-items:center;gap:4px}
+.mix input{width:90px}
+.moments .unfocus{flex-basis:100%;background:var(--hot);border-color:var(--hot);color:#fff;font-size:16px;font-weight:900;padding:10px 14px}
 /* timeline jako v DaVinci: posuvná čára, Alt+kolečko přiblížit, Ctrl+kolečko posun, dva prsty = přiblížit */
 .tlbox{position:relative;margin-top:10px;overflow-x:auto;overflow-y:hidden;background:var(--panel);border:1px solid var(--line);border-radius:10px;touch-action:pan-x;user-select:none;-webkit-user-select:none}
 .tlin{position:relative;min-width:100%;padding-bottom:4px}
@@ -77,7 +87,7 @@ button:disabled{opacity:.5;cursor:default}
   <div class="ctrl">
     <button id="play">▶ Přehrát</button><button data-skip="-10">−10 s</button><button data-skip="10">+10 s</button>
     <span class="t" id="time">0:00 / 0:00</span>
-    <label class="ch"><input type="checkbox" id="loud"> hudba hlasitěji</label><label class="ch"><input type="checkbox" id="quiet"> hra tišeji</label>
+    <span class="mix" id="mix"></span><input type="checkbox" id="loud" hidden><input type="checkbox" id="quiet" hidden>
     <button id="fs">⛶ Celá obrazovka</button>
     <div class="bar" id="bar"><div class="intro" id="introz"></div><div id="kap"></div><div id="bwz"></div><div class="ph" id="ph"></div></div>
   </div>
@@ -127,7 +137,51 @@ function buildLayers() {
     box.append(ly);
     LAYERS.push({els, cur:-1, a:0, next:-1, main:true, clips:v.klipy, stopa:v.stopa, div:ly});
   }
+  // 🖼️ překryvy (šipky, lajk odběr – průhledné kopie; obrázky) a ✍️ nápisy (NO, MANY, RIZZ) – každá stopa svoje vrstva
+  OVLS = [];
+  const byT = {};
+  for (const o of D.overlaye || []) (byT[o[5]] ||= []).push(o);
+  for (const [ti, clips] of Object.entries(byT)) {
+    const ly = document.createElement('div'); ly.className = 'ly';
+    const vid = document.createElement('video'); vid.playsInline = true; vid.muted = true; vid.preload = 'auto';
+    const img = document.createElement('img'); img.className = 'ovimg';
+    ly.append(vid, img);
+    OVLS.push({stopa:+ti, clips:clips.sort((a, b) => a[0] - b[0]), div:ly, vid, img, cur:-1});
+  }
+  const byN = {};
+  for (const n of D.napisy || []) (byN[n[3]] ||= []).push(n);
+  for (const [ti, list] of Object.entries(byN)) {
+    const ly = document.createElement('div'); ly.className = 'ly napis';
+    OVLS.push({stopa:+ti, napisy:list, div:ly, cur:-1});
+  }
+  // vrstvy podle čísla stopy jako v Resolve (vyšší navrch)
+  [...LAYERS, ...OVLS].sort((a, b) => a.stopa - b.stopa).forEach(L => box.append(L.div));
   AUDIO_DONE = false;
+}
+let OVLS = [];
+function syncOverlays(t) {
+  for (const O of OVLS) {
+    if (O.napisy) { // ✍️ nápis: velký text, vyskočí při začátku
+      const n = O.napisy.find(x => t >= x[0] && t < x[1]), id = n ? O.napisy.indexOf(n) : -1;
+      if (id !== O.cur) { O.cur = id; O.div.innerHTML = n ? `<span>${esc(n[2])}</span>` : ''; }
+      continue;
+    }
+    const i = find(O.clips, t), c = O.clips[i];
+    if (!c) { if (O.cur !== -1) { O.vid.classList.remove('on'); O.img.classList.remove('on'); O.vid.pause(); O.cur = -1; } continue; }
+    const info = D.ovl?.[c[2]]; if (!info?.ready) continue;
+    const src = url(`/ov/${c[2]}`);
+    if (info.img) {
+      if (O.img.dataset.src !== src) { O.img.src = src; O.img.dataset.src = src; }
+      O.img.classList.add('on'); O.vid.classList.remove('on'); O.vid.pause(); applyFx(O.img, c, t);
+    } else {
+      if (O.vid.dataset.src !== src) { O.vid.src = src; O.vid.dataset.src = src; }
+      const want = c[3] + (t - c[0]);
+      if (O.cur !== i || Math.abs(O.vid.currentTime - want) > (playing ? 0.3 : 0.04)) { try { O.vid.currentTime = want; } catch {} }
+      if (playing && O.vid.paused) O.vid.play().catch(() => {}); if (!playing && !O.vid.paused) O.vid.pause();
+      O.vid.classList.add('on'); O.img.classList.remove('on'); applyFx(O.vid, c, t);
+    }
+    O.cur = i;
+  }
 }
 // transformace podle Resolve jako CSS: posun a kotva (zlomek šířky/výšky, Y nahoru), zoom kolem kotvy
 const tf = f => `translate(${(f.ax + f.x) * 100}%, ${(-f.ay - f.y) * 100}%) scale(${f.z}) translate(${-f.ax * 100}%, ${f.ay * 100}%)`;
@@ -136,7 +190,7 @@ const active = (list, t) => (list || []).filter(x => t >= x[0] && t < x[1]);
 // 🔺 ZOOM 2 / CLICK = adjustment clipy: zvětšují všechno POD sebou (víc nad sebou = pyramida)
 function adjustLayers(t) {
   const ups = active(D.upravy, t).sort((a, b) => b[2] - a[2]); // vyšší stopa = vnější transformace
-  for (const L of LAYERS) {
+  for (const L of [...LAYERS, ...OVLS]) {
     const s = ups.filter(u => u[2] > L.stopa).map(u => tf(fxAt(u[3], t))).join(' ');
     if (L.div.style.transform !== s) L.div.style.transform = s;
   }
@@ -150,15 +204,21 @@ function stageFx(t) {
     tx += noise(t, 1) * 1.6 * a; ty += noise(t, 7) * 1.6 * a; rot += noise(t, 3) * 0.8 * a; blur += 0.6 * a;
   }
   const pr = active(D.prechody, t)[0];
+  let flash = 0;
   if (pr) {
-    const p = (t - pr[0]) / Math.max(0.05, pr[1] - pr[0]);
-    const k = p < 0.5 ? ease(p * 2) : -(1 - ease((p - 0.5) * 2)); // starý záběr odjede dolů, nový přijede shora
-    ty += k * 45; blur += Math.sin(Math.PI * p) * 10;
+    const p = (t - pr[0]) / Math.max(0.05, pr[1] - pr[0]), typ = (pr[3] || pr[2] || '').toLowerCase();
+    // Parallax Pan Out / slide: starý záběr odjede (vlevo / dolů…), nový přijede z druhé strany, rozmazání pohybem
+    const k = p < 0.5 ? ease(p * 2) : -(1 - ease((p - 0.5) * 2));
+    if (/flash/.test(typ)) flash = Math.sin(Math.PI * p);
+    else if (/left/.test(typ)) { tx -= k * 60; blur += Math.sin(Math.PI * p) * 12; }
+    else if (/right/.test(typ)) { tx += k * 60; blur += Math.sin(Math.PI * p) * 12; }
+    else if (/up/.test(typ)) { ty -= k * 45; blur += Math.sin(Math.PI * p) * 10; }
+    else { ty += k * 45; blur += Math.sin(Math.PI * p) * 10; } // down / slide down
   }
   const el = $('#layers'), s = tx || ty || rot ? `translate(${tx.toFixed(2)}%, ${ty.toFixed(2)}%) rotate(${rot.toFixed(2)}deg)` : '';
   if (el.style.transform !== s) el.style.transform = s;
   const glow = active(D.glow, t).length ? ' brightness(1.18) saturate(1.35) contrast(1.05)' : '';
-  const f = (blur > 0.3 ? `blur(${blur.toFixed(1)}px)` : '') + glow;
+  const f = (blur > 0.3 ? `blur(${blur.toFixed(1)}px)` : '') + glow + (flash > 0.02 ? ` brightness(${(1 + flash * 2.5).toFixed(2)})` : '');
   if (el.style.filter !== f) el.style.filter = f;
 }
 // 🔊 zvukové efekty a hudba ze sestaveného editu: malá zásoba přehrávačů, každý zvuk dostane jeden, dokud hraje
@@ -180,8 +240,9 @@ function sounds(t) {
     let e = SFX.busy.get(i);
     if (!e) { e = sfxEl(); e.src = url(`/zvuk/${z[2]}`); try { e.currentTime = want; } catch {} e.play().catch(() => {}); SFX.busy.set(i, e); }
     else if (Math.abs(e.currentTime - want) > 0.35 && e.readyState > 1) { try { e.currentTime = want; } catch {} }
-    const isMusic = z[5] === 6, g = dbv(kv(z[4], t)) * (isMusic && $('#loud').checked ? 3 : 1) * 0.5;
-    if (e.g) e.g.gain.value = g; else e.volume = Math.min(1, g * 2);
+    const isMusic = z[5] === 6;
+    const g = Math.min(4, dbv(kv(z[4], t) - med(z[5]))) * (isMusic ? MIX.hudba / 100 * 0.6 : MIX.sfx / 100);
+    if (e.g) e.g.gain.value = g; else e.volume = Math.min(1, g);
   }
 }
 const ease = x => x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2; // keyframy v Resolve jsou plynulé (ease)
@@ -212,11 +273,28 @@ function audioInit() {
   } catch (e) { console.warn('zvuk', e); }
   AC.resume?.();
 }
+// 🎚️ mixér: poměry Resolve mezi skupinami v prohlížeči neseděly (hudba vycházela ~140× tišší než mikrofon = neslyšet),
+// proto každá skupina má svůj posuvník s rozumným výchozím; UVNITŘ skupiny zůstávají poměry z editu (dB proti mediánu skupiny)
+const MIXDEF = {mic:100, hra:35, hudba:45, sfx:70};
+let MIX = (() => { try { return {...MIXDEF, ...JSON.parse(localStorage.getItem('nahled_mix') || '{}')}; } catch { return {...MIXDEF}; } })();
+function drawMix() {
+  const L = {mic:'🎙️ Mikrofon', hra:'🎮 Hra', hudba:'🎶 Hudba', sfx:'🔊 Efekty'};
+  $('#mix').innerHTML = Object.keys(L).map(k => `<label>${L[k]} <input type="range" min="0" max="200" step="5" value="${MIX[k]}" data-mix="${k}"></label>`).join('')
+    + ' <button data-mixreset style="font-size:11px;padding:2px 8px">výchozí</button>';
+}
+document.addEventListener('input', e => { const k = e.target.dataset?.mix; if (!k) return; MIX[k] = +e.target.value; try { localStorage.setItem('nahled_mix', JSON.stringify(MIX)); } catch {} });
+document.addEventListener('click', e => { if (e.target.closest?.('[data-mixreset]')) { MIX = {...MIXDEF}; try { localStorage.removeItem('nahled_mix'); } catch {} drawMix(); } });
+drawMix();
+const MED = {};
+function med(track) { // medián hlasitosti stopy v editu (dB) – vztažný bod skupiny
+  if (MED[track] != null) return MED[track];
+  const v = (D.zvuky || []).filter(z => z[5] === track).map(z => kv(z[4], z[0])).sort((a, b) => a - b);
+  return (MED[track] = v.length ? v[v.length >> 1] : 0);
+}
 function gains(seg) {
-  const Z = D.zisk || {}, hra = dbv(Z.A1 ?? -28) * ($('#quiet').checked ? 0.4 : 1);
-  if (G.mic) G.mic.gain.value = dbv(Z.A2 ?? 12) * 0.5; // (jistota proti přebuzení – poměry zůstávají)
-  if (G.mus) G.mus.gain.value = (seg ? dbv(seg[4]) : 0) * ($('#loud').checked ? 3 : 1) * 0.5;
-  for (const k in G) if (/^(v\d|m\d)/.test(k)) G[k].gain.value = hra * 0.5;
+  if (G.mic) G.mic.gain.value = MIX.mic / 100;
+  if (G.mus) G.mus.gain.value = seg ? MIX.hudba / 100 * 0.6 : 0;
+  for (const k in G) if (/^(v\d|m\d)/.test(k)) G[k].gain.value = MIX.hra / 100;
 }
 function find(clips, t) { let lo = 0, hi = clips.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1, c = clips[m]; if (t < c[0]) hi = m - 1; else if (t >= c[1]) lo = m + 1; else return m; } return -1; }
 function srcOf(c) { const f = D.soubory[c[2]]; return f && f.ready ? url(`/px/${f.id}.mp4`) : ''; }
@@ -263,7 +341,7 @@ function tick() {
   if (LAYERS.length) {
     // přesně podle sestaveného editu: každá vrstva svůj klip, zoom, posun, kotva, ořez
     for (const L of LAYERS) { const c = syncTrack(L, L.clips, t); if (c) applyFx(L.els[L.a], c, t); if (L.stopa === 2) c2 = c; }
-    adjustLayers(t); stageFx(t); sounds(t);
+    syncOverlays(t); adjustLayers(t); stageFx(t); sounds(t);
   } else {
     syncTrack(tracks.v1, D.v1, t);
     c2 = syncTrack(tracks.v2, D.v2, t);
@@ -330,7 +408,7 @@ function drawTL() {
     + '<div class="phl" id="phl"></div>';
   const F = ROWS[TL.focus];
   if (F) $('#tlin').insertAdjacentHTML('beforeend', F.items.slice(0, 400).map(([s, e]) => `<em class="tlg" style="left:${LBL + s / L * W}px;width:${Math.max(3, (e - s) / L * W)}px"></em>`).join(''));
-  $('#moments').innerHTML = F ? `<b>${F.ic} ${esc(F.title)}</b> – ${F.items.length}× (klikni = skok): ` + F.items.slice(0, 200).map(([s, , x]) => `<button data-go="${s}">${fmt(s)}${x ? ' · ' + esc(String(x).slice(0, 16)) : ''}</button>`).join('') + ' <button data-f="">✖ zrušit</button>'
+  $('#moments').innerHTML = F ? `<button class="unfocus" data-f="">✖ ZRUŠIT OZNAČENÍ</button> <b>${F.ic} ${esc(F.title)}</b> – ${F.items.length}× (klikni = skok): ` + F.items.slice(0, 200).map(([s, , x]) => `<button data-go="${s}">${fmt(s)}${x ? ' · ' + esc(String(x).slice(0, 16)) : ''}</button>`).join('')
     : '<span class="ch">Zvýraznit na timelině:</span> ' + ROWS.map((r, i) => `<button class="lg" data-f="${i}">${r.ic} ${esc(r.title)} <b>${r.items.length}</b></button>`).join('');
   tlPlayhead(now());
 }
@@ -441,7 +519,7 @@ function drawBar() {
   $('#introz').style.width = pct(D.intro);
 }
 function drawPrep() {
-  const miss = D.soubory.filter(f => !f.ready).length + (D.mic && !D.mic_ready ? 1 : 0), pr = D.priprava || {};
+  const miss = D.soubory.filter(f => !f.ready).length + (D.ovl || []).filter(o => !o.ready).length + (D.mic && !D.mic_ready ? 1 : 0), pr = D.priprava || {};
   if (!miss && !pr.bezi) { $('#prep').innerHTML = ''; return; }
   const pct = pr.celkem ? Math.round(pr.hotovo / pr.celkem * 100) : 0;
   $('#prep').innerHTML = `<div class="prep"><b>⚙️ Lehké kopie videí pro přehrávání</b>
@@ -453,7 +531,7 @@ function drawPrep() {
 async function refresh() {
   const was = D;
   D = await api('/api/projekt', {p:P});
-  if (!was || was.projekt !== D.projekt || (was.zisk?.soubor !== D.zisk?.soubor)) { buildLayers(); drawBar(); TL.z = 1; drawTL(); seek(0); }
+  if (!was || was.projekt !== D.projekt || (was.zisk?.soubor !== D.zisk?.soubor)) { for (const k in MED) delete MED[k]; buildLayers(); drawBar(); TL.z = 1; drawTL(); seek(0); }
   $('#mode').innerHTML = D.vrstvy?.length
     ? `🎞️ <b>Podle sestaveného editu</b> (${esc(D.zisk.soubor)}): skutečné vrstvy, zoomy, posuny, ořez webky a hlasitosti z Resolve. Chybí jen texty, šipky, efekty, zvukové efekty a Magic Masky.`
     : '📋 Zatím jen podle plánu (edit ještě není sestavený): tvůj střih, velikost webky, punch, černobílé a hudba – přibližně.';
@@ -461,6 +539,7 @@ async function refresh() {
   drawPrep(); tick();
   clearTimeout(poll);
   if (D.priprava?.bezi || D.soubory.some(f => !f.ready)) poll = setTimeout(refresh, 2500);
+  else if (was?.priprava?.bezi) { buildLayers(); seek(now()); } // průhledné překryvy dodělané → znovu postavit vrstvy
 }
 (async () => {
   const list = await api('/api/projekty');
