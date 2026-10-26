@@ -12,9 +12,11 @@
 3) U nového projektu klikni v přehrávači „⚙️ Připravit náhled“ – jednou se udělají lehké kopie videí
    (S:\EDIT\_cache\nahled, grafika to zvládne asi 7× rychleji, než video trvá). Pak už to hraje hned.
 
-   Co náhled ukazuje: tvůj střih (hra + webka), velikost webky (malá / VELKÁ / FULL / punch), punch ve hře,
-   černobílé části a hudbu přesně podle plánu Auto Editu. Mikrofon z mic.wav.
-   Co NEukazuje: efekty, zoomy, zvukové efekty, texty a Magic Masky – ty jsou až v Resolve.
+   Co náhled ukazuje (když je edit sestavený – bere S:\EDIT\vystup\AUTO EDIT N.drt):
+   všechny vrstvy hry, PC a webky se SKUTEČNÝMI zoomy, posuny, ořezem webky a keyframy, pyramidy ZOOM 2,
+   shaky (CLICK 3, RAGE), přechody mezi kapitolami, černobílé, GLOW, zvukové efekty a hudbu s hlasitostmi z editu.
+   Před sestavením jen přibližně podle plánu.
+   Co NEukazuje: texty a samolepky (NO, MANY, RIZZ…), šipky, „lajk odběr“ a Magic Masky – ty jsou jen v Resolve.
    Ovládání: mezerník = přehrát/pauza, šipky = ±5 s, klik do pruhu = skok.
 
 4) Mobil kdekoli (mimo domov) – Tailscale (zdarma, soukromé spojení jen mezi tvými zařízeními):
