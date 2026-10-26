@@ -134,14 +134,16 @@ def kurz():
 def spocitej(zapsat=True):
     cas = cas_prace()
     rows = penize()
-    den, proj, celkem = {}, {}, {"edit": 0.0, "dabing": 0.0}
+    den, proj, celkem, den_proj = {}, {}, {"edit": 0.0, "dabing": 0.0}, {}
     for d, druh, p, usd in rows:
         den.setdefault(d, {"edit": 0.0, "dabing": 0.0})[druh] += usd
         proj.setdefault(p, {"edit": 0.0, "dabing": 0.0})[druh] += usd
+        den_proj.setdefault(d, {}).setdefault(p, {"edit": 0.0, "dabing": 0.0})[druh] += usd
         celkem[druh] += usd
     r3 = lambda x: {k: round(v, 3) for k, v in x.items()}  # noqa: E731
     data = {"t": int(time.time() * 1000), "kurz": kurz(), "cas": cas,
             "penize_den": {d: r3(v) for d, v in sorted(den.items())}, "penize_projekt": {p: r3(v) for p, v in proj.items()},
+            "penize_den_projekt": {d: {p: r3(v) for p, v in ps.items()} for d, ps in den_proj.items()},
             "penize_celkem": r3(celkem)}
     if zapsat:
         try:
