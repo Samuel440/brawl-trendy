@@ -50,6 +50,7 @@ button:disabled{opacity:.5;cursor:default}
 @keyframes napis{from{transform:scale(2.2) rotate(-6deg);opacity:0}}
 #layers video{will-change:transform}
 #layers .tvo,#layers .tv{position:absolute;inset:0}
+.chybi{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;max-width:86%;text-align:center;background:#000c;color:#fff;border-radius:10px;padding:10px 14px;font-size:14px;pointer-events:none}
 .moments .lg{font-size:12px;padding:3px 9px;border-radius:999px}
 .moments .lg.on{background:var(--accent);color:#111;border-color:var(--accent)}
 .mix{display:flex;flex-wrap:wrap;gap:4px 12px;flex-basis:100%;font-size:12px;color:var(--muted)}
@@ -82,6 +83,7 @@ button:disabled{opacity:.5;cursor:default}
     <video class="main" id="m0" playsinline preload="auto"></video><video class="main" id="m1" playsinline preload="auto"></video>
     <div class="cam off" id="cam"><video id="c0" playsinline muted preload="auto"></video><video id="c1" playsinline muted preload="auto"></video></div>
     <div id="layers"></div>
+    <div class="chybi" id="chybi" hidden></div>
     <div class="tag" id="tag"></div>
     <button class="big" id="big">▶</button>
   </div>
@@ -206,7 +208,9 @@ function syncOverlays(t) {
     } else {
       if (O.vid.dataset.src !== src) { O.vid.src = src; O.vid.dataset.src = src; }
       const want = c[3] + (t - c[0]);
-      if (O.cur !== i || Math.abs(O.vid.currentTime - want) > (playing ? 0.3 : 0.04)) { try { O.vid.currentTime = want; } catch {} }
+      // dojezd šipky = další klip, který plynule navazuje (zdroj pokračuje) → jen hrát dál; skok v průhledném videu
+      // chvíli trvá a dojezd by se ztratil
+      if (Math.abs(O.vid.currentTime - want) > (playing ? (O.cur !== i ? 0.15 : 0.3) : 0.04)) { try { O.vid.currentTime = want; } catch {} }
       if (playing && O.vid.paused) O.vid.play().catch(() => {}); if (!playing && !O.vid.paused) O.vid.pause();
       O.vid.classList.add('on'); O.img.classList.remove('on'); applyFx(O.vid, c, t);
     }
@@ -239,7 +243,7 @@ function stageFx(t) {
     const p = (t - pr[0]) / Math.max(0.05, pr[1] - pr[0]), typ = (pr[3] || pr[2] || '').toLowerCase();
     // Parallax Pan Out / slide: starý záběr odjede (vlevo / dolů…), nový přijede z druhé strany, rozmazání pohybem
     const k = p < 0.5 ? ease(p * 2) : -(1 - ease((p - 0.5) * 2));
-    if (/flash/.test(typ)) flash = Math.sin(Math.PI * p);
+    if (/flash/.test(typ)) flash = Math.max(0, 1 - Math.abs(p - 0.5) / 0.22); // krátká špička uprostřed přechodu (jako v renderu)
     else if (/left/.test(typ)) { tx -= k * 60; blur += Math.sin(Math.PI * p) * 12; }
     else if (/right/.test(typ)) { tx += k * 60; blur += Math.sin(Math.PI * p) * 12; }
     else if (/up/.test(typ)) { ty -= k * 45; blur += Math.sin(Math.PI * p) * 10; }
@@ -247,8 +251,11 @@ function stageFx(t) {
   }
   const el = $('#layers'), s = tx || ty || rot ? `translate(${tx.toFixed(2)}%, ${ty.toFixed(2)}%) rotate(${rot.toFixed(2)}deg)` : '';
   if (el.style.transform !== s) el.style.transform = s;
-  const glow = active(D.glow, t).length ? ' brightness(1.18) saturate(1.35) contrast(1.05)' : '';
-  const f = (blur > 0.3 ? `blur(${blur.toFixed(1)}px)` : '') + glow + (flash > 0.02 ? ` brightness(${(1 + flash * 2.5).toFixed(2)})` : '');
+  // změřeno na renderu z Resolve: GLOW celkový jas ani sytost skoro nemění (září jen světlá místa) → jen jemně;
+  // Brightness Flash: krátký záblesk, jas 0,30 → 0,85 a obraz zbělá (sytost dolů)
+  const glow = active(D.glow, t).length ? ' brightness(1.04) contrast(1.03)' : '';
+  const f = (blur > 0.3 ? `blur(${blur.toFixed(1)}px)` : '') + glow
+    + (flash > 0.02 ? ` brightness(${(1 + flash * 1.8).toFixed(2)}) saturate(${(1 - flash * 0.75).toFixed(2)})` : '');
   if (el.style.filter !== f) el.style.filter = f;
 }
 // 🔊 zvukové efekty a hudba ze sestaveného editu: malá zásoba přehrávačů, každý zvuk dostane jeden, dokud hraje
@@ -413,6 +420,12 @@ function tick() {
     if (p >= 0 && p !== lastPunch) { lastPunch = p; const m = tracks.v1.els[tracks.v1.a]; m.classList.remove('punch'); void m.offsetWidth; m.classList.add('punch'); }
   }
   $('#stage').classList.toggle('bw', (D.cb?.length ? D.cb : D.bw).some(([s, e]) => t >= s && t < e));
+  // ⏳ hra / webka tady ještě nemá lehkou kopii (mobil) → říct proč je černo, ne jen černá obrazovka
+  const bez = (LAYERS.length ? LAYERS.map(L => L.clips[find(L.clips, t)]) : [D.v1[find(D.v1, t)], D.v2[find(D.v2, t)]])
+    .filter(c => c && !srcOf(c)).map(c => D.soubory[c[2]]?.name).filter(Boolean);
+  const ch = $('#chybi'), pr = D.priprava || {};
+  const txt = bez.length ? `⏳ Kopie pro mobil se ještě dělá: ${[...new Set(bez)].join(', ')}${pr.bezi ? ` (${pr.hotovo}/${pr.celkem})` : ''} – za chvíli to tu naskočí samo. Na PC to jde hned.` : '';
+  if (ch.textContent !== txt) { ch.textContent = txt; ch.hidden = !txt; }
   // hudba (podle plánu – jen když edit ještě není sestavený; sestavený má hudbu mezi zvuky)
   const seg = D.zvuky?.length ? null : D.hudba.find(x => t >= x[0] && t < x[1]);
   if (seg) {
@@ -604,7 +617,8 @@ function drawPrep() {
 async function refresh() {
   const was = D;
   D = await api('/api/projekt', {p:P});
-  if (!was || was.projekt !== D.projekt || (was.zisk?.soubor !== D.zisk?.soubor)) { for (const k in MED) delete MED[k]; buildLayers(); drawBar(); TL.z = 1; drawTL(); seek(0); }
+  if (!was || was.projekt !== D.projekt) { for (const k in MED) delete MED[k]; buildLayers(); drawBar(); TL.z = 1; drawTL(); seek(0); }
+  else if (was.zisk?.soubor !== D.zisk?.soubor) { const t = now(), p = playing; if (p) pause(); for (const k in MED) delete MED[k]; buildLayers(); drawBar(); drawTL(); seek(t); if (p) play(); } // edit se právě sestavil
   $('#mode').innerHTML = D.vrstvy?.length
     ? `🎞️ <b>Podle sestaveného editu</b> (${esc(D.zisk.soubor)}): skutečné vrstvy, zoomy, posuny, ořez webky, hlasitosti, šipky a červené čáry / křížky přesně z Resolve. Nápisy, některé efekty a Magic Masky jsou jen přibližně.`
     : '📋 Zatím jen podle plánu (edit ještě není sestavený): tvůj střih, velikost webky, punch, černobílé a hudba – přibližně.';
@@ -613,6 +627,9 @@ async function refresh() {
   clearTimeout(poll);
   if (D.priprava?.bezi || D.soubory.some(f => !f.ready)) poll = setTimeout(refresh, 2500);
   else if (was?.priprava?.bezi) { buildLayers(); seek(now()); } // průhledné překryvy dodělané → znovu postavit vrstvy
+  // rozdělaný projekt (Auto Edit ještě neuložil sestavený edit): hlídat dál – jakmile ho uloží, přepne se to samo
+  // na skutečné animace (zoomy, shaky, webka, šipky) a pokračuje na stejném místě
+  if (!D.vrstvy?.length) { clearTimeout(poll); poll = setTimeout(refresh, D.priprava?.bezi || D.soubory.some(f => !f.ready) ? 2500 : 8000); }
 }
 (async () => {
   const list = await api('/api/projekty');
