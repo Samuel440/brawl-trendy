@@ -177,6 +177,14 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .vyrnahled{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0 4px;padding:8px 10px;border-radius:10px;background:var(--panel2)}
 .vyrnahled .btnlink{padding:7px 12px}
 .vyrmini .vyrnahled{flex-basis:100%;margin:2px 0 0}
+.vyryt{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:10px 0 4px;padding:8px 10px;border-radius:10px;background:var(--panel2)}
+.vyrmini .vyryt{flex-basis:100%;margin:2px 0 0}
+.ytchips{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;flex-basis:100%}
+.ytj{font-size:13px;font-weight:800;padding:5px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--muted);transition:background .25s,color .25s}
+.ytj.nahr{background:#b7f0c8;border-color:#b7f0c8;color:#0b3d1d}
+.ytj.pub{background:var(--ok);border-color:var(--ok);color:#06210f}
+.ytleg{flex-basis:100%;font-size:11px}
+.ytleg i.ytj{display:inline-block;width:12px;height:12px;padding:0;vertical-align:-2px}
 .btnlink{display:inline-block;text-decoration:none;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-weight:700}
 .btnlink.primary{background:var(--accent);color:#111;border-color:var(--accent)}
 .vyrtl{margin-top:12px}
@@ -794,7 +802,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.148'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.149'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4760,7 +4768,8 @@ async function vyrPull() {
       if (!newest[f.name] || f.modifiedTime > newest[f.name].modifiedTime) newest[f.name] = f;
     let changed = false;
     for (const f of Object.values(newest)) {
-      const m = f.name.match(/^vyroba_(\w+)\.json$/); if (!m || VYR.mt[f.name] === f.modifiedTime) continue;
+      const m = f.name.match(/^vyroba_(\w+)\.json$/); if (m) (VYR.id ||= {})[m[1]] = f.id;
+      if (!m || VYR.mt[f.name] === f.modifiedTime) continue;
       try { VYR.d[m[1]] = await (await dGet(f.id)).json(); VYR.mt[f.name] = f.modifiedTime; changed = true; } catch {}
     }
     VYR.at = Date.now(); VYR.err = '';
@@ -4893,7 +4902,7 @@ function vyrCard(key) {
   if (!d) return key === 'dabing' ? '' // dabing, který nikdy neběžel, nemá co ukazovat
     : `<div class="vyrcard empty"><h3>${P.name}</h3><div class="ch">Zatím žádný běh. ${esc(P.hint)} – průběh se tu pak ukáže sám (i na mobilu).</div>${key === 'edit' ? vyrNahled() : ''}</div>`;
   const alive = vyrAlive(d), silent = d.stav === 'bezi' && !alive;
-  const nahled = key === 'edit' ? vyrNahled() : '';
+  const nahled = key === 'edit' ? vyrNahled() : key === 'dabing' ? vyrDabYt() : '';
   // ✔ hotový běh nepřekáží: ✖ ho skryje hned, jinak se sám sbalí 8 h po dokončení (zůstane jen tenký řádek)
   const hidden = (() => { try { return JSON.parse(localStorage.getItem('vyr_skryte') || '{}'); } catch { return {}; } })();
   const old = !alive && ((d.konec && Date.now() - d.konec > 8 * 3600e3) || (!d.konec && Date.now() - d.t > 12 * 3600e3));
@@ -5053,6 +5062,34 @@ document.addEventListener('click', e => { // na mobilu: ťuk na sloupec = bublin
   stShow(col, e.target.dataset?.p, r.left + r.width / 2, r.bottom, true);
 });
 addEventListener('scroll', () => stTip.el?.classList.contains('show') && Date.now() - stTip.at > 400 && matchMedia('(hover: none)').matches && stHide(), {passive: true});
+// 📺 které jazyky dabingu nejnovějšího videa už jsou v YouTube Studiu: zeleně = nahráno. Pozná to samo (soubor vybraný
+// v okně „Otevřít“ při nahrávání → Poslední položky Windows, tools/vyroba_sledovani.py); ťuknutím se dá opravit ručně
+// stav jazyka: 'ne' → 'nahr' (světle zelená: soubor vybraný ve Studiu – pozná se samo) → 'pub' (zelená ✔: publikováno –
+// ve Studiu to na PC nenechá stopu a YouTube API zvukové stopy nevrací, proto se potvrdí ťuknutím)
+const ytStav = (y, ruc, k) => ruc[k] ?? (y.nahrano?.[k] ? 'nahr' : 'ne');
+const YT_DALSI = {ne:'nahr', nahr:'pub', pub:'ne'};
+function vyrDabYt() {
+  const y = VYR.d.dabyt; if (!y?.jazyky?.length) return '';
+  const ruc = VYR.d.dabyt_rucne?.[y.video] || {}, st = y.jazyky.map(k => ytStav(y, ruc, k));
+  const pub = st.filter(s => s === 'pub').length, nahr = st.filter(s => s === 'nahr').length, N = y.jazyky.length;
+  return `<div class="vyryt"><b>📺 YouTube Studio</b><span class="ch">${esc(y.video)} · publikováno <b>${pub}/${N}</b>${nahr ? ` · nahrává se ${nahr}` : ''}${pub === N ? ' ✔ vše' : ''}</span>
+    <div class="ytchips">${y.jazyky.map((k, i) => { const s = st[i];
+      const tip = s === 'pub' ? 'publikováno' : s === 'nahr' ? (y.nahrano?.[k] && ruc[k] == null ? `nahrává se – vybráno ve Studiu v ${hhmm(y.nahrano[k])}` : 'nahrává se') : 'ještě nenahráno';
+      return `<button class="ytj ${s}" data-ytj="${k}" title="${tip} – ťukni: ${{ne:'nahrává se', nahr:'publikováno', pub:'nenahráno'}[s]}">${s === 'pub' ? '✔ ' : s === 'nahr' ? '⬆ ' : ''}${k.toUpperCase()}</button>`; }).join('')}</div>
+    <span class="ch ytleg"><i class="ytj nahr"></i> nahrává se (pozná samo) · <i class="ytj pub"></i> publikováno (ťukni)</span></div>`;
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest?.('[data-ytj]'); if (!b) return;
+  const y = VYR.d.dabyt, k = b.dataset.ytj; if (!y) return;
+  const all = VYR.d.dabyt_rucne ||= {}, ruc = all[y.video] ||= {};
+  ruc[k] = YT_DALSI[ytStav(y, ruc, k)];
+  if (ruc[k] === (y.nahrano?.[k] ? 'nahr' : 'ne')) delete ruc[k]; // shoda s automatikou → žádná ruční výjimka
+  renderVyroba();
+  try { // na Disk, ať to vidí i druhé zařízení (soubor založil počítač – mobil ho jen přepíše)
+    const id = VYR.id?.dabyt_rucne;
+    if (id) { const r = await dUpload('vyroba_dabyt_rucne.json', DRIVE.folder, new Blob([JSON.stringify(all)], {type:'application/json'}), id); if (r?.modifiedTime) VYR.mt['vyroba_dabyt_rucne.json'] = r.modifiedTime; }
+  } catch (err) { status('⚠ Ruční označení dabingu se nepodařilo uložit na Disk: ' + err.message); }
+});
 // ⏱️ živý ukazatel nahoře: dnešní čas na projektech a projekt, který máš teď otevřený (SLEDOVÁNÍ ČASU.bat, co minutu)
 function projTotal(name) { // celkový čas projektu ze statistik (všechny dny)
   return Object.values(VYR.d.statistiky?.cas || {}).reduce((a, d) => a + (d[name] || 0), 0);
@@ -5100,7 +5137,7 @@ function renderVyroba() {
   const open = [...document.querySelectorAll('#main .vyrlog')].map(x => x.open);
   const noDrive = REMOTE !== DRIVE_BACKEND;
   // běžící program první; DABING, když neběží, jen tenký řádek (nezabírá místo při editu)
-  const keys = ['edit', 'dabing', ...Object.keys(VYR.d).filter(k => !VYR_PROG[k] && !k.endsWith('_tl') && k !== 'nahled' && k !== 'statistiky' && k !== 'live')]
+  const keys = ['edit', 'dabing', ...Object.keys(VYR.d).filter(k => !VYR_PROG[k] && !k.endsWith('_tl') && !['nahled', 'statistiky', 'live', 'dabyt', 'dabyt_rucne'].includes(k))]
     .sort((a, b) => (VYR.d[b] && vyrAlive(VYR.d[b]) ? 1 : 0) - (VYR.d[a] && vyrAlive(VYR.d[a]) ? 1 : 0));
   $('#main').innerHTML = (noDrive || VYR.err ? `<div class="summary">
       ${noDrive ? '<div class="drivegate">☁️ Připoj Google Disk – stav DABINGU a AUTO EDITU se čte z něj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : `<div class="row ch">⚠ ${esc(VYR.err)}</div>`}</div>` : '')
