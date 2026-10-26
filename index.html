@@ -720,7 +720,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.140'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.141'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4766,20 +4766,25 @@ document.addEventListener('scroll', e => { if (e.target.classList?.contains('tlw
 // 🤏 mobil: dva prsty k sobě / od sebe = oddálit / přiblížit (kolem středu mezi prsty), jako na mapách
 let TLP = null;
 const tlDist = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+// (během sevření se timeline jen plynule roztáhne, přepočítá se až po puštění prstů – dřív škubala a zpátky šla po pixelech)
 document.addEventListener('touchstart', e => {
   const w = e.target.closest?.('.tlwrap');
-  if (w && e.touches.length === 2) TLP = {d:tlDist(e.touches), z:VYR.ui.zoom};
+  if (w && e.touches.length === 2) TLP = {d:tlDist(e.touches), z:VYR.ui.zoom, zn:VYR.ui.zoom, mx:(e.touches[0].clientX + e.touches[1].clientX) / 2 - w.getBoundingClientRect().left};
 }, {passive:true});
 document.addEventListener('touchmove', e => {
   if (!TLP || e.touches.length !== 2) return;
-  const w = $('#main .tlwrap'); if (!w) return;
+  const w = $('#main .tlwrap'), inn = w?.querySelector('.tlinner'); if (!inn) return;
   e.preventDefault();
-  TLZ ||= {mx:0, z:VYR.ui.zoom};
-  TLZ.mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - w.getBoundingClientRect().left;
-  TLZ.z = Math.max(1, Math.min(200, TLP.z * tlDist(e.touches) / TLP.d));
-  if (!TLZ.raf) TLZ.raf = setTimeout(tlZoomApply, 16);
+  const r = Math.max(1 / TLP.z, Math.min(200 / TLP.z, tlDist(e.touches) / TLP.d));
+  TLP.zn = TLP.z * r;
+  inn.style.transformOrigin = `${w.scrollLeft + TLP.mx}px 0`; inn.style.transform = `scaleX(${r})`;
 }, {passive:false});
-document.addEventListener('touchend', e => { if (e.touches.length < 2) TLP = null; });
+document.addEventListener('touchend', e => {
+  if (!TLP || e.touches.length >= 2) return;
+  const P = TLP; TLP = null;
+  const inn = $('#main .tlinner'); if (inn) inn.style.transform = '';
+  if (Math.abs(P.zn - P.z) > 0.01) { TLZ = {mx:P.mx, z:P.zn}; tlZoomApply(); }
+});
 function tlZoomApply() {
   const el = $('#main .vyrtl'), ww = $('#main .tlwrap'), old = VYR.ui.zoom, z = TLZ.z, mx = TLZ.mx; TLZ = null;
   if (!el || !ww || !VYR.d.edit_tl || z === old) return;
