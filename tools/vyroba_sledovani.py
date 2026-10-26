@@ -88,10 +88,39 @@ DABING_HOTOVO = r"S:\DABING\hotovo"
 POSLEDNI = os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Recent")
 
 
+KANAL = "UCNTZ-KNhpz9TZDSQSRlyhPQ"  # ULTRA SAMI
+YT_KAZDYCH_S = 300
+_YT = {"t": 0.0, "data": {}}
+
+
+def _yt_get(u):
+    import urllib.request
+    h = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36",
+         "Accept-Language": "cs,en;q=0.8", "Cookie": "SOCS=CAI; CONSENT=YES+1"}
+    return urllib.request.urlopen(urllib.request.Request(u, headers=h), timeout=20).read().decode("utf-8", "replace")
+
+
+def yt_zverejneno(od_ts):
+    """Nejnovější video kanálu zveřejněné po vytvoření dabingu (od_ts) a jeho zveřejněné zvukové stopy – z veřejné
+    stránky videa (RSS + watch, bez API a kvóty). → {"id", "nazev", "jazyky": [..]} nebo {} (video ještě není veřejné)."""
+    import datetime as _dt
+    import re
+    rss = _yt_get(f"https://www.youtube.com/feeds/videos.xml?channel_id={KANAL}")
+    for vid, title, pub in re.findall(r"<yt:videoId>([^<]+)</yt:videoId>.*?<title>([^<]+)</title>.*?<published>([^<]+)</published>", rss, re.S):
+        if _dt.datetime.fromisoformat(pub).timestamp() < od_ts:
+            break  # RSS je od nejnovějšího – starší videa už k tomuhle dabingu nepatří
+        html = _yt_get(f"https://www.youtube.com/watch?v={vid}")
+        jaz = sorted({m.split(".")[0].split("-")[0].lower() for m in re.findall(r'"audioTrack":\{"displayName":"[^"]+","id":"([^"]+)"', html)})
+        return {"id": vid, "nazev": title, "jazyky": jaz}
+    return {}
+
+
 def dabing_yt(minule):
-    """📺 Který dabing nejnovějšího videa už je nahraný v YouTube Studiu: soubor „<video>_<jazyk>.mp3/mp4“ vybraný
-    v okně „Otevřít“ (tak ho nahráváš do Studia) zapíše Windows do Posledních položek („<video>_<jazyk>.lnk“).
-    Ruční opravy dělá web (vyroba_dabyt_rucne.json). Vrací data, nebo None beze změny."""
+    """📺 Jazyky dabingu nejnovějšího videa v YouTube Studiu – všechno samo:
+    • nahrává se = soubor „<video>_<jazyk>.mp3/mp4“ vybraný v okně „Otevřít“ (tak ho nahráváš do Studia) – Windows ho
+      zapíše do Posledních položek („<video>_<jazyk>.lnk“);
+    • publikováno = jazyk je u videa na YouTube zveřejněný (co 5 min, dokud nejsou všechny).
+    Vrací data, nebo None beze změny."""
     import re
     try:
         slozky = [e for e in os.scandir(DABING_HOTOVO) if e.is_dir()]
@@ -110,7 +139,18 @@ def dabing_yt(minule):
             lnk = os.path.join(POSLEDNI, f"{video}_{k}.lnk")
             if os.path.exists(lnk) and os.path.getmtime(lnk) >= t - 5:
                 nahrano[k] = int(os.path.getmtime(lnk) * 1000)
-        data = {"video": video, "jazyky": sorted(jazyky), "nahrano": nahrano}
+        yt = _YT["data"] if _YT.get("video") == video else {}
+        hotovo_vse = yt and all(k in yt.get("jazyky", []) for k in jazyky)
+        if jazyky and not hotovo_vse and time.time() - _YT["t"] >= YT_KAZDYCH_S:
+            _YT["t"] = time.time()
+            try:
+                yt = yt_zverejneno(min(jazyky.values()) - 6 * 3600)  # (video může být nahrané do Studia už před dabingem)
+                _YT.update(video=video, data=yt)
+            except Exception:  # noqa: BLE001 – bez internetu / YouTube nedostupný: zkusí se příště
+                pass
+        data = {"video": video, "jazyky": sorted(jazyky), "nahrano": nahrano,
+                "publikovano": [k for k in sorted(jazyky) if k in (yt.get("jazyky") or [])],
+                "yt": {"id": yt["id"], "nazev": yt["nazev"]} if yt.get("id") else None}
         return None if data == minule else data
     except Exception:  # noqa: BLE001
         return None
@@ -155,13 +195,6 @@ def main():
     posledni = {"projekt": None, "aktivni": False}
     zapsano, zapsany_projekt, ulozeno = 0.0, None, time.time()
     dyt, dyt_kontrola = None, 0.0
-    # soubor pro ruční opravy z webu musí založit tenhle počítač (účet vlastníka složky) – mobil na Disku zakládat nemůže
-    try:
-        p = os.path.join(vyroba_stav.SLOZKA, "vyroba_dabyt_rucne.json")
-        if os.path.isdir(vyroba_stav.SLOZKA) and not os.path.exists(p):
-            vyroba_stav.uloz("dabyt_rucne", {})
-    except Exception:  # noqa: BLE001
-        pass
     while True:
         try:
             if time.time() - dyt_kontrola >= 20:  # 📺 dabing nahraný do YouTube Studia
