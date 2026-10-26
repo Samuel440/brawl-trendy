@@ -178,9 +178,27 @@ def projekt_now(proj):
         "hudba": [[round(x["s"], 3), round(x["e"], 3), i, round(x.get("src", 0), 3), x.get("vol", -20),
                    os.path.splitext(os.path.basename(x.get("song", "")))[0]] for i, x in enumerate(music) if os.path.exists(x.get("path", ""))],
         "kapitoly": [[c["s"], c["e"], m] for c, m in zip(_rd(proj, "chapters.json", []) or [], _rd(proj, "moods.json", []) or [])],
+        "cile": _cile(proj),
         "mic": os.path.exists(mic), "mic_ready": os.path.exists(os.path.join(CACHE, proxy_name(mic) + ".m4a")) if os.path.exists(mic) else False,
         "_files": files, "_music": music, "_mic": mic,
     }
+
+
+def _cile(proj):
+    """Kam systém (ai_targets.py) míří: šipka / červená čára / bílé označení / zoom na věc – [od, do, druh, text]
+    pro řádky timeliny v náhledu (skok na místo a kontrola, jestli to míří na správnou věc)."""
+    todo = {str(x.get("id")): x for x in _rd(proj, "targets_todo.json", []) or []}
+    out = []
+    for k, v in (_rd(proj, "targets.json", {}) or {}).items():
+        x = todo.get(k)
+        if not isinstance(v, dict) or not x:
+            continue
+        druh = "sipka" if v.get("arrow") else "cara" if v.get("line") or v.get("line_width") else "bile" if v.get("mask") \
+            else "zoom" if v.get("kind") in ("cil", "postupny") else ""
+        if druh:
+            s = x["s"] / TL_FPS
+            out.append([round(s, 2), round(s + x.get("d", 30) / TL_FPS, 2), druh, (v.get("line_text") or x.get("vec") or x.get("text") or "")[:40]])
+    return sorted(out)
 
 
 VYSTUP = r"S:\EDIT\vystup"

@@ -50,6 +50,7 @@ button:disabled{opacity:.5;cursor:default}
 @keyframes napis{from{transform:scale(2.2) rotate(-6deg);opacity:0}}
 #layers video{will-change:transform}
 #layers .tvo,#layers .tv{position:absolute;inset:0}
+.tlln i[style*="#f1f3f5"]{color:#111;text-shadow:none}
 .chybi{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;max-width:86%;text-align:center;background:#000c;color:#fff;border-radius:10px;padding:10px 14px;font-size:14px;pointer-events:none}
 .moments .lg{font-size:12px;padding:3px 9px;border-radius:999px}
 .moments .lg.on{background:var(--accent);color:#111;border-color:var(--accent)}
@@ -473,6 +474,8 @@ function drawTL() {
     + (D.bw.length ? row('⚫', 'Černobílé', D.bw.map(([s, e]) => blk(s, e, '#adb5bd', 'ČB')).join(''), D.bw.map(([s, e]) => [s, e, 'ČB'])) : '')
     + (D.hudba.length ? row('🎵', 'Hudba', D.hudba.map(h => blk(h[0], h[1], '#2a9d8f', h[5])).join(''), D.hudba.map(h => [h[0], h[1], h[5]])) : '')
     + (D.punch.length ? row('💥', 'Punch ve hře', D.punch.map(p => blk(p, p + 0.4, '#ffcc00', 'punch')).join(''), D.punch.map(p => [p, p + 0.4, 'punch'])) : '')
+    // 🏹 šipky, 🟥 čáry / křížky, ⬜ bílé označení, 🎯 zoomy na věc – kam systém míří (klik na ikonu = seznam ke skoku)
+    + cileRows(row, blk)
     // ze sestaveného editu: přechody, pyramidy / zoomy přes vše, shaky, zvukové efekty
     + (D.prechody?.length ? row('⏭️', 'Přechody', D.prechody.map(p => blk(p[0], p[1], '#ffffff', p[2])).join(''), D.prechody) : '')
     + (D.upravy?.length ? row('🔺', 'ZOOM 2 / pyramidy', D.upravy.map(u => blk(u[0], u[1], '#8ecae6', 'ZOOM')).join(''), D.upravy.map(u => [u[0], u[1], 'ZOOM'])) : '')
@@ -485,6 +488,22 @@ function drawTL() {
   $('#moments').innerHTML = F ? `<button class="unfocus" data-f="">✖ ZRUŠIT OZNAČENÍ</button> <b>${F.ic} ${esc(F.title)}</b> – ${F.items.length}× (klikni = skok): ` + F.items.slice(0, 200).map(([s, , x]) => `<button data-go="${s}">${fmt(s)}${x ? ' · ' + esc(String(x).slice(0, 16)) : ''}</button>`).join('')
     : '<span class="ch">Zvýraznit na timelině:</span> ' + ROWS.map((r, i) => `<button class="lg" data-f="${i}">${r.ic} ${esc(r.title)} <b>${r.items.length}</b></button>`).join('');
   tlPlayhead(now()); tlZoomLabel();
+}
+function cileRows(row, blk) {
+  const C = D.cile || [], popis = (s, e, druh) => (C.find(c => c[2] === druh && c[0] < e + 0.5 && c[1] > s - 0.5) || [])[3] || '';
+  // spojit navazující klipy (šipka = klip + dojezd) do jedné položky
+  const spoj = list => list.sort((a, b) => a[0] - b[0]).reduce((o, x) => { const l = o[o.length - 1]; if (l && x[0] - l[1] < 0.1) l[1] = Math.max(l[1], x[1]); else o.push([x[0], x[1]]); return o; }, []);
+  const sestaveno = !!D.vrstvy?.length;
+  // šipky a čáry: co je SKUTEČNĚ v editu (Auto Edit některé z plánu vynechá); dokud edit není sestavený, tak plán
+  const sip = sestaveno ? spoj((D.overlaye || []).filter(o => /šipk|sipk|arrow/i.test(D.ovl?.[o[2]]?.name || '')).map(o => [o[0], o[1]]))
+    : C.filter(c => c[2] === 'sipka').map(c => [c[0], c[1]]);
+  const car = sestaveno ? spoj((D.tvary || []).map(t => [t[0], t[1]])) : C.filter(c => c[2] === 'cara').map(c => [c[0], c[1]]);
+  const it = (list, druh, txt) => list.map(([s, e]) => [s, e, popis(s, e, druh) || txt]);
+  const r = (ic, title, items, col) => items.length ? row(ic, title, items.map(([s, e, x]) => blk(s, e, col, x)).join(''), items) : '';
+  return r('🏹', 'Šipky' + (sestaveno ? '' : ' (plán)'), it(sip, 'sipka', 'šipka'), '#e63946')
+    + r('🟥', 'Červené čáry / křížky' + (sestaveno ? '' : ' (plán)'), it(car, 'cara', 'čára'), '#ff4d6d')
+    + r('⬜', 'Bílé označení (plán)', C.filter(c => c[2] === 'bile').map(c => [c[0], c[1], c[3] || 'označení']), '#f1f3f5')
+    + r('🎯', 'Zoomy na věc (plán)', C.filter(c => c[2] === 'zoom').map(c => [c[0], c[1], c[3] || 'zoom']), '#ffcc00');
 }
 function tlPlayhead(t) {
   const p = $('#phl'); if (!p || !D) return;
