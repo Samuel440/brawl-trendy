@@ -74,7 +74,7 @@ button:disabled{opacity:.5;cursor:default}
 .moments{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px;font-size:12px}
 .moments button{font-size:11px;padding:2px 7px}
 </style></head><body>
-<div class="top"><a class="back" href="https://samuel440.github.io/brawl-trendy/">◀ Zpět na Brawl Trendy</a><h1>▶️ Náhled editu</h1><select id="proj"></select><span class="ch" id="info"></span></div>
+<div class="top"><a class="back" id="back" href="https://samuel440.github.io/brawl-trendy/#vyr">◀ Zpět na Brawl Trendy</a><h1>▶️ Náhled editu</h1><select id="proj"></select><span class="ch" id="info"></span></div>
 <div class="wrap">
   <div id="prep"></div>
   <div class="stage" id="stage">
@@ -110,6 +110,12 @@ const tracks = {
   v2: {els:[$('#c0'), $('#c1')], cur:-1, a:0, next:-1, main:false},
 };
 const url = (path, q = {}) => path + '?' + new URLSearchParams({p:P, ...q, ...(K ? {k:K} : {})});
+// ◀ Zpět: přišel jsem z Brawl Trendy v této kartě → krok zpět (zůstane Výroba i přihlášení k Disku);
+// jinak (záložka, nová karta) otevře web rovnou na Výrobě
+$('#back').addEventListener('click', e => {
+  const fromWeb = new URLSearchParams(location.search).has('z') || /samuel440\.github\.io|localhost:8765/.test(document.referrer);
+  if (fromWeb && history.length > 1) { e.preventDefault(); history.back(); }
+});
 // ---------- čas: hodiny = mikrofon (když je), jinak vlastní
 function now() {
   if (D?.mic_ready && mic.src && !mic.paused) return mic.currentTime;
