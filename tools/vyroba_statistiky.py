@@ -84,6 +84,13 @@ def cas_prace():
         json.dump(cache, open(JMENA, "w", encoding="utf-8"), ensure_ascii=False)
     except Exception:  # noqa: BLE001
         pass
+    # přesné minuty ze sledování (vyroba_sledovani.py) mají přednost před odhadem ze záloh – po dnech
+    try:
+        for den, d in json.load(open(r"S:\EDIT\_cache\cas_log.json", encoding="utf-8")).items():
+            if d:
+                out[den] = {k: float(v) for k, v in d.items()}
+    except Exception:  # noqa: BLE001
+        pass
     return out
 
 
