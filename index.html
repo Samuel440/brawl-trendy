@@ -801,7 +801,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.152'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.153'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2019,8 +2019,20 @@ const termHits = it => tokens(it.t).filter(w => brawlTerms().has(w));
 //  - ho našlo hledání a Brawl Stars má aspoň v popisu (AI nic nenamítá),
 //  - je ze sledovaného Brawl kanálu a AI miniaturu uzná (IRL videa tím vypadnou),
 //  - nebo si je AI úplně jistá.
+// kanály, které točí hlavně Brawl Stars (napříč státy) – jejich video s „Brawl Stars“ v tazích je skoro jistě Brawl,
+// i když název je jen „ZALOŽIL JSEM PROKLETÝ CAT IN THE HAT ÚČET…“ a AI z miniatury nepozná Brawl (dala 0,3)
+let DED = null, DED_V = -1;
+function dedicatedCh(chId) {
+  if (!DED || DED_V !== DATAVER) {
+    DED = new Set(); DED_V = DATAVER;
+    for (const c of COUNTRIES) for (const [id, e] of Object.entries(ls(chKey(c.id), {}))) if (isDedicated(e)) DED.add(id);
+  }
+  return DED.has(chId);
+}
 function candOk(it) {
   const a = S.ai ? aiOf(it) : null;
+  // Brawl kanál + Brawl v tazích → pustit, ledaže AI jasně řekla, že to Brawl není (pod 0,2)
+  if ((it.bsTag ?? it.bsT) && dedicatedCh(it.chId) && !(a && a.s < 0.2)) return true;
   if (termHits(it).length || (it.weak && it.src !== 'ch')) return !a || a.s >= AI_WEAK;
   if (it.src === 'ch') return !!a && a.s >= 0.5;
   return !!a && a.s >= AI_SURE;
