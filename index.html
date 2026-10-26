@@ -808,7 +808,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.156'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.157'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3345,6 +3345,44 @@ async function dropFiles(files) {
     } catch (e) { u.err = e.message; if (onDropTab()) renderMain(); }
   }
 }
+// 📝 text taky jako malý soubor do „prenos“ – kdyby mobil nestihl poslat seznam (prohlížeč při přepnutí aplikace
+// stránku uspí), druhé zařízení ho najde ve složce (dropScan)
+async function dropText(t) {
+  const at = Date.now(), k = dropKey();
+  dropAdd({at, kind:'text', text:t, dev:devIcon()});
+  if (REMOTE !== DRIVE_BACKEND) return;
+  try {
+    const r = await dUploadProg(`${at}~text.txt`, await dropFolder(), new Blob([t], {type:'text/plain;charset=utf-8'}), () => {});
+    ss(k, ls(k, []).map(x => x.at === at ? {...x, fid:r.id} : x));
+  } catch {}
+}
+// 🔎 co je ve složce „prenos“ a chybí v seznamu (mobil nahrál soubor, ale seznam už neposlal) → doplnit;
+// smazané (bt_tomb) ne; jen moje soubory (oba majitelské účty = jeden seznam, grafik má svůj)
+let DROP_SCAN = 0;
+async function dropScan() {
+  if (REMOTE !== DRIVE_BACKEND || Date.now() - DROP_SCAN < 4e3) return;
+  DROP_SCAN = Date.now();
+  try {
+    const k = dropKey(), list = ls(k, []), have = new Set(list.map(x => x.at)), tombs = ls('bt_tomb', {});
+    const moje = e => isOwner() ? isOwnerEmail(e) : e === DRIVE.email;
+    const add = [];
+    for (const f of await dList(`'${await dropFolder()}' in parents and trashed=false`)) {
+      const m = f.name.match(/^(\d{12,14})~(.+)$/); if (!m) continue;
+      const at = +m[1], name = m[2];
+      if (have.has(at) || tombs[k + '|' + at] || Date.now() - at > 30 * 864e5 || !moje(f.owners?.[0]?.emailAddress || '')) continue;
+      if (name === 'text.txt') add.push({at, kind:'text', text:await (await dGet(f.id)).text(), fid:f.id, dev:'📱'});
+      else {
+        const ext = (name.split('.').pop() || '').toLowerCase();
+        const mime = /^(jpe?g|png|gif|webp|heic)$/.test(ext) ? 'image/' + (ext === 'jpg' ? 'jpeg' : ext) : /^(mp4|mov|webm)$/.test(ext) ? 'video/' + (ext === 'mov' ? 'quicktime' : ext) : ext === 'pdf' ? 'application/pdf' : 'application/octet-stream';
+        add.push({at, kind:'file', name, mime, size:0, fid:f.id, dev:'📱'});
+      }
+    }
+    if (!add.length) return;
+    ss(k, [...add, ...ls(k, [])].sort((a, b) => b.at - a.at));
+    clearTimeout(SYNC.timer); syncPush(); // doplněný seznam hned zpátky na Disk
+    if (onDropTab()) renderMain();
+  } catch {}
+}
 async function dropBlob(it) {
   const r = await dGet(it.fid); return r.blob();
 }
@@ -3463,7 +3501,7 @@ function renderDrop(tabs, who) {
         <span class="ch">nebo sem přetáhni soubor / vlož obrázek Ctrl+V</span></div></div>` : ''}
     ${inFoldView ? '' : head}
     ${list.length || up ? `<div class="droplist">${up}${list.map(row).join('')}</div>` : `<div class="empty">${inFoldView ? 'Kolekce je zatím prázdná – u položky klikni na 📁 a přidej ji sem.' : 'Zatím nic.'}</div>`}`;
-  if (drive) fillDropPreviews();
+  if (drive) { fillDropPreviews(); if (mine) dropScan(); }
 }
 function renderStars() {
   if (S.starTab === 'drop') {
@@ -4129,8 +4167,10 @@ const driveGateHtml = () => `<div class="drivegate">☁️ <b>Nejdřív připoj 
 // stažení všeho sdíleného; při chybě radši „ano“ (pak se stáhne jako dřív)
 async function diskNewer(k, ts) {
   try {
-    const since = new Date(Math.max(0, (ts || 0) - 60e3)).toISOString();
-    return (await dList(`'${DRIVE.folder}' in parents and name contains 's_${dEsc(k)}' and modifiedTime > '${since}' and trashed=false`)).length > 0;
+    const since = new Date(Math.max(0, (ts || 0) - 60e3)).toISOString(), seen = syncSeen()[k] || 0;
+    // novější než naše data A ZÁROVEŇ ještě nestažený (soubor grafika změněný kvůli jiné věci už máme sloučený)
+    return (await dList(`'${DRIVE.folder}' in parents and name contains 's_${dEsc(k)}' and modifiedTime > '${since}' and trashed=false`))
+      .some(f => Date.parse(f.modifiedTime) > seen + 1000);
   } catch { return true; }
 }
 // 🔄 viditelná poznámka nad seznamem videí (dřív jen v nenápadném řádku nahoře – vypadalo to, že se 20 s nic neděje)
@@ -5455,7 +5495,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.vprev) togglePreview(b, async () => embedHtml(b.dataset.vprev));
   else if (b.dataset.chprev) togglePreview(b, () => channelPreview(b.dataset.chprev));
   else if (b.dataset.playin) { const box = b.closest('.bprev').querySelector('.playin'); box.innerHTML = embedHtml(b.dataset.playin); box.scrollIntoView({behavior:'smooth', block:'nearest'}); }
-  else if (b.id === 'btnDropText') { const t = $('#dropText').value.trim(); if (t) dropAdd({at:Date.now(), kind:'text', text:t, dev:devIcon()}); }
+  else if (b.id === 'btnDropText') { const t = $('#dropText').value.trim(); if (t) dropText(t); }
   else if (b.dataset.dropcopy) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropcopy); navigator.clipboard?.writeText(it?.text || '').then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.dataset.dropcal) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropcal); if (it?.text) calPickScript(it.text); }
   else if (b.dataset.mixcal !== undefined) { const s = ls(mixKey(S.starWho ?? meWho()), [])[+b.dataset.mixcal]; if (s) calPickIdea(s); }
@@ -5503,6 +5543,8 @@ document.addEventListener('change', e => {
 // Když je stránka schovaná (jiná karta / minimalizováno), nic se nestahuje; po návratu se hned aktualizuje, pokud už uplynul interval
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && S.key && S.auto && S.period !== 'ideas' && !PERIODS[S.period].local && !driveGate() && Date.now() >= nextDue()) autoRefresh();
+  // 📱 přepnutí do jiné aplikace: mobil stránku za chvíli uspí – neodeslané změny (Přenos, ⭐…) poslat HNED
+  if (document.hidden && REMOTE === DRIVE_BACKEND && Object.keys(SYNC.dirty || {}).length) { clearTimeout(SYNC.timer); syncPush(); }
 });
 // Jednorázová oprava: kanály naučené ve státě jen kvůli přeloženému názvu z AI dabingu přestaneme sledovat
 // (necháme ruční a ty, které mají v tom státě aspoň jedno video, které tam opravdu patří)
@@ -5648,7 +5690,7 @@ document.addEventListener('drop', e => {
   if (e.dataTransfer?.files?.length) dropFiles([...e.dataTransfer.files]);
 });
 // na záložce Přenos se Disk kontroluje co 5 s (jinak co 30 s), ať poslaná věc dorazí „hned“
-setInterval(() => { if (!document.hidden && SYNC.ok && onDropTab() && !(document.activeElement?.id === 'dropText' && $('#dropText').value)) pullShared(); }, 5e3);
+setInterval(() => { if (!document.hidden && SYNC.ok && onDropTab() && !(document.activeElement?.id === 'dropText' && $('#dropText').value)) { pullShared(); dropScan(); } }, 5e3);
 // Nová verze stránky: co 2 minuty (a při návratu do okna) se podívat, jestli na webu není novější APP_VERSION. Pokud ano, stránka se sama
 // obnoví (data zůstanou) – jen ne, když zrovna píšeš; pak ukáže tlačítko.
 async function checkNewVersion() {
