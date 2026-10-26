@@ -122,9 +122,9 @@ def projekt_now(proj):
     music = _rd(proj, "plan_music.json", []) or []
     mic = os.path.join(ANALYZA, proj, "mic.wav")
     delka = max([k[1] for t in stopy.values() for k in t] or [0])
-    vrstvy, zisk = sestaveno(proj, {f["path"]: i for i, f in enumerate(files)})
+    vrstvy, zisk, ext = sestaveno(proj, {f["path"]: i for i, f in enumerate(files)})
     return {
-        "vrstvy": vrstvy, "zisk": zisk,
+        "vrstvy": vrstvy, "zisk": zisk, **{k: v for k, v in ext.items() if not k.startswith("_")}, "_zvuky": ext.get("_zvuky", []),
         "projekt": proj, "delka": delka, "soubory": [{k: f[k] for k in ("name", "id", "ready", "webka")} for f in files],
         "v1": stopy.get("V1", []), "v2": stopy.get("V2", []),
         "intro": ((_rd(proj, "intro.json", {}) or {}).get("intro_end") or 0) / TL_FPS,
@@ -207,12 +207,43 @@ def sestaveno(proj, fidx):
         except Exception:  # noqa: BLE001
             continue
         vrstvy, hits = [], 0
+        ext = {"upravy": [], "shaky": [], "cb": [], "glow": [], "prechody": [], "zvuky": [], "_zvuky": []}
         for ti, tr in enumerate(d.tracks("video"), 1):
             kl = []
             for c in L.Drt.items(tr):
                 mp = c.findtext("MediaFilePath")
                 if mp not in fidx:
-                    continue  # titulky, šipky, Fusion, cizí videa – náhled je neumí
+                    # 🎬 efekty, které náhled umí napodobit: přechody, ZOOM 2 (pyramidy), shaky, černobílé, GLOW
+                    try:
+                        s, du = float(c.findtext("Start")), float(c.findtext("Duration"))
+                    except Exception:  # noqa: BLE001
+                        continue
+                    nm, a, b = (c.findtext("Name") or ""), round(s / TL_FPS, 3), round((s + du) / TL_FPS, 3)
+                    if c.tag == "Sm2TiTransition":
+                        ext["prechody"].append([a, b, nm[:40]])
+                        continue
+                    up = nm.upper()
+                    if up.startswith("CLICK"):
+                        ext["shaky"].append([a, b, 1])
+                    elif up.startswith("RAGE"):
+                        ext["shaky"].append([a, b, 2.2])
+                    elif up.startswith("ČB") or up.startswith("CB"):
+                        ext["cb"].append([a, b])
+                    elif up.startswith("GLOW"):
+                        ext["glow"].append([a, b])
+                    if c.findtext("PrettyType") == "Adjustment Clip" or up.startswith("ZOOM") or up.startswith("CLICK"):
+                        fx = _fx(c, L)
+                        i0, mf, t0 = float(c.findtext("In") or 0), _fps(c.findtext("MediaFrameRate")), s / TL_FPS
+
+                        def tv2(v, k=None):
+                            pick = (lambda x: x[k] if isinstance(x, tuple) else (x if k == 0 else 0.0)) if k is not None else (lambda x: x)
+                            return [[round(t0 + (f - i0) / mf, 3), round(pick(x), 4)] for f, x in v] if isinstance(v, list) else round(pick(v), 4)
+                        an = fx.get((4, 48), (0.0, 0.0))
+                        z = tv2(fx.get((4, 42), 1.0))
+                        if z != 1.0 or fx.get((4, 40)) or fx.get((4, 41)):
+                            ext["upravy"].append([a, b, ti, {"z": z, "x": tv2(fx.get((4, 40), 0.0)), "y": tv2(fx.get((4, 41), 0.0)),
+                                                             "ax": tv2(an, 0), "ay": tv2(an, 1)}])
+                    continue
                 try:
                     s, du, i = float(c.findtext("Start")), float(c.findtext("Duration")), float(c.findtext("In") or 0)
                 except Exception:  # noqa: BLE001
@@ -241,9 +272,27 @@ def sestaveno(proj, fidx):
             vols = sorted(v for c in L.Drt.items(tr) for v in [_fx(c, L).get((124, 95))] if isinstance(v, float))
             if vols:
                 zisk[f"A{ti}"] = round(vols[len(vols) // 2], 1)
+            # 🔊 zvukové efekty a hudba přesně z editu (vše kromě tvého záznamu hry a webky – ty jdou zvlášť)
+            for c in L.Drt.items(tr):
+                mp = c.findtext("MediaFilePath")
+                if not mp or mp in fidx or not os.path.exists(mp):
+                    continue
+                try:
+                    s, du, i = float(c.findtext("Start")), float(c.findtext("Duration")), float(c.findtext("In") or 0)
+                except Exception:  # noqa: BLE001
+                    continue
+                mf, t0 = _fps(c.findtext("MediaFrameRate")), s / TL_FPS
+                vol = _fx(c, L).get((124, 95), 0.0)
+                if isinstance(vol, list):  # zesílení / zeslabení (keyframy) -> časy timeliny
+                    vol = [[round(t0 + (f - i) / mf, 3), round(x, 2)] for f, x in vol]
+                if mp not in ext["_zvuky"]:
+                    ext["_zvuky"].append(mp)
+                ext["zvuky"].append([round(t0, 3), round((s + du) / TL_FPS, 3), ext["_zvuky"].index(mp), round(i / mf, 3),
+                                     vol if isinstance(vol, list) else round(vol, 2), ti, os.path.splitext(os.path.basename(mp))[0][:40]])
+        ext["zvuky"].sort()
         zisk["soubor"] = os.path.basename(p)
-        return vrstvy, zisk
-    return [], {}
+        return vrstvy, zisk, ext
+    return [], {}, {}
 
 
 def projekty():
@@ -411,6 +460,13 @@ class H(http.server.BaseHTTPRequestHandler):
                 d = projekt(proj)
                 p = os.path.join(CACHE, proxy_name(d["_mic"]) + ".m4a") if d["mic"] else ""
                 return self._file(p, "audio/mp4") if p and os.path.exists(p) else self._send(404, "{}")
+            if u.path.startswith("/zvuk/"):  # zvukový efekt / hudba ze sestaveného editu (jen soubory, které edit používá)
+                i = int(u.path[6:])
+                z = projekt(proj).get("_zvuky", [])
+                p = z[i] if 0 <= i < len(z) else ""
+                ct = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".mp4": "video/mp4", ".aac": "audio/aac",
+                      ".ogg": "audio/ogg", ".mov": "video/quicktime"}.get(os.path.splitext(p)[1].lower(), "application/octet-stream")
+                return self._file(p, ct) if p and os.path.exists(p) else self._send(404, "{}")
             if u.path.startswith("/hudba/"):  # písnička z plánu hudby projektu
                 i = int(u.path[7:])
                 m = projekt(proj)["_music"]

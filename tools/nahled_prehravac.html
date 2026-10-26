@@ -40,6 +40,7 @@ button:disabled{opacity:.5;cursor:default}
 .ch{color:var(--muted);font-size:12px}
 .err{color:var(--hot)}
 .back{color:var(--accent);text-decoration:none;font-weight:800;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+#layers{position:absolute;inset:0;overflow:hidden}
 #layers .ly{position:absolute;inset:0;pointer-events:none}
 #layers video{will-change:transform}
 .moments .lg{font-size:12px;padding:3px 9px;border-radius:999px}
@@ -109,7 +110,7 @@ function seek(t) {
   Tstart = t; T0 = performance.now();
   if (D?.mic_ready && mic.src) mic.currentTime = t;
   for (const tr of [...Object.values(tracks), ...LAYERS]) { tr.cur = -1; tr.next = -1; }
-  mus.dataset.seg = '';
+  mus.dataset.seg = ''; sfxStop();
   tick();
 }
 // ---------- 🎞️ vrstvy ze SESTAVENÉHO editu (S:\EDIT\vystup\AUTO EDIT N.drt): každá stopa videa = jedna vrstva,
@@ -124,9 +125,64 @@ function buildLayers() {
     const ly = document.createElement('div'); ly.className = 'ly';
     const els = [0, 1].map(() => { const e = document.createElement('video'); e.playsInline = true; e.preload = 'auto'; ly.append(e); return e; });
     box.append(ly);
-    LAYERS.push({els, cur:-1, a:0, next:-1, main:true, clips:v.klipy, stopa:v.stopa});
+    LAYERS.push({els, cur:-1, a:0, next:-1, main:true, clips:v.klipy, stopa:v.stopa, div:ly});
   }
   AUDIO_DONE = false;
+}
+// transformace podle Resolve jako CSS: posun a kotva (zlomek šířky/výšky, Y nahoru), zoom kolem kotvy
+const tf = f => `translate(${(f.ax + f.x) * 100}%, ${(-f.ay - f.y) * 100}%) scale(${f.z}) translate(${-f.ax * 100}%, ${f.ay * 100}%)`;
+const fxAt = (f, t) => ({z:kv(f.z ?? 1, t), x:kv(f.x ?? 0, t), y:kv(f.y ?? 0, t), ax:kv(f.ax ?? 0, t), ay:kv(f.ay ?? 0, t)});
+const active = (list, t) => (list || []).filter(x => t >= x[0] && t < x[1]);
+// 🔺 ZOOM 2 / CLICK = adjustment clipy: zvětšují všechno POD sebou (víc nad sebou = pyramida)
+function adjustLayers(t) {
+  const ups = active(D.upravy, t).sort((a, b) => b[2] - a[2]); // vyšší stopa = vnější transformace
+  for (const L of LAYERS) {
+    const s = ups.filter(u => u[2] > L.stopa).map(u => tf(fxAt(u[3], t))).join(' ');
+    if (L.div.style.transform !== s) L.div.style.transform = s;
+  }
+}
+// 💥 shaky (CLICK 3, RAGE) a ⏭️ přechody (Parallax Pan / slide down) na celém obraze
+const noise = (t, k) => Math.sin(t * 61.7 + k) * 0.6 + Math.sin(t * 23.3 + k * 2.1) * 0.4;
+function stageFx(t) {
+  let tx = 0, ty = 0, rot = 0, blur = 0;
+  for (const [s, e, str] of active(D.shaky, t)) {
+    const fall = 1 - (t - s) / Math.max(0.05, e - s), a = str * Math.max(0.25, fall);
+    tx += noise(t, 1) * 1.6 * a; ty += noise(t, 7) * 1.6 * a; rot += noise(t, 3) * 0.8 * a; blur += 0.6 * a;
+  }
+  const pr = active(D.prechody, t)[0];
+  if (pr) {
+    const p = (t - pr[0]) / Math.max(0.05, pr[1] - pr[0]);
+    const k = p < 0.5 ? ease(p * 2) : -(1 - ease((p - 0.5) * 2)); // starý záběr odjede dolů, nový přijede shora
+    ty += k * 45; blur += Math.sin(Math.PI * p) * 10;
+  }
+  const el = $('#layers'), s = tx || ty || rot ? `translate(${tx.toFixed(2)}%, ${ty.toFixed(2)}%) rotate(${rot.toFixed(2)}deg)` : '';
+  if (el.style.transform !== s) el.style.transform = s;
+  const glow = active(D.glow, t).length ? ' brightness(1.18) saturate(1.35) contrast(1.05)' : '';
+  const f = (blur > 0.3 ? `blur(${blur.toFixed(1)}px)` : '') + glow;
+  if (el.style.filter !== f) el.style.filter = f;
+}
+// 🔊 zvukové efekty a hudba ze sestaveného editu: malá zásoba přehrávačů, každý zvuk dostane jeden, dokud hraje
+const SFX = {pool:[], busy:new Map()};
+function sfxEl() {
+  let e = SFX.pool.find(x => !x.inUse);
+  if (!e) { e = new Audio(); e.preload = 'auto'; SFX.pool.push(e); if (AC) { try { const g = AC.createGain(); AC.createMediaElementSource(e).connect(g).connect(G.out); e.g = g; } catch {} } }
+  e.inUse = true; return e;
+}
+function sfxStop() { for (const [, e] of SFX.busy) { e.pause(); e.inUse = false; } SFX.busy.clear(); }
+function sounds(t) {
+  if (!D.zvuky?.length) return;
+  const now = new Set(), Z = D.zisk || {};
+  D.zvuky.forEach((z, i) => { if (t >= z[0] && t < z[1]) now.add(i); });
+  for (const [i, e] of SFX.busy) if (!now.has(i) || !playing) { e.pause(); e.inUse = false; SFX.busy.delete(i); }
+  if (!playing) return;
+  for (const i of now) {
+    const z = D.zvuky[i], want = z[3] + (t - z[0]);
+    let e = SFX.busy.get(i);
+    if (!e) { e = sfxEl(); e.src = url(`/zvuk/${z[2]}`); try { e.currentTime = want; } catch {} e.play().catch(() => {}); SFX.busy.set(i, e); }
+    else if (Math.abs(e.currentTime - want) > 0.35 && e.readyState > 1) { try { e.currentTime = want; } catch {} }
+    const isMusic = z[5] === 6, g = dbv(kv(z[4], t)) * (isMusic && $('#loud').checked ? 3 : 1) * 0.5;
+    if (e.g) e.g.gain.value = g; else e.volume = Math.min(1, g * 2);
+  }
 }
 const ease = x => x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2; // keyframy v Resolve jsou plynulé (ease)
 function kv(v, t) {
@@ -207,6 +263,7 @@ function tick() {
   if (LAYERS.length) {
     // přesně podle sestaveného editu: každá vrstva svůj klip, zoom, posun, kotva, ořez
     for (const L of LAYERS) { const c = syncTrack(L, L.clips, t); if (c) applyFx(L.els[L.a], c, t); if (L.stopa === 2) c2 = c; }
+    adjustLayers(t); stageFx(t); sounds(t);
   } else {
     syncTrack(tracks.v1, D.v1, t);
     c2 = syncTrack(tracks.v2, D.v2, t);
@@ -216,9 +273,9 @@ function tick() {
     const p = D.punch.findIndex(x => x <= t && t - x < 0.35);
     if (p >= 0 && p !== lastPunch) { lastPunch = p; const m = tracks.v1.els[tracks.v1.a]; m.classList.remove('punch'); void m.offsetWidth; m.classList.add('punch'); }
   }
-  $('#stage').classList.toggle('bw', D.bw.some(([s, e]) => t >= s && t < e));
-  // hudba
-  const seg = D.hudba.find(x => t >= x[0] && t < x[1]);
+  $('#stage').classList.toggle('bw', (D.cb?.length ? D.cb : D.bw).some(([s, e]) => t >= s && t < e));
+  // hudba (podle plánu – jen když edit ještě není sestavený; sestavený má hudbu mezi zvuky)
+  const seg = D.zvuky?.length ? null : D.hudba.find(x => t >= x[0] && t < x[1]);
   if (seg) {
     const id = String(seg[2]);
     if (mus.dataset.seg !== id) { mus.src = url(`/hudba/${seg[2]}`); mus.dataset.seg = id; mus.currentTime = seg[3] + (t - seg[0]); }
@@ -264,6 +321,12 @@ function drawTL() {
     + (D.bw.length ? row('⚫', 'Černobílé', D.bw.map(([s, e]) => blk(s, e, '#adb5bd', 'ČB')).join(''), D.bw.map(([s, e]) => [s, e, 'ČB'])) : '')
     + (D.hudba.length ? row('🎵', 'Hudba', D.hudba.map(h => blk(h[0], h[1], '#2a9d8f', h[5])).join(''), D.hudba.map(h => [h[0], h[1], h[5]])) : '')
     + (D.punch.length ? row('💥', 'Punch ve hře', D.punch.map(p => blk(p, p + 0.4, '#ffcc00', 'punch')).join(''), D.punch.map(p => [p, p + 0.4, 'punch'])) : '')
+    // ze sestaveného editu: přechody, pyramidy / zoomy přes vše, shaky, zvukové efekty
+    + (D.prechody?.length ? row('⏭️', 'Přechody', D.prechody.map(p => blk(p[0], p[1], '#ffffff', p[2])).join(''), D.prechody) : '')
+    + (D.upravy?.length ? row('🔺', 'ZOOM 2 / pyramidy', D.upravy.map(u => blk(u[0], u[1], '#8ecae6', 'ZOOM')).join(''), D.upravy.map(u => [u[0], u[1], 'ZOOM'])) : '')
+    + (D.shaky?.length ? row('📳', 'Shaky (CLICK, RAGE)', D.shaky.map(s => blk(s[0], s[1], s[2] > 1 ? '#c1121f' : '#e76f51', s[2] > 1 ? 'RAGE' : 'shake')).join(''), D.shaky.map(s => [s[0], s[1], s[2] > 1 ? 'RAGE' : 'shake'])) : '')
+    + (D.zvuky?.length ? row('🔊', 'Zvukové efekty', D.zvuky.filter(z => z[5] !== 6).map(z => blk(z[0], z[1], '#e9c46a', z[6])).join(''), D.zvuky.filter(z => z[5] !== 6).map(z => [z[0], z[1], z[6]])) : '')
+    + (D.zvuky?.length ? row('🎶', 'Hudba (z editu)', D.zvuky.filter(z => z[5] === 6).map(z => blk(z[0], z[1], '#2a9d8f', z[6])).join(''), D.zvuky.filter(z => z[5] === 6).map(z => [z[0], z[1], z[6]])) : '')
     + '<div class="phl" id="phl"></div>';
   const F = ROWS[TL.focus];
   if (F) $('#tlin').insertAdjacentHTML('beforeend', F.items.slice(0, 400).map(([s, e]) => `<em class="tlg" style="left:${LBL + s / L * W}px;width:${Math.max(3, (e - s) / L * W)}px"></em>`).join(''));
@@ -359,6 +422,7 @@ function play() {
 function pause() {
   Tstart = now(); playing = false; mic.pause(); mus.pause();
   for (const tr of [...Object.values(tracks), ...LAYERS]) tr.els.forEach(e => e.pause());
+  sfxStop();
   $('#play').textContent = '▶ Přehrát'; $('#big').hidden = false; clearInterval(timer); tick();
 }
 $('#play').onclick = $('#big').onclick = () => playing ? pause() : play();
