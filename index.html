@@ -794,7 +794,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.147'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.148'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4905,8 +4905,8 @@ function vyrCard(key) {
   const left = d.zbyva_s, end = alive && left != null ? d.t + left * 1000 : null;
   const head = `<div class="vyrhead"><h3>${P.name}</h3>${badge}<b class="vyrname">${esc(d.nazev || '')}</b></div>
     <div class="vyrbig">${vyrBar(d.procenta, d.stav === 'chyba' ? 'bad' : '')}<b>${Math.round(d.procenta || 0)} %</b></div>
-    <div class="row ch">${d.faze ? `<span>▶ ${esc(d.faze)}</span>` : ''}<span>⏱️ běží ${ago(((d.konec || (alive ? Date.now() : d.t)) - d.start) / 3600e3).replace('před ', '')}</span>
-      ${alive && left != null ? `<span>zbývá ${d.presne === false ? '≈' : '~'}${Math.round(left / 60)} min · konec v <b>${hhmm(end)}</b></span>` : ''}
+    <div class="row ch">${d.faze ? `<span>▶ ${esc(d.faze)}</span>` : ''}<span>⏱️ ${alive ? 'běží' : 'trvalo'} ${tik('cas', 0, d.start, alive ? d.t + TIK_REZERVA : (d.konec || d.t))}</span>
+      ${alive && left != null ? `<span>zbývá ${d.presne === false ? '≈' : ''}${tik('zbyva', left, d.t, d.t + TIK_REZERVA, -1)} · konec v <b>${hhmm(end)}</b></span>` : ''}
       ${d.zprava ? `<span><b>${esc(d.zprava)}</b></span>` : ''}${d.rezim ? `<span>Výkon: ${esc(d.rezim)}</span>` : ''}
       <span>aktualizováno ${ago((Date.now() - d.t) / 3600e3)}</span></div>`;
   let body = '';
@@ -4920,8 +4920,9 @@ function vyrCard(key) {
       const pct = s.stav === 'hotovo' || s.stav === 'preskoceno' ? 100 : s.stav === 'bezi' ? (s.odhad ? Math.min(100, dur / s.odhad * 100) : 50) : 0;
       const pozde = s.stav === 'bezi' && s.odhad && dur > s.odhad;
       return `<div class="vyrrow step ${s.stav}${pozde ? ' pozde' : ''}"><b>${ic} ${i + 1}</b><span class="vyrlbl">${esc(s.popis)}</span>
-        <span class="vyrbar step${s.stav === 'bezi' && !s.odhad ? ' neurc' : ''}"><i style="width:${pct}%"></i></span>
-        <span class="ch"${pozde ? ' title="trvá déle, než byl odhad"' : ''}>${s.stav === 'bezi' ? `${vyrCas(dur || 0)}${s.odhad ? ` / ~${vyrCas(s.odhad)}` : ''}`
+        <span class="vyrbar step${s.stav === 'bezi' && !s.odhad ? ' neurc' : ''}"><i style="width:${pct}%"${s.stav === 'bezi' && s.odhad && s.zacatek && alive
+          ? ` data-tikbar="${s.odhad}" data-b="0" data-t0="${s.zacatek * 1000}" data-max="${d.t + TIK_REZERVA}"` : ''}></i></span>
+        <span class="ch"${pozde ? ' title="trvá déle, než byl odhad"' : ''}>${s.stav === 'bezi' ? `${s.zacatek ? tik('cas', 0, s.zacatek * 1000, alive ? d.t + TIK_REZERVA : d.t) : vyrCas(dur || 0)}${s.odhad ? ` / ~${vyrCas(s.odhad)}` : ''}`
           : s.stav === 'hotovo' ? vyrCas(dur || 0) : s.stav === 'preskoceno' ? 'přeskočeno' : s.odhad ? `~${vyrCas(s.odhad)}` : ''}</span></div>`; };
     const all = d.kroky.map((s, i) => [s, i]);
     const top = all.filter(([s]) => s.stav === 'bezi').concat(all.filter(([s]) => s.stav === 'ceka'));
@@ -4935,6 +4936,26 @@ function vyrCard(key) {
   return `<div class="vyrcard ${alive ? 'live' : ''}${tl ? ' wide' : ''}">${close}${head}${nahled}${tl}${vyrGraph(d.historie, d.start)}${body}${log ? `<details class="vyrlog"><summary class="ch">📜 Výpis (posledních ${d.radky.length} řádků)</summary><div>${log}</div></details>` : ''}</div>`;
 }
 const vyrCas = s => { s = Math.max(0, Math.round(s)); return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+// ⏱️ tikající čas: hodnota „b“ sekund platila v čase t0, web k ní sám přičítá vteřinu po vteřině – ale nejvýš do „max“
+// (poslední zpráva z Disku + rezerva); když proces skončí nebo zmlkne, čas se zastaví, nová data z Disku ho opraví
+const hms = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, '0');
+  return h ? `${h} h ${String(m).padStart(2, '0')} min ${x} s` : `${m} min ${x} s`; };
+const TIK = {cas: vyrCas, hms, zbyva: s => `~${vyrCas(s)}`};
+const TIK_REZERVA = 75e3; // DABING / AUTO EDIT hlásí aspoň co 45 s (+ pár vteřin Disk) – déle bez zprávy = čas stojí
+const tikVal = (b, t0, max, dir) => b + dir * (Math.min(Date.now(), max) - t0) / 1000;
+function tik(kind, b, t0, max, dir = 1) {
+  return `<span data-tik="${kind}" data-b="${b}" data-t0="${t0}" data-max="${max}" data-dir="${dir}">${TIK[kind](tikVal(b, t0, max, dir))}</span>`;
+}
+setInterval(() => {
+  if (S.period !== 'vyr' || document.hidden) return;
+  document.querySelectorAll('#main [data-tik]').forEach(e => {
+    const v = tikVal(+e.dataset.b, +e.dataset.t0, +e.dataset.max, +e.dataset.dir), txt = TIK[e.dataset.tik](v);
+    if (e.textContent !== txt) e.textContent = txt;
+  });
+  document.querySelectorAll('#main [data-tikbar]').forEach(e => { // pruh běžícího kroku
+    e.style.width = Math.min(100, tikVal(+e.dataset.b, +e.dataset.t0, +e.dataset.max, 1) / +e.dataset.tikbar * 100) + '%';
+  });
+}, 1000);
 // 📊 statistiky: čas na projektech (podle záloh DaVinci) a peníze za AI (AUTO EDIT, DABING) – tools/vyroba_statistiky.py
 const hm = min => { min = Math.round(min); return min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : `${min} min`; };
 const projCol = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) | 0; return `hsl(${Math.abs(h) % 360} 62% 55%)`; };
@@ -5051,10 +5072,13 @@ function vyrLive() {
     return `<div class="vdr${p === cur ? ' cur' : ''}${prev[p] == null ? ' new' : ''}"><i style="background:${projCol(p)}"></i><span>${esc(p)}</span>
       <u><s style="width:${w}%;--from:${prev[p] ?? 0}%;background:${projCol(p)}"></s></u><em>${hm(m)}</em></div>`; }).join('')}</div>` : '';
   VYR.ui.dayW = nw;
+  // když zrovna edituješ: čas tiká po vteřinách (sledování posílá co minutu – nejvýš 90 s napřed, pak stojí do další zprávy)
+  const ted = !!(cur && L.aktivni), max = ted ? L.t + 90e3 : L?.t || 0;
+  const T = m => ted ? tik('hms', m * 60, L.t, max) : hm(m);
   return `<div class="vyrlive2">
-    <div><span class="ch">Dnes na projektech</span><b>${hm(sumDnes)}</b></div>
+    <div><span class="ch">Dnes na projektech</span><b>${T(sumDnes)}</b></div>
     ${cur ? `<div class="cur"><span class="ch">${L.aktivni ? '<i class="dot"></i> Právě edituješ' : 'Otevřený v DaVinci'}</span><b>${esc(cur)}</b>
-      <span class="ch">dnes <b>${hm(curDnes)}</b> · celkem <b>${hm(curCelkem)}</b></span></div>`
+      <span class="ch">dnes <b>${T(curDnes)}</b> · celkem <b>${T(curCelkem)}</b></span></div>`
       : `<div class="ch">${L ? 'DaVinci teď neběží' : 'Pro živé měření spusť na PC <b>SLEDOVÁNÍ ČASU.bat</b>'}</div>`}
     ${day}
   </div>`;
