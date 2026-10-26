@@ -110,6 +110,18 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .vyrlive2 b{font-size:26px;line-height:1.1}
 .vyrlive2 .cur b{color:var(--accent);font-size:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80vw}
 .vyrlive2 .cur .ch b{font-size:13px;color:var(--text)}
+.vyrlive2 .vyrday{flex:1 1 260px;gap:5px;max-width:520px;margin-left:auto}
+.vdr{display:grid;grid-template-columns:10px minmax(0,150px) 1fr auto;gap:8px;align-items:center;font-size:13px;padding:2px 6px;margin:0 -6px;border-radius:7px;transition:background .3s}
+.vdr i{width:10px;height:10px;border-radius:3px}
+.vdr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.vdr u{height:8px;border-radius:4px;background:var(--bg);overflow:hidden;text-decoration:none}
+.vdr s{display:block;height:100%;border-radius:4px;animation:vdgrow .9s cubic-bezier(.2,.8,.2,1) both}
+.vdr em{font-style:normal;font-weight:700;font-variant-numeric:tabular-nums;min-width:64px;text-align:right}
+.vdr.cur{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.vdr.cur span{color:var(--text);font-weight:700}
+.vdr.new{animation:vdin .5s ease-out both}
+@keyframes vdgrow{from{width:var(--from)}}
+@keyframes vdin{from{opacity:0;transform:translateX(-8px)}}
 .vyrlive2 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--hot);margin-right:4px;animation:vyrpulse 1.4s infinite}
 .vyrcard{position:relative}
 .vyrclose{position:absolute;top:8px;right:8px;width:30px;height:30px;padding:0;border-radius:50%;z-index:2}
@@ -126,8 +138,31 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .stcol{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;height:100%;font-size:10px;color:var(--muted)}
 .stcol span{order:-1;height:14px}
 .stbar{flex:1;width:100%;display:flex;flex-direction:column-reverse;justify-content:flex-start;border-radius:4px 4px 0 0;overflow:hidden;background:var(--panel2)}
-.stbar i{display:block;width:100%}
+.stbar i{display:block;width:100%;transition:filter .2s}
 .stcol b{font-weight:600}
+.stcol[data-st]{cursor:pointer;transition:opacity .25s}
+.stcol .stbar{transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;transform-origin:bottom}
+.stchart:hover .stcol:not(.on),.stchart:has(.stcol.on) .stcol:not(.on){opacity:.45}
+.stcol.on .stbar{transform:scaleX(1.12) translateY(-3px);box-shadow:0 0 0 2px var(--accent),0 6px 16px rgba(0,0,0,.35)}
+.stcol.on span,.stcol.on b{color:var(--text);font-weight:800}
+.stbar i.on{filter:brightness(1.35) saturate(1.2)}
+.stchart.anim .stbar{animation:stgrow .8s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--k) * 28ms)}
+@keyframes stgrow{from{clip-path:inset(100% 0 0 0)}to{clip-path:inset(0 0 0 0)}}
+#sttip{position:fixed;left:0;top:0;z-index:999;min-width:230px;max-width:min(340px,calc(100vw - 16px));padding:10px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);box-shadow:0 12px 32px rgba(0,0,0,.45);font-size:13px;pointer-events:none;opacity:0;transition:opacity .18s,transform .14s cubic-bezier(.2,.8,.2,1)}
+#sttip.show{opacity:1}
+#sttip .tth{display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+#sttip .tth b{font-size:17px;color:var(--accent)}
+#sttip .ttr{display:grid;grid-template-columns:10px 1fr auto;gap:2px 8px;align-items:center;padding:4px 6px;margin:0 -6px;border-radius:8px;animation:ttin .25s ease-out both}
+#sttip .ttr:nth-child(3){animation-delay:30ms}#sttip .ttr:nth-child(4){animation-delay:60ms}#sttip .ttr:nth-child(n+5){animation-delay:90ms}
+#sttip .ttr.on{background:var(--panel2)}
+#sttip .ttr i{width:10px;height:10px;border-radius:3px}
+#sttip .ttr span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sttip .ttr u{grid-column:2/4;height:4px;border-radius:2px;background:var(--panel2);overflow:hidden;text-decoration:none}
+#sttip .ttr u s{display:block;height:100%;border-radius:2px;animation:ttbar .5s cubic-bezier(.2,.8,.2,1) both;transform-origin:left}
+#sttip .ttr em{grid-column:2/4;font-style:normal;font-size:11px;color:var(--muted)}
+#sttip .ttsep{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 2px}
+@keyframes ttin{from{opacity:0;transform:translateY(4px)}}
+@keyframes ttbar{from{transform:scaleX(0)}}
 @media (max-width:600px){.stcol{font-size:8px}.stchart{gap:2px}}
 .vyrnahled .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .btnlink{display:inline-block;text-decoration:none;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-weight:700}
@@ -746,7 +781,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-26.143'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-26.144'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4883,13 +4918,17 @@ function vyrStats() {
   // ⏱️ čas: posledních 14 dní, sloupec = den, barevné kousky = projekty
   const d14 = dayList(14), sum = d => Object.values(cas[d] || {}).reduce((a, b) => a + b, 0);
   const maxT = Math.max(60, ...d14.map(sum));
-  const tBars = d14.map(d => `<div class="stcol" title="${dLabel(d)}: ${hm(sum(d))}"><div class="stbar">${Object.entries(cas[d] || {}).sort((a, b) => b[1] - a[1]).map(([p, m]) =>
-    `<i style="height:${m / maxT * 100}%;background:${projCol(p)}" title="${esc(p)}&#10;${dLabel(d)}: ${hm(m)}&#10;celkem na projektu: ${hm(projTotal(p))}"></i>`).join('')}</div><span>${sum(d) ? (sum(d) / 60).toFixed(1).replace('.', ',') : ''}</span><b>${new Date(d + 'T12:00').getDate()}</b></div>`).join('');
+  // sloupce rostou jen při otevření záložky (ne při každém obnovení dat); bublinu s celým dnem kreslí stTip
+  const anim = !document.querySelector('#main .vyrstats') ? ' anim' : '';
+  const col = (t, d, k, inner, num) => `<div class="stcol${VYR.ui.stOn === t + '|' + d ? ' on' : ''}" data-st="${t}" data-d="${d}" style="--k:${k}"><div class="stbar">${inner}</div><span>${num}</span><b>${new Date(d + 'T12:00').getDate()}</b></div>`;
+  const tBars = d14.map((d, k) => col('t', d, k, Object.entries(cas[d] || {}).sort((a, b) => b[1] - a[1]).map(([p, m]) =>
+    `<i style="height:${m / maxT * 100}%;background:${projCol(p)}" data-p="${esc(p)}"></i>`).join(''), sum(d) ? (sum(d) / 60).toFixed(1).replace('.', ',') : '')).join('');
   const dnes = Object.entries(cas[today] || {}).sort((a, b) => b[1] - a[1]);
   const tyden = d14.slice(-7).reduce((a, d) => a + sum(d), 0);
   // 💰 peníze: posledních 30 dní, modrá = AUTO EDIT, fialová = DABING
   const d30 = dayList(30), ps = d => (pd[d]?.edit || 0) + (pd[d]?.dabing || 0), maxP = Math.max(0.5, ...d30.map(ps));
-  const pBars = d30.map(d => `<div class="stcol" title="${dLabel(d)}: ${kc(ps(d))}"><div class="stbar">${pd[d]?.dabing ? `<i style="height:${pd[d].dabing / maxP * 100}%;background:#9d4edd" title="DABING ${dLabel(d)}: ${kc(pd[d].dabing)} ($${pd[d].dabing.toFixed(2)})"></i>` : ''}${pd[d]?.edit ? `<i style="height:${pd[d].edit / maxP * 100}%;background:#4895ef" title="AUTO EDIT ${dLabel(d)}: ${kc(pd[d].edit)} ($${pd[d].edit.toFixed(2)})"></i>` : ''}</div><span>${ps(d) ? Math.round(ps(d) * kurz) : ''}</span><b>${new Date(d + 'T12:00').getDate()}</b></div>`).join('');
+  const pBars = d30.map((d, k) => col('p', d, k, `${pd[d]?.dabing ? `<i style="height:${pd[d].dabing / maxP * 100}%;background:#9d4edd" data-p="DABING"></i>` : ''}${pd[d]?.edit ? `<i style="height:${pd[d].edit / maxP * 100}%;background:#4895ef" data-p="AUTO EDIT"></i>` : ''}`,
+    ps(d) ? Math.round(ps(d) * kurz) : '')).join('');
   const C = S0.penize_celkem || {}, month = today.slice(0, 7), mSum = k => Object.entries(pd).filter(([d]) => d.startsWith(month)).reduce((a, [, v]) => a + (v[k] || 0), 0);
   const projP = Object.entries(S0.penize_projekt || {}).map(([p, v]) => [p, (v.edit || 0) + (v.dabing || 0), v]).sort((a, b) => b[1] - a[1]).slice(0, 12);
   return `<div class="summary vyrstats"><h3>📊 Statistiky výroby</h3>
@@ -4899,14 +4938,71 @@ function vyrStats() {
         ${dnes.length ? `<div class="stlist">${dnes.map(([p, m]) => `<span title="celkem na projektu: ${hm(projTotal(p))}"><i style="background:${projCol(p)}"></i>${esc(p)} <b>${hm(m)}</b></span>`).join('')}</div>` : '<div class="ch">Dnes zatím žádná práce v DaVinci.</div>'}
         <details><summary class="ch">Celkem po projektech (posledních 120 dní)</summary><div class="stlist">${[...new Set(Object.values(cas).flatMap(Object.keys))].map(p => [p, projTotal(p)]).sort((a, b) => b[1] - a[1]).slice(0, 25)
           .map(([p, m]) => `<span><i style="background:${projCol(p)}"></i>${esc(p)} <b>${hm(m)}</b></span>`).join('')}</div></details>
-        <div class="stchart">${tBars}</div><div class="ch">Sloupec = den (číslo nahoře = hodiny), barvy = projekty – najeď myší.</div></div>
+        <div class="stchart${anim}">${tBars}</div><div class="ch">Sloupec = den (číslo nahoře = hodiny), barvy = projekty – najeď myší (na mobilu ťukni) a uvidíš celý den.</div></div>
       <div><h4>💰 Utraceno za AI <span class="ch">(Claude v AUTO EDITU a DABINGU, kurz ${kurz.toFixed(2).replace('.', ',')} Kč/$)</span></h4>
         <div class="stnums"><span>Dnes <b>${kc(ps(today))}</b></span><span>Tento měsíc <b>${kc(mSum('edit') + mSum('dabing'))}</b></span><span>Celkem <b>${kc((C.edit || 0) + (C.dabing || 0))}</b></span></div>
         <div class="stlist"><span><i style="background:#4895ef"></i>AUTO EDIT celkem <b>${kc(C.edit || 0)}</b></span><span><i style="background:#9d4edd"></i>DABING celkem <b>${kc(C.dabing || 0)}</b></span></div>
-        <div class="stchart">${pBars}</div><div class="ch">Posledních 30 dní (číslo nahoře = Kč).</div>
+        <div class="stchart${anim}">${pBars}</div><div class="ch">Posledních 30 dní (číslo nahoře = Kč) – najeď myší / ťukni pro rozpis dne.</div>
         <details><summary class="ch">Podle projektů</summary><div class="stlist">${projP.map(([p, s, v]) => `<span title="AUTO EDIT ${kc(v.edit || 0)} · DABING ${kc(v.dabing || 0)}">${esc(p)} <b>${kc(s)}</b></span>`).join('')}</div></details></div>
     </div><div class="ch">Aktualizováno ${ago((Date.now() - S0.t) / 3600e3)} (po každém editu a dabingu, a co 30 min, když běží NÁHLED).</div></div>`;
 }
+// 📊 bublina u grafů: celý den najednou – všechny projekty s časem / penězi, ať se nemusí hledat tenké proužky
+function stTipHtml(t, d) {
+  const S0 = VYR.d.statistiky; if (!S0) return '';
+  const x = new Date(d + 'T12:00'), head = `${DOW[x.getDay()]} ${x.getDate()}. ${x.getMonth() + 1}.${d === isoDay(new Date()) ? ' · dnes' : ''}`;
+  const kurz = S0.kurz || 23, kc = usd => Math.round(usd * kurz).toLocaleString('cs') + ' Kč';
+  const row = (name, color, val, pct, sub) => `<div class="ttr" data-n="${esc(name)}"><i style="background:${color}"></i><span>${esc(name)}</span><b>${val}</b>
+    <u><s style="width:${Math.max(2, pct)}%;background:${color}"></s></u>${sub ? `<em>${sub}</em>` : ''}</div>`;
+  if (t === 't') {
+    const e = Object.entries(S0.cas?.[d] || {}).sort((a, b) => b[1] - a[1]), tot = e.reduce((a, [, m]) => a + m, 0);
+    return `<div class="tth"><span>${head}</span><b>${tot ? hm(tot) : '—'}</b></div>${e.length ? e.map(([p, m]) =>
+      row(p, projCol(p), hm(m), m / tot * 100, `celkem na projektu ${hm(projTotal(p))}`)).join('') : '<div class="ch">Ten den žádná práce v DaVinci.</div>'}`;
+  }
+  const v = S0.penize_den?.[d] || {}, tot = (v.edit || 0) + (v.dabing || 0);
+  const pp = Object.entries(S0.penize_den_projekt?.[d] || {}).map(([p, w]) => [p, (w.edit || 0) + (w.dabing || 0), w]).sort((a, b) => b[1] - a[1]);
+  const split = [['AUTO EDIT', '#4895ef', v.edit || 0], ['DABING', '#9d4edd', v.dabing || 0]].filter(r => r[2]);
+  return `<div class="tth"><span>${head}</span><b>${tot ? kc(tot) : '—'}</b></div>${tot ? split.map(([n, c, u]) => row(n, c, kc(u), u / tot * 100, `$${u.toFixed(2)}`)).join('')
+    + (pp.length ? `<div class="ttsep">podle projektů</div>${pp.map(([p, u, w]) => row(p, w.dabing && !w.edit ? '#9d4edd' : w.edit && !w.dabing ? '#4895ef' : projCol(p), kc(u), u / tot * 100,
+      w.edit && w.dabing ? `edit ${kc(w.edit)} · dabing ${kc(w.dabing)}` : '')).join('')}` : '') : '<div class="ch">Ten den se za AI nic neutratilo.</div>'}`;
+}
+const stTip = { el: null, html: '' };
+function stShow(col, seg, x, y, below) {
+  if (!stTip.el) { stTip.el = document.createElement('div'); stTip.el.id = 'sttip'; document.body.appendChild(stTip.el); }
+  const el = stTip.el, html = stTipHtml(col.dataset.st, col.dataset.d), was = el.classList.contains('show');
+  if (html !== stTip.html) { el.innerHTML = html; stTip.html = html; }
+  el.querySelectorAll('.ttr').forEach(r => r.classList.toggle('on', r.dataset.n === seg));
+  VYR.ui.stOn = col.dataset.st + '|' + col.dataset.d;
+  document.querySelectorAll('.stcol.on').forEach(c => c !== col && c.classList.remove('on'));
+  col.classList.add('on');
+  col.querySelectorAll('.stbar i').forEach(i => i.classList.toggle('on', i.dataset.p === seg));
+  const w = el.offsetWidth, h = el.offsetHeight;
+  let L = below ? x - w / 2 : x + 18, T = below ? y + 8 : y - h - 14;
+  if (!below && L + w > innerWidth - 8) L = x - w - 18;
+  L = Math.max(8, Math.min(L, innerWidth - w - 8));
+  if (T < 8) T = y + 18;
+  T = Math.max(8, Math.min(T, innerHeight - h - 8));
+  if (!was) { el.style.transition = 'none'; el.style.transform = `translate(${L}px,${T + 6}px)`; el.offsetWidth; el.style.transition = ''; }
+  el.style.transform = `translate(${L}px,${T}px)`;
+  el.classList.add('show'); stTip.at = Date.now();
+}
+function stHide() {
+  if (!stTip.el?.classList.contains('show')) return;
+  stTip.el.classList.remove('show'); VYR.ui.stOn = null;
+  document.querySelectorAll('.stcol.on, .stbar i.on').forEach(c => c.classList.remove('on'));
+}
+document.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
+  const col = e.target.closest?.('.stcol[data-st]');
+  col ? stShow(col, e.target.dataset?.p, e.clientX, e.clientY) : stHide();
+});
+document.addEventListener('click', e => { // na mobilu: ťuk na sloupec = bublina, ťuk jinam = pryč
+  const col = e.target.closest?.('.stcol[data-st]');
+  if (!col) return stHide();
+  if (e.pointerType === 'mouse') return;
+  const r = col.getBoundingClientRect(); // bublina pod graf, ať prst a sloupce zůstanou vidět
+  stShow(col, e.target.dataset?.p, r.left + r.width / 2, r.bottom, true);
+});
+addEventListener('scroll', () => stTip.el?.classList.contains('show') && Date.now() - stTip.at > 400 && matchMedia('(hover: none)').matches && stHide(), {passive: true});
 // ⏱️ živý ukazatel nahoře: dnešní čas na projektech a projekt, který máš teď otevřený (SLEDOVÁNÍ ČASU.bat, co minutu)
 function projTotal(name) { // celkový čas projektu ze statistik (všechny dny)
   return Object.values(VYR.d.statistiky?.cas || {}).reduce((a, d) => a + (d[name] || 0), 0);
@@ -4919,11 +5015,19 @@ function vyrLive() {
   const cur = fresh ? L.projekt : null;
   const curDnes = cur ? dnes[cur] || 0 : 0;
   const curCelkem = cur ? Math.max(projTotal(cur) - (S0?.cas?.[today]?.[cur] || 0) + curDnes, L?.projekt_celkem || 0) : 0;
+  // mini graf dneška: každý projekt jeden proužek; při změně proužky dojedou z minulé délky, nový projekt vyjede
+  const rows = Object.entries(dnes).filter(([, m]) => m >= 0.5).sort((a, b) => b[1] - a[1]);
+  const mx = Math.max(1, ...rows.map(r => r[1])), prev = VYR.ui.dayW || {}, nw = {};
+  const day = rows.length ? `<div class="vyrday">${rows.map(([p, m]) => { const w = m / mx * 100; nw[p] = w;
+    return `<div class="vdr${p === cur ? ' cur' : ''}${prev[p] == null ? ' new' : ''}"><i style="background:${projCol(p)}"></i><span>${esc(p)}</span>
+      <u><s style="width:${w}%;--from:${prev[p] ?? 0}%;background:${projCol(p)}"></s></u><em>${hm(m)}</em></div>`; }).join('')}</div>` : '';
+  VYR.ui.dayW = nw;
   return `<div class="vyrlive2">
     <div><span class="ch">Dnes na projektech</span><b>${hm(sumDnes)}</b></div>
     ${cur ? `<div class="cur"><span class="ch">${L.aktivni ? '<i class="dot"></i> Právě edituješ' : 'Otevřený v DaVinci'}</span><b>${esc(cur)}</b>
       <span class="ch">dnes <b>${hm(curDnes)}</b> · celkem <b>${hm(curCelkem)}</b></span></div>`
       : `<div class="ch">${L ? 'DaVinci teď neběží' : 'Pro živé měření spusť na PC <b>SLEDOVÁNÍ ČASU.bat</b>'}</div>`}
+    ${day}
   </div>`;
 }
 // ▶️ hrubý náhled editu z PC (tools/nahled_server.py, spouští se NÁHLED.bat) – odkazy zapisuje server do vyroba_nahled.json
