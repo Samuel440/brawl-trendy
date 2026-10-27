@@ -510,6 +510,8 @@ svg.hist.bandin polygon,svg.hist.bandin polyline[stroke-dasharray]{animation:ban
 .dropicon{font-size:34px}
 .droph{display:flex;justify-content:space-between;align-items:center;gap:6px}
 .dropup{border-color:var(--accent)}
+.fresh{margin:8px 0 0;font-size:12px;color:var(--muted)}
+.fresh.old{color:#f4a261;font-weight:700}
 .loadnote{margin:8px 16px 0;padding:8px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--accent);font-weight:700;font-size:13px;animation:lnpuls 1.4s ease-in-out infinite}
 @keyframes lnpuls{50%{border-color:var(--line)}}
 .dropup.err{border-color:var(--hot)}
@@ -808,7 +810,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-27.158'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-27.159'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2333,6 +2335,10 @@ function langOk(it, c) {
   return !OTHER_SCRIPT.test(it.t);
 }
 function enrich(it, c) {
+  // zhlédnutí z NEJNOVĚJŠÍHO měření: robot měří grafy co 30 min, seznam se stahuje řidčeji (grafik bez klíče
+  // viděl čísla z rána) → když je bod grafu novější než číslo v seznamu, vzít ho
+  const hp = histDb(histKey(it.id))[it.id], last = hp?.[hp.length - 1];
+  if (last && last[0] > (it.st || 0) + 60e3 && last[1] >= it.views) it = {...it, views:last[1], st:last[0]};
   const ageH = Math.max((Date.now() - new Date(it.pub)) / 3600e3, 0.25);
   const formats = FORMATS.filter(f => f[1].test(it.t));
   const brawlers = BRAWLER_RX.filter(b => b[1].test(it.t)).map(b => b[0]);
@@ -4269,7 +4275,9 @@ function renderCountry(set, c, p) {
       : 'Zatím žádná data.';
     $('#main').innerHTML = (p !== 'arch' && driveGate() ? driveGateHtml() : '') + `<div class="empty">${why}</div>`; return;
   }
-  let list = prepare(set.items, c).filter(matchQ).sort(SORTS[S.sort]);
+  // 24 h = opravdu posledních 24 h od TEĎ (seznam z ranního stažení obsahoval i videa, která jsou teď už 40 h stará)
+  const maxAge = p === 'day' ? 24 * 3600e3 : p === 'week' ? 7 * 864e5 : 0;
+  let list = prepare(maxAge ? set.items.filter(it => Date.now() - new Date(it.pub) <= maxAge) : set.items, c).filter(matchQ).sort(SORTS[S.sort]);
   if (S.sort === 'outlier') list = spreadChannels(list);
   const q = S.q.trim(), qTr = q && QTR[c.lang + '|' + q];
   const fm = countBy(list, it => it.formats.map(f => f[0]), it => it.views);
@@ -4302,6 +4310,12 @@ function renderCountry(set, c, p) {
         <div class="addch"><input id="chInput" placeholder="@LukasBrawlStars nebo odkaz na kanál"><button id="btnAddCh">➕ Přidat kanál do ${esc(c.name)}</button></div></details>
       ${(() => { const d = discInfo(c.id); return `<div class="row ch">🔭 Objevování malých kanálů: ${d.last ? `naposledy ${ago((Date.now() - d.last) / 3600e3)}, celkem objeveno ${d.total || 0}` : 'ještě neproběhlo'}${S.discover ? ` · důkladně samo jednou za ${S.discDays} ${S.discDays === 1 ? 'den' : 'dní'}` : ' · vypnuté v Nastavení'} <button data-discover="${c.id}"${searchLeft() ? ' class="costly" title="1 hledání ze 100 denních + pár levných dotazů"' : ''}>🔭 Hledat malé kanály teď</button>${S.key && TIME_PERIODS.includes(S.period) ? ` <button data-refreshnow class="costly" title="Plné hledání nových videí v ${esc(c.name)} hned teď (1–2 hledání ze 100), bez čekání na časomíru">⟳ Aktualizovat vše teď</button>` : ''}</div>`; })()}
     </details></div>
+    ${(() => { // 📊 jak čerstvá jsou čísla (medián stáří měření) – staré = barevně, ať nikdo nečte ranní zhlédnutí jako teď
+      if (!TIME_PERIODS.includes(p) || p === 'all' || !list.length) return '';
+      const ages = list.map(it => Date.now() - (it.st || set.ts || 0)).sort((a, b) => a - b), med = ages[Math.floor(ages.length / 2)];
+      const old = med > 90 * 60e3;
+      return `<div class="fresh${old ? ' old' : ''}">📊 Zhlédnutí změřena ${ago(med / 3600e3)}${old ? ' – čísla ještě nejsou aktuální' + (S.key ? ', obnovuje se' : ', obnoví je PC Samka nebo robot (co 30 min)') : ''}</div>`;
+    })()}
     ${list.length ? sections.map(([h, l]) => `<div class="sec"><h2>${h} <span class="ch">(${l.length})</span></h2>${l.length ? `${progCards(l.slice(0, S.showN), false)}${l.length > S.showN ? `<button class="more" data-showmore>Zobrazit dalších ${Math.min(SHOW_STEP, l.length - S.showN)} (z ${l.length})</button>` : ''}` : '<div class="empty">Nic.</div>'}</div>`).join('') : '<div class="empty">Nic nenalezeno. Zkus jiný stát, nebo v ⚙️ Nastavení vypnout „Jen videa z daného státu“.</div>'}
     ${set.next ? `<button class="more" id="btnMore">Načíst dalších 50 (1 hledání)</button>` : ''}`;
   // na mobilu si zapamatovat, že si statistiky otevřel (při překreslení se nezavřou)
