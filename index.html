@@ -810,7 +810,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-27.159'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-27.160'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1385,8 +1385,12 @@ async function syncPullInner(noPush) {
     // nesmí přepsat starší (prázdné zařízení by smazalo ⭐ nebo blokace); smazání řeší bt_tomb
     // máme tu změnu, která ještě není na Disku (novější než všechno tam)? jinak sloučená verze nic nového nepřináší
     // a zpátky ji NEposíláme – dřív se PC, mobil a grafik takhle donekonečna přeposílali tatáž data
-    const localNewer = mine != null && (meta[k] || 0) > e.t;
     const v = mine == null ? e.v : mergeKey(k, mine, e.v);
+    // máme po sloučení něco, co na Disku chybí (odkaz z mobilu, který nestihl odejít, než PC Disk změnilo)? → poslat,
+    // i když je soubor na Disku novější (dřív by to na mobilu zůstalo navždy)
+    const navic = mine != null && e.v != null && /^bt_(drop|mixsaved|star|cal|folds)/.test(k) && (Array.isArray(v) ? v.length > (Array.isArray(e.v) ? e.v.length : 0)
+      : v && typeof v === 'object' && Object.keys(v).length > Object.keys(e.v || {}).length);
+    const localNewer = mine != null && ((meta[k] || 0) > e.t || navic);
     kvSetRaw(k, JSON.stringify(v));
     if (localNewer || SYNC.dirty[k]) { meta[k] = Date.now(); SYNC.dirty[k] = true; } // naše změny → poslat dál
     else meta[k] = e.t;
