@@ -419,6 +419,11 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .pickfolds button{border-radius:999px;padding:4px 11px;font-size:12.5px}
 .pickfolds button[style]{border:2px solid var(--fc)}
 .pickfolds button.on{background:var(--fc,var(--accent));color:#111;font-weight:800;border-color:var(--fc,var(--accent))}
+.calstalebar{position:sticky;top:calc(var(--stick,0px) + 6px);z-index:30;margin:10px 0;padding:14px 16px;border-radius:12px;background:#2b2200;border:2px solid var(--accent);color:var(--text);font-size:15px;line-height:1.45;box-shadow:0 6px 22px #000a;animation:lnpuls 1.4s ease-in-out infinite}
+.calstalebar.off{background:#2b0d12;border-color:var(--hot);animation:none}
+.calstalebar b{color:var(--accent);font-size:16px}
+.calstalebar.off b{color:var(--hot)}
+.caltable.calstale{opacity:.38;filter:grayscale(.85);transition:opacity .4s,filter .4s}
 .calsync{font-size:12px;color:var(--ok);margin-top:4px}
 .calsync.busy{color:var(--accent);font-weight:700}
 .calsync.old{color:#f4a261;font-weight:700}
@@ -813,7 +818,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-28.162'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-28.163'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1349,7 +1354,7 @@ async function quickPull() {
     const mine = ls(d.k, null);
     kvSetRaw(d.k, JSON.stringify(mine == null ? d.v : mergeKey(d.k, mine, d.v)));
   }
-  SYNC.calFresh = true;
+  SYNC.calFresh = true; CALSYNC.ok = Date.now(); // ☁️ kalendář ověřený s Diskem → zašednutí pryč
 }
 // přihlášení Googlem platí hodinu – pak sdílení počká na nové kliknutí
 function driveLost() {
@@ -2807,15 +2812,17 @@ function renderCal() {
   const calWarn = CAL_LINK && REMOTE !== DRIVE_BACKEND
     ? `<div class="calwarn">🔗 Odkaz na video z kalendáře – nejdřív se připoj ke Google Disku, pak se video samo otevře. <button class="primary" id="btnDrive">☁️ Připojit Disk</button>${inApp ? '<br><span class="ch">Jsi v prohlížeči uvnitř aplikace (Instagram…) – tam přihlášení Googlem často nejde. Otevři odkaz v Safari / Chromu (⋯ → Otevřít v prohlížeči).</span>' : ''}</div>`
     : !gClientId() || !driveUsedHere() || SYNC.calFresh ? ''
-    : REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.token ? '<div class="calwarn">⏳ Načítám nejnovější kalendář z Disku… zatím vidíš verzi z minulé návštěvy.</div>'
-    : '<div class="calwarn">⚠️ Disk není připojený – kalendář může být starší než u ostatních. <button class="primary" id="btnDrive">☁️ Připojit Disk</button></div>';
+    : REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.token ? '<div class="calstalebar">⏳ <b>Načítám nejnovější kalendář z Disku…</b><br>Tohle ještě NENÍ aktuální plán – je to verze z tvé minulé návštěvy. Za pár vteřin se sám ukáže ten správný.</div>'
+    : '<div class="calstalebar off">⚠️ <b>Disk není připojený – tohle NENÍ aktuální kalendář</b><br>Vidíš verzi z tvé minulé návštěvy, videa můžou být jinde. <button class="primary" id="btnDrive">☁️ Připojit Disk</button></div>';
+  // dokud kalendář není ověřený s Diskem: zašednout, ať ho nikdo nebere jako hotový plán
+  const calStale = !CAL_LINK && !!calWarn;
   $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>${calWarn}<div id="calSync" class="calsync"></div>
       <div class="row"><button data-calshift="-1">◀ Týden zpět</button><button data-calshift="0">Dnes</button><button data-calshift="1">Týden dál ▶</button>
         ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div>
       ${own ? '' : PING.on() ? '<div class="row ch">🔔 Oznámení zapnutá – když ti Samko pošle zadání miniatury, vyskočí okno se zvukem (stačí mít stránku otevřenou, klidně na pozadí).</div>'
         : '<div class="row"><button class="primary" data-pingon>🔔 Zapnout oznámení od Samka</button><span class="ch">Okno se zvukem na Windows i mobilu, když ti pošle zadání miniatury.</span></div>'}</div>
-    <div class="caltable" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
+    <div class="caltable${calStale ? ' calstale' : ''}" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
   if (CAL_LINK) setTimeout(openCalLink); // 🔗 přišel odkaz na video z kalendáře
   const hd = $('header');
   // sjet na dnešní den (pod lepící lištu a řádek DEN | NÁZEV …)
