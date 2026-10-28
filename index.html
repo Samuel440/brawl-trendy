@@ -419,7 +419,7 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .pickfolds button{border-radius:999px;padding:4px 11px;font-size:12.5px}
 .pickfolds button[style]{border:2px solid var(--fc)}
 .pickfolds button.on{background:var(--fc,var(--accent));color:#111;font-weight:800;border-color:var(--fc,var(--accent))}
-.calstalebar{position:sticky;top:calc(var(--stick,0px) + 6px);z-index:30;margin:10px 0;padding:14px 16px;border-radius:12px;background:#2b2200;border:2px solid var(--accent);color:var(--text);font-size:15px;line-height:1.45;box-shadow:0 6px 22px #000a;animation:lnpuls 1.4s ease-in-out infinite}
+.calstalebar{position:fixed;left:50%;transform:translateX(-50%);top:var(--cstop,70px);z-index:60;width:min(760px,calc(100% - 24px));box-sizing:border-box;padding:14px 16px;border-radius:12px;background:#2b2200;border:2px solid var(--accent);color:var(--text);font-size:15px;line-height:1.45;box-shadow:0 6px 22px #000a;animation:lnpuls 1.4s ease-in-out infinite}
 .calstalebar.off{background:#2b0d12;border-color:var(--hot);animation:none}
 .calstalebar b{color:var(--accent);font-size:16px}
 .calstalebar.off b{color:var(--hot)}
@@ -818,7 +818,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-28.163'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-28.164'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2825,6 +2825,8 @@ function renderCal() {
     <div class="caltable${calStale ? ' calstale' : ''}" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
   if (CAL_LINK) setTimeout(openCalLink); // 🔗 přišel odkaz na video z kalendáře
   const hd = $('header');
+  // pruh „NENÍ aktuální kalendář“ visí hned pod horní lištou, ať je vidět i po sjetí na dnešek
+  document.querySelector('.calstalebar')?.style.setProperty('--cstop', (getComputedStyle(hd).position === 'sticky' ? hd.offsetHeight : 0) + 8 + 'px');
   // sjet na dnešní den (pod lepící lištu a řádek DEN | NÁZEV …)
   if (S.calJump) {
     S.calJump = false;
