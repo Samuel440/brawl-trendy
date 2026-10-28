@@ -419,6 +419,9 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .pickfolds button{border-radius:999px;padding:4px 11px;font-size:12.5px}
 .pickfolds button[style]{border:2px solid var(--fc)}
 .pickfolds button.on{background:var(--fc,var(--accent));color:#111;font-weight:800;border-color:var(--fc,var(--accent))}
+.calsync{font-size:12px;color:var(--ok);margin-top:4px}
+.calsync.busy{color:var(--accent);font-weight:700}
+.calsync.old{color:#f4a261;font-weight:700}
 .calwarn{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:60;width:max-content;max-width:calc(100% - 24px);
   display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;padding:9px 14px;border-radius:12px;background:var(--panel2);border:1px solid var(--accent);box-shadow:0 6px 24px rgba(0,0,0,.5);font-size:13.5px}
 .oauthbtn{display:block;text-align:center;margin:14px 0 8px;padding:14px 18px;border-radius:12px;background:var(--accent);color:#111;font-weight:900;font-size:17px;text-decoration:none}
@@ -810,7 +813,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-27.160'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-28.161'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1388,8 +1391,10 @@ async function syncPullInner(noPush) {
     const v = mine == null ? e.v : mergeKey(k, mine, e.v);
     // máme po sloučení něco, co na Disku chybí (odkaz z mobilu, který nestihl odejít, než PC Disk změnilo)? → poslat,
     // i když je soubor na Disku novější (dřív by to na mobilu zůstalo navždy)
-    const navic = mine != null && e.v != null && /^bt_(drop|mixsaved|star|cal|folds)/.test(k) && (Array.isArray(v) ? v.length > (Array.isArray(e.v) ? e.v.length : 0)
-      : v && typeof v === 'object' && Object.keys(v).length > Object.keys(e.v || {}).length);
+    // (i ZMĚNA položky – přesun videa v kalendáři: stejný počet, ale novější „at“ než na Disku)
+    const navic = mine != null && e.v != null && /^bt_(drop|mixsaved|star|cal|folds)/.test(k) && (Array.isArray(v)
+      ? v.length > (Array.isArray(e.v) ? e.v.length : 0)
+      : !!v && typeof v === 'object' && Object.entries(v).some(([id, x]) => !(id in (e.v || {})) || (x && typeof x === 'object' && (x.at || 0) > (e.v[id]?.at || 0))));
     const localNewer = mine != null && ((meta[k] || 0) > e.t || navic);
     kvSetRaw(k, JSON.stringify(v));
     if (localNewer || SYNC.dirty[k]) { meta[k] = Date.now(); SYNC.dirty[k] = true; } // naše změny → poslat dál
@@ -2736,19 +2741,45 @@ const calCreated = e => e.created || parseInt(String(e.id).slice(1), 36) || e.at
 function calSave(e) {
   if (!isOwner()) return;
   const all = ls(calKey(), {}); all[e.id] = {...e, created:e.created || calCreated(e), at:Date.now()}; ss(calKey(), all);
+  calPushNow();
 }
+// 🗓️ změna v kalendáři hned na Disk (dřív až s časovačem – druhé zařízení a grafik 3 min viděli starý plán)
+function calPushNow() {
+  if (REMOTE !== DRIVE_BACKEND) return;
+  CALSYNC.pending = Date.now(); calSyncNote();
+  clearTimeout(SYNC.timer); clearTimeout(CALSYNC.t);
+  CALSYNC.t = setTimeout(() => Promise.resolve(syncPush()).finally(() => { CALSYNC.pending = 0; CALSYNC.ok = Date.now(); calSyncNote(); }), 400); // (víc změn najednou = jedno odeslání)
+}
+// ☁️ stav kalendáře nad ním: kdy naposledy zkontrolováno s Diskem / že se právě odesílá
+const CALSYNC = {ok:0, pending:0, t:null, busy:false};
+function calSyncNote() {
+  const el = document.querySelector('#calSync'); if (!el) return;
+  const s = CALSYNC.ok ? Math.round((Date.now() - CALSYNC.ok) / 1000) : null;
+  el.className = 'calsync' + (CALSYNC.pending ? ' busy' : s == null || s > 60 ? ' old' : '');
+  el.textContent = REMOTE !== DRIVE_BACKEND ? '☁️ Disk není připojený – kalendář se nesdílí'
+    : CALSYNC.pending ? '⏳ Odesílám změny na Disk…' : s == null ? '☁️ Kontroluji kalendář na Disku…'
+    : `☁️ Kalendář aktuální – zkontrolováno ${s < 5 ? 'teď' : `před ${s < 60 ? s + ' s' : Math.round(s / 60) + ' min'}`}`;
+}
+// každých 5 s (jen když je kalendář vidět): 1 rychlý dotaz, jestli se kalendář na Disku změnil → jen pak stáhnout
+setInterval(async () => {
+  if (document.hidden || S.period !== 'cal' || REMOTE !== DRIVE_BACKEND || !SYNC.ok || CALSYNC.busy || CALSYNC.pending) { calSyncNote(); return; }
+  CALSYNC.busy = true;
+  try { if (await diskNewer('bt_cal', 0)) await pullShared(); CALSYNC.ok = Date.now(); }
+  catch {} finally { CALSYNC.busy = false; calSyncNote(); }
+}, 5e3);
 // trash = video se zeptá a půjde do 🗑️ koše (prázdné záznamy, které se uklízí samy, ne)
 function calDelete(id, trash) {
   if (!isOwner()) return;
   const all = ls(calKey(), {}), e = all[id];
   if (trash && e) toTrash('cal', calKey(), e, '🗓️ ' + (e.title || 'video bez názvu'));
-  delete all[id]; tomb(calKey(), id); ss(calKey(), all);
+  delete all[id]; tomb(calKey(), id); ss(calKey(), all); calPushNow();
   if (e) logEvent(`📅 smazal z kalendáře ${shortT(e.title || 'video')}`);
   if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
 }
 function calNotes(id) { return collections('bt_calg').flatMap(w => (ls(calgKey(w), {})[id] || []).map(n => ({...n, w}))).sort((a, b) => a.at - b.at); }
 function renderCal() {
   const own = isOwner();
+  setTimeout(calSyncNote, 0); // ☁️ stav synchronizace hned po vykreslení
   // úplně prázdné záznamy (bez názvu, scénáře, miniatury i inspirace) – vznikly omylem, majitel je rovnou uklidí
   if (own) Object.values(ls(calKey(), {})).filter(e => !e.title && !e.script && !e.thumb && !e.inspo && !e.alt).forEach(e => calDelete(e.id));
   const all = Object.values(ls(calKey(), {}));
@@ -2778,7 +2809,7 @@ function renderCal() {
     : !gClientId() || !driveUsedHere() || SYNC.calFresh ? ''
     : REMOTE === DRIVE_BACKEND || DRIVE.connecting || DRIVE.token ? '<div class="calwarn">⏳ Načítám nejnovější kalendář z Disku… zatím vidíš verzi z minulé návštěvy.</div>'
     : '<div class="calwarn">⚠️ Disk není připojený – kalendář může být starší než u ostatních. <button class="primary" id="btnDrive">☁️ Připojit Disk</button></div>';
-  $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>${calWarn}
+  $('#main').innerHTML = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>${calWarn}<div id="calSync" class="calsync"></div>
       <div class="row"><button data-calshift="-1">◀ Týden zpět</button><button data-calshift="0">Dnes</button><button data-calshift="1">Týden dál ▶</button>
         ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div>
