@@ -818,7 +818,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-28.165'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-28.166'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1346,14 +1346,14 @@ async function driveConnectInner(create, pick) {
 // ⚡ rychlé stažení jen malých důležitých souborů (kalendář, poznámky ke kalendáři, smazané) – pár vteřin místo
 // celého Disku. Sloučí se s tím, co je v prohlížeči; plné stažení po něm to stejně projde znovu.
 async function quickPull() {
-  const files = (await dList(`'${DRIVE.folder}' in parents and (name contains 's_bt_cal' or name contains 's_bt_tomb') and trashed=false`))
-    .filter(f => /^s_bt_(cal|calg(_g_[a-z0-9_]+)?|tomb)__.+\.json$/.test(f.name));
-  const docs = await Promise.all(files.map(f => dGet(f.id).then(r => r.json()).catch(() => null)));
+  const files = await calFiles();
+  const docs = await Promise.all(files.map(f => dGet(f.id).then(r => r.json()).then(d => [f, d]).catch(() => null)));
   // smazané (tomb) první, ať se podle nich řídí slučování kalendáře
-  for (const d of docs.filter(Boolean).sort((a, b) => (b.k === 'bt_tomb') - (a.k === 'bt_tomb'))) {
-    if (!d.k || !SHARED_RX.test(d.k)) continue;
+  for (const [f, d] of docs.filter(Boolean).sort(([, a], [, b]) => (b?.k === 'bt_tomb') - (a?.k === 'bt_tomb'))) {
+    if (!d?.k || !SHARED_RX.test(d.k)) continue;
     const mine = ls(d.k, null);
     kvSetRaw(d.k, JSON.stringify(mine == null ? d.v : mergeKey(d.k, mine, d.v)));
+    calMetaSave(f, d.k, d.t); // tuhle verzi už mám → rychlá kontrola ji nebude stahovat znovu
   }
   SYNC.calFresh = true; CALSYNC.ok = Date.now(); // ☁️ kalendář ověřený s Diskem → zašednutí pryč
 }
@@ -1361,7 +1361,8 @@ async function quickPull() {
 function driveLost() {
   if (REMOTE !== DRIVE_BACKEND) return;
   DRIVE.state = 'expired'; REMOTE = null; SYNC.ok = false;
-  renderHeader();
+  SYNC.calFresh = false; // 🗓️ bez Disku se kalendář nedá ověřit → zase výrazné „NENÍ aktuální“
+  renderHeader(); if (S.period === 'cal' && !S.view) renderMain();
 }
 
 // stáhne, co mezitím načetli ostatní (novější vyhrává), a pošle, co máme novější my
@@ -2753,8 +2754,56 @@ function calSave(e) {
 function calPushNow() {
   if (REMOTE !== DRIVE_BACKEND) return;
   CALSYNC.pending = Date.now(); calSyncNote();
-  clearTimeout(SYNC.timer); clearTimeout(CALSYNC.t);
-  CALSYNC.t = setTimeout(() => Promise.resolve(syncPush()).finally(() => { CALSYNC.pending = 0; CALSYNC.ok = Date.now(); calSyncNote(); }), 400); // (víc změn najednou = jedno odeslání)
+  clearTimeout(CALSYNC.t);
+  CALSYNC.t = setTimeout(calPushFast, 300); // (víc změn najednou = jedno odeslání)
+}
+// ⚡ RYCHLÁ CESTA KALENDÁŘE (cca 1–2 s): dřív šla změna přes syncPush, který NEJDŘÍV stahoval celý Disk (8–20 s)
+// a když zrovna běželo jiné nahrávání, čekalo se na další kolo → druhé zařízení vidělo starý plán i 3 minuty.
+// Teď: stáhnout jen soubory kalendáře (+ smazané), sloučit, nahrát jen je. Nic jiného nečeká.
+const CAL_KEYS = () => [calKey(), 'bt_tomb'];
+async function calFiles() { // soubory kalendáře, poznámek grafika a smazaných
+  return (await dList(`'${DRIVE.folder}' in parents and (name contains 's_bt_cal' or name contains 's_bt_tomb') and trashed=false`))
+    .filter(f => /^s_bt_(cal|calg(_g_[a-z0-9_]+)?|tomb)__.+\.json$/.test(f.name));
+}
+function calMetaSave(f, k, t) { // zapamatovat zpracovanou verzi souboru (rychlá kontrola ji pak nebere jako cizí změnu)
+  DRIVE.meta ||= (() => { try { return JSON.parse(localStorage.getItem('bt_dmeta')) || {_f:DRIVE.folder}; } catch { return {_f:DRIVE.folder}; } })();
+  DRIVE.meta[f.id] = {mt:f.modifiedTime, name:f.name, k, t};
+  try { localStorage.setItem('bt_dmeta', JSON.stringify(DRIVE.meta)); } catch {}
+}
+async function calPushFast() {
+  if (REMOTE !== DRIVE_BACKEND || CALSYNC.pushing) { CALSYNC.t = setTimeout(calPushFast, 500); return; }
+  CALSYNC.pushing = true;
+  try {
+    const files = await calFiles(), keys = CAL_KEYS();
+    // 1) co je na Disku teď (třeba změna z mobilu před vteřinou) – sloučit, ať ji nepřepíšu
+    for (const f of files) {
+      const d = await (await dGet(f.id)).json().catch(() => null);
+      if (d?.k && SHARED_RX.test(d.k)) { const mine = ls(d.k, null); kvSetRaw(d.k, JSON.stringify(mine == null ? d.v : mergeKey(d.k, mine, d.v))); calMetaSave(f, d.k, d.t); }
+    }
+    // 2) nahrát jen svoje soubory kalendáře a smazaných (ID souboru najdu sám – dřív ho znal až po celém stažení)
+    const t = Date.now(), meta = syncMeta(), body = {};
+    for (const k of keys) { const raw = kvRaw(k); if (raw === null) continue; meta[k] = t; body[k] = {v:JSON.parse(raw), t};
+      const own = files.find(f => f.name === `s_${k}__${fileEmail()}.json`); if (own) DRIVE.mine[k] = own.id; }
+    saveMeta();
+    const failed = (await DRIVE_BACKEND.put(body)) || [];
+    for (const k of keys) if (body[k] && !failed.some(x => x.startsWith(k))) { delete SYNC.dirty[k]; syncSeen()[k] = t; }
+    saveSeen();
+    if (failed.length) throw new Error(failed.join(', '));
+    CALSYNC.ok = Date.now(); CALSYNC.err = '';
+  } catch (e) { CALSYNC.err = e.message === 'auth' ? 'přihlášení k Disku vypršelo' : e.message; if (e.message === 'auth') driveLost(); }
+  finally { CALSYNC.pushing = false; CALSYNC.pending = 0; calSyncNote(); if (S.period === 'cal' && !S.view) calmRerender(); }
+}
+// ⚡ rychlé stažení kalendáře: jen když se jeho soubor na Disku změnil (1 dotaz ~0,8 s), stáhne jen ty malé soubory
+async function calPullFast() {
+  const files = await calFiles(), meta = DRIVE.meta || (() => { try { return JSON.parse(localStorage.getItem('bt_dmeta')) || {}; } catch { return {}; } })();
+  const zmenene = files.filter(f => meta[f.id]?.mt !== f.modifiedTime);
+  if (!zmenene.length) return false;
+  const docs = await Promise.all(zmenene.map(f => dGet(f.id).then(r => r.json()).then(d => [f, d]).catch(() => null)));
+  for (const [f, d] of docs.filter(Boolean).sort(([, a], [, b]) => (b?.k === 'bt_tomb') - (a?.k === 'bt_tomb'))) {
+    if (!d?.k || !SHARED_RX.test(d.k)) continue;
+    const mine = ls(d.k, null); kvSetRaw(d.k, JSON.stringify(mine == null ? d.v : mergeKey(d.k, mine, d.v))); calMetaSave(f, d.k, d.t);
+  }
+  return true;
 }
 // ☁️ stav kalendáře nad ním: kdy naposledy zkontrolováno s Diskem / že se právě odesílá
 const CALSYNC = {ok:0, pending:0, t:null, busy:false};
@@ -2763,16 +2812,33 @@ function calSyncNote() {
   const s = CALSYNC.ok ? Math.round((Date.now() - CALSYNC.ok) / 1000) : null;
   el.className = 'calsync' + (CALSYNC.pending ? ' busy' : s == null || s > 60 ? ' old' : '');
   el.textContent = REMOTE !== DRIVE_BACKEND ? '☁️ Disk není připojený – kalendář se nesdílí'
-    : CALSYNC.pending ? '⏳ Odesílám změny na Disk…' : s == null ? '☁️ Kontroluji kalendář na Disku…'
+    : CALSYNC.pending || CALSYNC.pushing ? '⏳ Odesílám změny na Disk…' : CALSYNC.err ? `⚠️ Změnu se nepodařilo odeslat (${CALSYNC.err}) – zkusím znovu` : s == null ? '☁️ Kontroluji kalendář na Disku…'
     : `☁️ Kalendář aktuální – zkontrolováno ${s < 5 ? 'teď' : `před ${s < 60 ? s + ' s' : Math.round(s / 60) + ' min'}`}`;
 }
-// každých 5 s (jen když je kalendář vidět): 1 rychlý dotaz, jestli se kalendář na Disku změnil → jen pak stáhnout
-setInterval(async () => {
-  if (document.hidden || S.period !== 'cal' || REMOTE !== DRIVE_BACKEND || !SYNC.ok || CALSYNC.busy || CALSYNC.pending) { calSyncNote(); return; }
+// každé 2 s (jen když je kalendář vidět): 1 rychlý dotaz, jestli se kalendář na Disku změnil → stáhnout jen jeho soubory
+// (dřív se při změně stahoval celý Disk a čekalo se na úplné první načtení → změna z PC se na mobilu ukázala za minuty)
+async function calCheck() {
+  if (document.hidden || S.period !== 'cal' || REMOTE !== DRIVE_BACKEND || !DRIVE.folder || CALSYNC.busy || CALSYNC.pending || CALSYNC.pushing) { calSyncNote(); return; }
   CALSYNC.busy = true;
-  try { if (await diskNewer('bt_cal', 0)) await pullShared(); CALSYNC.ok = Date.now(); }
-  catch {} finally { CALSYNC.busy = false; calSyncNote(); }
-}, 5e3);
+  try {
+    const zmena = await calPullFast();
+    CALSYNC.ok = Date.now(); CALSYNC.err = '';
+    const bylStary = !SYNC.calFresh; SYNC.calFresh = true;
+    if ((zmena || bylStary) && !S.view) calmRerender();
+  } catch (e) { if (e.message === 'auth') driveLost(); }
+  finally { CALSYNC.busy = false; calSyncNote(); }
+}
+setInterval(() => {
+  // ověření starší než 12 s (spánek, slabý signál, chyba) = zase výrazné „NENÍ aktuální“, dokud se neověří
+  if (S.period === 'cal' && SYNC.calFresh && CALSYNC.ok && Date.now() - CALSYNC.ok > 12e3 && !CALSYNC.pending && !CALSYNC.pushing) { SYNC.calFresh = false; if (!S.view) calmRerender(); }
+  calCheck();
+}, 2e3);
+// 📱 návrat do aplikace / přepnutí z jiné karty: kalendář hned označit jako neověřený a ověřit (ne až za pár vteřin)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || S.period !== 'cal' || REMOTE !== DRIVE_BACKEND) return;
+  if (Date.now() - (CALSYNC.ok || 0) > 3e3) { SYNC.calFresh = false; if (!S.view) calmRerender(); }
+  calCheck();
+});
 // trash = video se zeptá a půjde do 🗑️ koše (prázdné záznamy, které se uklízí samy, ne)
 function calDelete(id, trash) {
   if (!isOwner()) return;
