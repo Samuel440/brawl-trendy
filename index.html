@@ -116,7 +116,30 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .vyrcard.wide{grid-column:1/-1}
 .vyrtop{grid-template-columns:repeat(auto-fit,minmax(380px,1fr))}
 .vyrsec{margin:18px 0 6px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.vyrhist{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.vyrhist{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,170px));gap:8px;margin-bottom:12px}
+.vyrloading{font-size:12px;color:var(--muted);margin:8px 0 -4px;animation:vyrpulse 1.4s infinite}
+.vyropen{grid-column:1/-1;position:relative;transform-origin:top left}
+.vyropen > .vyrcard{margin:0}
+.vyropen .vyrclose{display:none}
+.vyropen .vt-close{position:absolute;top:10px;right:10px;z-index:2;padding:2px 9px;font-size:14px}
+.vyropen.grow{animation:vyrgrow .34s cubic-bezier(.2,.9,.25,1) both}
+.vyropen.shrink{animation:vyrshrink .23s ease-in both}
+.vyrtile.pop{animation:vyrpop .28s cubic-bezier(.2,.9,.25,1.2) both}
+@keyframes vyrgrow{from{opacity:0;transform:scale(.35,.2);clip-path:inset(0 70% 80% 0 round 10px)}to{opacity:1;transform:none;clip-path:inset(0 0 0 0 round 14px)}}
+@keyframes vyrshrink{to{opacity:0;transform:scale(.35,.2);clip-path:inset(0 70% 80% 0 round 10px)}}
+@keyframes vyrpop{from{opacity:0;transform:scale(1.25)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.vyropen.grow,.vyropen.shrink,.vyrtile.pop{animation:none}}
+.vyrtile{position:relative;display:flex;flex-direction:column;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;font-size:12px;min-width:0}
+.vyrtile.chyba{border-color:var(--hot)}.vyrtile.empty{opacity:.6}
+.vyrtile .vt-img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:7px;background:var(--panel2);margin-bottom:3px}
+.vyrtile .vt-ico{display:flex;align-items:center;justify-content:center;font-size:26px}
+.vyrtile b{font-size:12px;white-space:nowrap}
+.vyrtile .vt-t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vyrtile .ch{font-size:11px}
+.vyrtile.hotovo .vt-st{color:#2fbf55}.vyrtile.chyba .vt-st{color:var(--hot)}
+.vyrtile .vt-open{position:absolute;top:9px;right:9px;padding:1px 6px;font-size:12px;line-height:1.2;opacity:.85}
+.vyrtile .vt-nah{display:flex;gap:4px;margin-top:3px}
+.vyrtile .vt-nah a{flex:1;text-align:center;padding:3px 0;border-radius:6px;background:var(--panel2);text-decoration:none;font-size:12px}
 .vyrrowh{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 12px;min-width:0}
 .vyrrowh .vh-name{white-space:nowrap}
 .vyrrowh .vh-t{flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
@@ -156,6 +179,8 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .stgrid h4{margin:6px 0}
 .stnums{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px}
 .stnums b{font-size:18px;color:var(--accent)}
+.stpen .stnums b,.stpen .stlist b{color:#2fbf55}
+.stpen .stcol.on .stbar{box-shadow:0 0 0 2px #2fbf55,0 6px 16px rgba(0,0,0,.35)}
 .stlist{display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0;font-size:13px}
 .stlist i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
 .stchart{display:flex;gap:3px;align-items:flex-end;height:150px;margin-top:8px;padding-bottom:2px}
@@ -839,7 +864,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-30.171'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-30.172'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1352,6 +1377,7 @@ async function driveConnectInner(create, pick) {
     if (!await driveInit(create)) { status('☁️ Na Disku zatím není složka „' + DRIVE_FOLDER + '“ – založ ji v ⚙️ Nastavení, nebo počkej, až ti ji někdo nasdílí.', true); renderMain(); return; }
     REMOTE = DRIVE_BACKEND; DRIVE_BACKEND.ready = false; ss('bt_gdrive', true);
     renderHeader(); status(`☁️ Disk připojen (${DRIVE.email}) – stahuji, co je nového…`); // ☁️ hned, data se dotahují
+    if (isOwner()) vyrPull(); // 🛠️ Výroba hned (nečeká na stažení všech ostatních dat)
     setTimeout(() => pullMissingChannels().then(() => rerender()).catch(() => {}), 5000);
     S.starWho = null; reloadMemory(); // kolekce ⭐ a 💡 podle toho, kdo je přihlášený
     // 🗓️ kalendář (a poznámky grafika) stáhnout HNED jako první – celé stažení všech dat (desítky MB) trvá
@@ -5105,7 +5131,7 @@ function renderMain() {
 // ---------- 🛠️ Výroba: průběh DABINGU a AUTO EDITU z PC (i na mobilu) ----------
 // Programy na PC zapisují vyroba_dabing.json / vyroba_edit.json do složky na G: (Google Drive pro počítač je nahraje,
 // tools/vyroba_stav.py). Tady se jen čtou přes Disk – co 5 s, dokud je záložka otevřená. Nic se nikam neposílá.
-const VYR = {d:{}, mt:{}, at:0, err:'', busy:false, timer:null};
+const VYR = {d:(() => { try { return JSON.parse(localStorage.getItem('bt_vyrcache')) || {}; } catch { return {}; } })(), mt:{}, at:0, err:'', busy:false, timer:null};
 const VYR_PROG = {dabing:{name:'🎙️ DABING', hint:'Spustíš S:\\DABING\\SPUSTIT.bat'}, edit:{name:'✂️ AUTO EDIT', hint:'Spustíš S:\\EDIT\\Auto Edit.bat'},
   render:{name:'🎬 RENDER', hint:'Render v DaVinci hlídá SLEDOVÁNÍ ČASU'}};
 // 📲 upozornění na Samkův mobil (ntfy): konec / chyba DABINGU, AUTO EDITU a renderu – kanál vymyslí PC (vyroba_upozorneni.json)
@@ -5130,17 +5156,24 @@ async function vyrPull() {
     for (const f of await dList(`'${DRIVE.folder}' in parents and name contains 'vyroba_' and trashed=false`))
       if (!newest[f.name] || f.modifiedTime > newest[f.name].modifiedTime) newest[f.name] = f;
     let changed = false;
-    for (const f of Object.values(newest)) {
+    // ⚡ všechno naráz (dřív po jednom → první otevření ~15 s); velká timeline (_tl) až po vykreslení zbytku
+    const stahni = async f => {
       // 🖼️ náhodný snímek z posledního vyrenderovaného videa (PC ho občas vymění) – malý obrázek u AUTO EDITU
       if (f.name === 'vyroba_posledni.jpg') {
         if (VYR.mt[f.name] !== f.modifiedTime) try { const u = URL.createObjectURL(await (await dGet(f.id)).blob()); if (VYR.img) URL.revokeObjectURL(VYR.img); VYR.img = u; VYR.mt[f.name] = f.modifiedTime; changed = true; } catch {}
-        continue;
+        return;
       }
       const m = f.name.match(/^vyroba_(\w+)\.json$/); if (m) (VYR.id ||= {})[m[1]] = f.id;
-      if (!m || VYR.mt[f.name] === f.modifiedTime) continue;
+      if (!m || VYR.mt[f.name] === f.modifiedTime) return;
       try { VYR.d[m[1]] = await (await dGet(f.id)).json(); VYR.mt[f.name] = f.modifiedTime; changed = true; } catch {}
-    }
-    VYR.at = Date.now(); VYR.err = '';
+    };
+    const all = Object.values(newest), tl = all.filter(f => /_tl\.json$/.test(f.name));
+    await Promise.all(all.filter(f => !tl.includes(f)).map(stahni));
+    if (changed && S.period === 'vyr' && !S.view) { VYR.at = Date.now(); renderVyroba(); }
+    await Promise.all(tl.map(stahni));
+    VYR.at = Date.now(); VYR.err = ''; VYR.fresh = true;
+    // zapamatovat (bez velkých timeline) → příští otevření ukáže stav hned, ne až po stažení z Disku
+    try { localStorage.setItem('bt_vyrcache', JSON.stringify(Object.fromEntries(Object.entries(VYR.d).filter(([k]) => !k.endsWith('_tl'))))); } catch {}
     // překreslit jen při změně (timeline má tisíce klipů), jinak jednou za minutu kvůli „aktualizováno před…“
     if (changed || Date.now() - (VYR.drawn || 0) > 60e3) { if (S.period === 'vyr' && !S.view) renderVyroba(); renderHeader(); }
     if (S.period === 'vyr') ytHledej(false); // co 3 min (bez okna – jen když přihlášení k YouTube ještě platí)
@@ -5267,16 +5300,22 @@ document.addEventListener('wheel', e => {
 }, {passive:false});
 const vyrBar = (p, cls = '') => `<span class="vyrbar ${cls}"><i style="width:${Math.max(0, Math.min(100, p || 0))}%"></i></span>`;
 // 🗂️ předchozí běh jako jeden malý řádek (místo velké karty): co, jak dopadlo, jak dlouho trvalo, kdy; ťuk = rozbalit
+// (malý čtvereček: obrázek / ikona, co, jak dopadlo, jak dlouho, kdy; ⤢ = rozbalit celou kartu)
 function vyrRow(key) {
   const d = VYR.d[key], P = VYR_PROG[key] || {name:key, hint:''};
-  const img = key === 'edit' && VYR.img ? `<img class="vyrthumb" src="${VYR.img}" alt="" title="${esc(VYR.d.posledni ? `${VYR.d.posledni.soubor} · snímek v ${vyrCas(VYR.d.posledni.cas_s || 0)}` : 'poslední video')}">` : '';
-  const extra = key === 'edit' ? vyrNahled() : '';
-  if (!d) return `<div class="vyrrowh">${img}<b class="vh-name">${P.name}</b><span class="vh-t ch">zatím žádný běh – ${esc(P.hint)}</span>${extra}</div>`;
-  const st = vyrAlive(d) ? '<span class="tag hot vyrpulse">● běží</span>' : d.stav === 'hotovo' ? '<span class="tag ok">✔</span>' : d.stav === 'chyba' ? '<span class="tag hot">✖ chyba</span>' : '<span class="tag">⚠ přerušeno</span>';
-  const trvalo = d.konec && d.start ? `trvalo <b>${vyrCas((d.konec - d.start) / 1000)}</b> · ` : '';
+  const [ico, ...jm] = P.name.split(' ');
+  const img = key === 'edit' && VYR.img ? `<img class="vt-img" src="${VYR.img}" alt="" title="${esc(VYR.d.posledni ? `${VYR.d.posledni.soubor} · snímek v ${vyrCas(VYR.d.posledni.cas_s || 0)}` : 'poslední video')}">` : `<span class="vt-img vt-ico">${ico}</span>`;
+  const n = VYR.d.nahled, nl = key === 'edit' && n && Date.now() - (n.t || 0) < 15 * 60e3;
+  const proj = VYR.d.edit && !/UKÁZKA/.test(VYR.d.edit.nazev) ? '&p=' + encodeURIComponent(VYR.d.edit.nazev) : '';
+  const nah = nl ? `<span class="vt-nah">${[[n.pc, '💻', 'Náhled na tomhle PC'], [(n.lan || [])[0], '📱', 'Náhled na mobilu (Wi-Fi)'], [(n.tailscale || [])[0], '🌍', 'Náhled kdekoli']]
+    .filter(x => x[0]).map(([u, i, t]) => `<a href="${esc(u + proj + '&z=1')}" title="${t}" referrerpolicy="origin">▶${i}</a>`).join('')}</span>` : '';
+  if (!d) return `<div class="vyrtile empty">${img}<b>${jm.join(' ')}</b><span class="ch">zatím nic</span>${nah}</div>`;
+  const st = vyrAlive(d) ? '●' : d.stav === 'hotovo' ? '✔' : d.stav === 'chyba' ? '✖' : '⚠';
+  const trvalo = d.konec && d.start ? vyrCas((d.konec - d.start) / 1000) + ' · ' : '';
   const jaz = key === 'dabing' && d.jazyky?.length ? `<span class="vh-jaz">${d.jazyky.map(j => { const y = ytJaz(d.nazev, j.k); return `<i class="${y.cls}"${y.attr}>${esc(j.k)}</i>`; }).join('')}</span>` : '';
-  return `<div class="vyrrowh">${img}<b class="vh-name">${P.name}</b>${st}<span class="vh-t" title="${esc(d.zprava || '')}">${esc(d.nazev || '')}</span>
-    <span class="ch">${trvalo}${ago((Date.now() - (d.konec || d.t)) / 3600e3)}</span>${jaz}${extra}<button class="vh-btn" data-vyrshow="${key}">Ukázat</button></div>`;
+  return `<div class="vyrtile ${d.stav}" title="${esc(d.zprava || '')}">${img}<button class="vt-open" data-vyrshow="${key}" title="Rozbalit">⤢</button>
+    <b><span class="vt-st">${st}</span> ${jm.join(' ')}</b><span class="vt-t">${esc(d.nazev || '')}</span>
+    <span class="ch">${trvalo}${ago((Date.now() - (d.konec || d.t)) / 3600e3)}</span>${jaz}${nah}</div>`;
 }
 function vyrCard(key, full) {
   const d = VYR.d[key], P = VYR_PROG[key] || {name:key, hint:''};
@@ -5354,7 +5393,9 @@ setInterval(() => {
 }, 1000);
 // 📊 statistiky: čas na projektech (podle záloh DaVinci) a peníze za AI (AUTO EDIT, DABING) – tools/vyroba_statistiky.py
 const hm = min => { min = Math.round(min); return min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : `${min} min`; };
-const projCol = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) | 0; return `hsl(${Math.abs(h) % 360} 62% 55%)`; };
+// (barvy projektů bez zelené – zelená patří penězům)
+const projCol = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) | 0; return `hsl(${(180 + Math.abs(h) % 260) % 360} 62% 55%)`; };
+const PEN_EDIT = '#2fbf55', PEN_DAB = '#8fe3a5'; // 💰 peníze: AUTO EDIT sytě zelená, DABING světle zelená
 // 🧹 projekty pod 10 min za den (jen překliknutí kvůli efektům) jako jeden šedý kousek „drobné“ – jinak graf zaplavily
 const DROBNE_MIN = 10, DROBNE = 'drobné', DROBNE_COL = '#6c7280';
 function casDen(d) { // → [[projekt, min], …] seřazené; drobné na konci jako jeden řádek, jejich seznam v .male
@@ -5382,26 +5423,26 @@ function vyrStats() {
   const tyden = d14.slice(-7).reduce((a, d) => a + sum(d), 0);
   // 💰 peníze: posledních 30 dní, modrá = AUTO EDIT, fialová = DABING
   const d30 = dayList(30), ps = d => (pd[d]?.edit || 0) + (pd[d]?.dabing || 0), maxP = Math.max(0.5, ...d30.map(ps));
-  const pBars = d30.map((d, k) => col('p', d, k, `${pd[d]?.dabing ? `<i style="height:${pd[d].dabing / maxP * 100}%;background:#9d4edd" data-p="DABING"></i>` : ''}${pd[d]?.edit ? `<i style="height:${pd[d].edit / maxP * 100}%;background:#4895ef" data-p="AUTO EDIT"></i>` : ''}`,
+  const pBars = d30.map((d, k) => col('p', d, k, `${pd[d]?.dabing ? `<i style="height:${pd[d].dabing / maxP * 100}%;background:${PEN_DAB}" data-p="DABING"></i>` : ''}${pd[d]?.edit ? `<i style="height:${pd[d].edit / maxP * 100}%;background:${PEN_EDIT}" data-p="AUTO EDIT"></i>` : ''}`,
     ps(d) ? Math.round(ps(d) * kurz) : '')).join('');
   const C = S0.penize_celkem || {}, month = today.slice(0, 7), mSum = k => Object.entries(pd).filter(([d]) => d.startsWith(month)).reduce((a, [, v]) => a + (v[k] || 0), 0);
   const projP = Object.entries(S0.penize_projekt || {}).map(([p, v]) => [p, (v.edit || 0) + (v.dabing || 0), v]).sort((a, b) => b[1] - a[1]).slice(0, 12);
   return `<div class="summary vyrstats"><h3>📊 Statistiky výroby</h3>
     <div class="stgrid">
-      <div><h4>⏱️ Čas na projektech <span class="ch">(podle záloh DaVinci – když v projektu pracuješ)</span></h4>
+      <div><h4>⏱️ Čas na projektech</h4>
         <div class="stnums"><span>Dnes <b>${hm(sum(today))}</b></span><span>7 dní <b>${hm(tyden)}</b></span></div>
         ${dnes.length ? `<div class="stlist">${dnes.map(([p, m]) => p === DROBNE
           ? `<span class="stmale" title="${esc(dnes.male.map(([q, x]) => `${q} ${hm(x)}`).join(' · '))}"><i style="background:${DROBNE_COL}"></i>${dnes.male.length}× pod ${DROBNE_MIN} min <b>${hm(m)}</b></span>`
           : `<span title="celkem na projektu: ${hm(projTotal(p))}"><i style="background:${projCol(p)}"></i>${esc(p)} <b>${hm(m)}</b></span>`).join('')}</div>` : '<div class="ch">Dnes zatím žádná práce v DaVinci.</div>'}
         <details><summary class="ch">Celkem po projektech (posledních 120 dní)</summary><div class="stlist">${[...new Set(Object.values(cas).flatMap(Object.keys))].map(p => [p, projTotal(p)]).filter(([, m]) => m >= DROBNE_MIN).sort((a, b) => b[1] - a[1]).slice(0, 25)
           .map(([p, m]) => `<span><i style="background:${projCol(p)}"></i>${esc(p)} <b>${hm(m)}</b></span>`).join('')}</div></details>
-        <div class="stchart${anim}">${tBars}</div><div class="ch">Sloupec = den (číslo nahoře = hodiny), barvy = projekty – najeď myší (na mobilu ťukni) a uvidíš celý den.</div></div>
-      <div><h4>💰 Utraceno za AI <span class="ch">(Claude v AUTO EDITU a DABINGU, kurz ${kurz.toFixed(2).replace('.', ',')} Kč/$)</span></h4>
+        <div class="stchart${anim}">${tBars}</div></div>
+      <div class="stpen"><h4>💰 Utraceno</h4>
         <div class="stnums"><span>Dnes <b>${kc(ps(today))}</b></span><span>Tento měsíc <b>${kc(mSum('edit') + mSum('dabing'))}</b></span><span>Celkem <b>${kc((C.edit || 0) + (C.dabing || 0))}</b></span></div>
-        <div class="stlist"><span><i style="background:#4895ef"></i>AUTO EDIT celkem <b>${kc(C.edit || 0)}</b></span><span><i style="background:#9d4edd"></i>DABING celkem <b>${kc(C.dabing || 0)}</b></span></div>
-        <div class="stchart${anim}">${pBars}</div><div class="ch">Posledních 30 dní (číslo nahoře = Kč) – najeď myší / ťukni pro rozpis dne.</div>
+        <div class="stlist"><span><i style="background:${PEN_EDIT}"></i>AUTO EDIT <b>${kc(C.edit || 0)}</b></span><span><i style="background:${PEN_DAB}"></i>DABING <b>${kc(C.dabing || 0)}</b></span></div>
+        <div class="stchart${anim}">${pBars}</div>
         <details><summary class="ch">Podle projektů</summary><div class="stlist">${projP.map(([p, s, v]) => `<span title="AUTO EDIT ${kc(v.edit || 0)} · DABING ${kc(v.dabing || 0)}">${esc(p)} <b>${kc(s)}</b></span>`).join('')}</div></details></div>
-    </div><div class="ch">Aktualizováno ${ago((Date.now() - S0.t) / 3600e3)} (po každém editu a dabingu, a co 30 min, když běží NÁHLED).</div></div>`;
+    </div></div>`;
 }
 // 📊 bublina u grafů: celý den najednou – všechny projekty s časem / penězi, ať se nemusí hledat tenké proužky
 function stTipHtml(t, d) {
@@ -5419,9 +5460,9 @@ function stTipHtml(t, d) {
   }
   const v = S0.penize_den?.[d] || {}, tot = (v.edit || 0) + (v.dabing || 0);
   const pp = Object.entries(S0.penize_den_projekt?.[d] || {}).map(([p, w]) => [p, (w.edit || 0) + (w.dabing || 0), w]).sort((a, b) => b[1] - a[1]);
-  const split = [['AUTO EDIT', '#4895ef', v.edit || 0], ['DABING', '#9d4edd', v.dabing || 0]].filter(r => r[2]);
-  return `<div class="tth"><span>${head}</span><b>${tot ? kc(tot) : '—'}</b></div>${tot ? split.map(([n, c, u]) => row(n, c, kc(u), u / tot * 100, `$${u.toFixed(2)}`)).join('')
-    + (pp.length ? `<div class="ttsep">podle projektů</div>${pp.map(([p, u, w]) => row(p, w.dabing && !w.edit ? '#9d4edd' : w.edit && !w.dabing ? '#4895ef' : projCol(p), kc(u), u / tot * 100,
+  const split = [['AUTO EDIT', PEN_EDIT, v.edit || 0], ['DABING', PEN_DAB, v.dabing || 0]].filter(r => r[2]);
+  return `<div class="tth"><span>${head}</span><b>${tot ? kc(tot) : '—'}</b></div>${tot ? split.map(([n, c, u]) => row(n, c, kc(u), u / tot * 100, '')).join('')
+    + (pp.length ? `<div class="ttsep">podle projektů</div>${pp.map(([p, u, w]) => row(p, w.dabing && !w.edit ? PEN_DAB : PEN_EDIT, kc(u), u / tot * 100,
       w.edit && w.dabing ? `edit ${kc(w.edit)} · dabing ${kc(w.dabing)}` : '')).join('')}` : '') : '<div class="ch">Ten den se za AI nic neutratilo.</div>'}`;
 }
 const stTip = { el: null, html: '' };
@@ -5526,16 +5567,19 @@ function renderVyroba() {
   // jako malé řádky „Předchozí“ (ťuk = rozbalit celou kartu)
   const hidden = (() => { try { return JSON.parse(localStorage.getItem('vyr_skryte') || '{}'); } catch { return {}; } })();
   const nahore = k => { const d = VYR.d[k]; return d && (vyrAlive(d) || (d.stav === 'chyba' && hidden[k] !== d.start && Date.now() - (d.konec || d.t) < 8 * 3600e3)); };
-  const top = keys.filter(nahore), open2 = keys.filter(k => !top.includes(k) && VYR.ui.show?.[k] && VYR.d[k]);
-  const rest = keys.filter(k => !top.includes(k) && !open2.includes(k) && (VYR.d[k] || VYR_PROG[k]));
-  const bezi = top.some(k => vyrAlive(VYR.d[k]));
+  const top = keys.filter(nahore);
+  // předchozí v pevném pořadí; rozbalený se zvětší NA SVÉM MÍSTĚ (přes celou šířku), nic se nepřehazuje
+  const rest = keys.filter(k => !top.includes(k) && (VYR.d[k] || VYR_PROG[k]));
+  const anim = VYR.ui.anim; VYR.ui.anim = null;
+  const hist = k => VYR.ui.show?.[k] && VYR.d[k]
+    ? `<div class="vyropen${anim === k ? ' grow' : ''}" data-open="${k}"><button class="vt-close" data-vyrcollapse="${k}" title="Zmenšit zpátky">⤡</button>${vyrCard(k, true)}</div>`
+    : vyrRow(k).replace('class="vyrtile', `class="vyrtile${anim === '-' + k ? ' pop' : ''}`);
   $('#main').innerHTML = (noDrive || VYR.err ? `<div class="summary">
       ${noDrive ? '<div class="drivegate">☁️ Připoj Google Disk – stav DABINGU a AUTO EDITU se čte z něj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : `<div class="row ch">⚠ ${esc(VYR.err)}</div>`}</div>` : '')
-    + `${top.length ? `<div class="vyrgrid vyrtop">${top.map(k => vyrCard(k, true)).join('')}</div>` : ''}
-    ${bezi ? '' : vyrLive()}
-    ${open2.length ? `<div class="vyrgrid">${open2.map(k => vyrCard(k, true)).join('')}</div>` : ''}
-    ${rest.length ? `<div class="vyrsec">${top.length ? 'Předchozí' : 'Nic neběží · předchozí'}</div><div class="vyrhist">${rest.map(vyrRow).join('')}</div>` : ''}
-    ${bezi ? vyrLive() : ''}${vyrNtfy()}
+    + `${!VYR.fresh && Object.keys(VYR.d).length && !noDrive ? '<div class="vyrloading">⏳ Načítám aktuální stav z Disku… (zatím poslední známý)</div>' : ''}${vyrLive()}
+    ${top.length ? `<div class="vyrgrid vyrtop">${top.map(k => vyrCard(k, true)).join('')}</div>` : ''}
+    ${rest.length ? `<div class="vyrsec">${top.length ? 'Předchozí' : 'Nic neběží · předchozí'}</div><div class="vyrhist">${rest.map(hist).join('')}</div>` : ''}
+    ${vyrNtfy()}
     ${vyrStats()}`;
   document.querySelectorAll('#main .vyrlog').forEach((x, i) => { x.open = !!open[i]; });
   const w = $('#main .tlwrap'); if (w) w.scrollLeft = VYR.ui.scroll || 0;
@@ -5629,7 +5673,13 @@ document.addEventListener('click', e => {
     h[k] = VYR.d[k]?.start; try { localStorage.setItem('vyr_skryte', JSON.stringify(h)); } catch {}
     (VYR.ui.show ||= {})[k] = false; renderVyroba(); return;
   }
-  if (b.dataset.vyrshow) { (VYR.ui.show ||= {})[b.dataset.vyrshow] = true; renderVyroba(); return; }
+  if (b.dataset.vyrshow) { (VYR.ui.show ||= {})[b.dataset.vyrshow] = true; VYR.ui.anim = b.dataset.vyrshow; renderVyroba(); return; }
+  if (b.dataset.vyrcollapse) { // ⤡ zmenšit zpátky: karta se nejdřív plynule smrskne, pak je zase čtvereček na stejném místě
+    const k = b.dataset.vyrcollapse, el = b.closest('.vyropen');
+    (VYR.ui.show ||= {})[k] = false;
+    if (el) { el.classList.add('shrink'); setTimeout(() => { VYR.ui.anim = '-' + k; renderVyroba(); }, 230); } else renderVyroba();
+    return;
+  }
   if (b.dataset.vyrfocus !== undefined) { VYR.ui.focus = VYR.ui.focus === b.dataset.vyrfocus ? null : b.dataset.vyrfocus || null; renderVyroba(); return; }
   if (b.dataset.vyrjump) { // přiblížit a vycentrovat na moment
     const T = VYR.d.edit_tl, s = T?.snimky?.[VYR.ui.snap ?? T.snimky.length - 1]; if (!s) return;
