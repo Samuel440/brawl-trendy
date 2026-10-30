@@ -170,6 +170,10 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 #sttip .ttr u{grid-column:2/4;height:4px;border-radius:2px;background:var(--panel2);overflow:hidden;text-decoration:none}
 #sttip .ttr u s{display:block;height:100%;border-radius:2px;animation:ttbar .5s cubic-bezier(.2,.8,.2,1) both;transform-origin:left}
 #sttip .ttr em{grid-column:2/4;font-style:normal;font-size:11px;color:var(--muted)}
+#sttip .ttmale{font-size:11px;line-height:1.35;color:var(--muted);margin:-2px 0 4px 18px;max-height:4.2em;overflow:hidden}
+.vdr.male,.stlist .stmale{opacity:.7;font-size:12px}
+.pingbtn{animation:pingpulse 1.6s ease-in-out infinite}
+@keyframes pingpulse{50%{box-shadow:0 0 0 5px rgba(255,200,0,.35)}}
 #sttip .ttsep{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 2px}
 @keyframes ttin{from{opacity:0;transform:translateY(4px)}}
 @keyframes ttbar{from{transform:scaleX(0)}}
@@ -818,7 +822,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-30.167'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-30.168'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4261,6 +4265,9 @@ function renderHeader() {
   // ☁️ stav Google Disku: připojeno / tlačítko pro (znovu)připojení – přihlášení jde spustit jen kliknutím
   $('#driveSlot').innerHTML = REMOTE === DRIVE_BACKEND ? '<span class="chip" title="Disk připojený – data se sdílejí přes Google Disk">☁️<span class="hidem"> Disk</span></span>'
     : gClientId() && (ls('bt_gdrive', false) || DRIVE.state === 'expired') ? '<button class="costly" id="btnDrive" title="Připojit Disk – přihlášení Googlem, sdílení dat">☁️<span class="hidem"> Připojit Disk</span></button>' : '';
+  // 🔔 grafik: tlačítko na povolení upozornění v hlavičce na KAŽDÉ záložce (dřív jen malé v Kalendáři – nevšiml si ho)
+  if (!isOwner() && typeof Notification !== 'undefined' && !PING.on())
+    $('#driveSlot').innerHTML += `<button class="primary pingbtn" data-pingon title="Upozornění se zvukem, když ti Samko pošle zadání miniatury">🔔 Povolit upozornění</button>`;
   // bílé tlačítko = ještě nenačtené, kliknutí stojí kvótu (období se počítá pro aktuální stát)
   const tab = k => `<button data-period="${k}" class="${S.period === k ? 'on' : costAttr(openCost(C(S.country), k))}">${PERIODS[k].label}</button>`;
   // v Uložených / Kalendáři / Nápadech místo výběru období jen „🎬 Všechna videa“ → vrátí na poslední vybrané období
@@ -5301,6 +5308,15 @@ setInterval(() => {
 // 📊 statistiky: čas na projektech (podle záloh DaVinci) a peníze za AI (AUTO EDIT, DABING) – tools/vyroba_statistiky.py
 const hm = min => { min = Math.round(min); return min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : `${min} min`; };
 const projCol = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) | 0; return `hsl(${Math.abs(h) % 360} 62% 55%)`; };
+// 🧹 projekty pod 10 min za den (jen překliknutí kvůli efektům) jako jeden šedý kousek „drobné“ – jinak graf zaplavily
+const DROBNE_MIN = 10, DROBNE = 'drobné', DROBNE_COL = '#6c7280';
+function casDen(d) { // → [[projekt, min], …] seřazené; drobné na konci jako jeden řádek, jejich seznam v .male
+  const e = Object.entries(d || {}).sort((a, b) => b[1] - a[1]);
+  const velke = e.filter(([, m]) => m >= DROBNE_MIN), male = e.filter(([, m]) => m < DROBNE_MIN && m > 0);
+  const out = male.length ? [...velke, [DROBNE, male.reduce((a, [, m]) => a + m, 0)]] : velke;
+  out.male = male; return out;
+}
+const casCol = p => p === DROBNE ? DROBNE_COL : projCol(p);
 function vyrStats() {
   const S0 = VYR.d.statistiky; if (!S0) return '';
   const kurz = S0.kurz || 23, kc = usd => Math.round(usd * kurz).toLocaleString('cs') + ' Kč';
@@ -5313,9 +5329,9 @@ function vyrStats() {
   // sloupce rostou jen při otevření záložky (ne při každém obnovení dat); bublinu s celým dnem kreslí stTip
   const anim = !document.querySelector('#main .vyrstats') ? ' anim' : '';
   const col = (t, d, k, inner, num) => `<div class="stcol${VYR.ui.stOn === t + '|' + d ? ' on' : ''}" data-st="${t}" data-d="${d}" style="--k:${k}"><div class="stbar">${inner}</div><span>${num}</span><b>${new Date(d + 'T12:00').getDate()}</b></div>`;
-  const tBars = d14.map((d, k) => col('t', d, k, Object.entries(cas[d] || {}).sort((a, b) => b[1] - a[1]).map(([p, m]) =>
-    `<i style="height:${m / maxT * 100}%;background:${projCol(p)}" data-p="${esc(p)}"></i>`).join(''), sum(d) ? (sum(d) / 60).toFixed(1).replace('.', ',') : '')).join('');
-  const dnes = Object.entries(cas[today] || {}).sort((a, b) => b[1] - a[1]);
+  const tBars = d14.map((d, k) => col('t', d, k, casDen(cas[d]).map(([p, m]) =>
+    `<i style="height:${m / maxT * 100}%;background:${casCol(p)}" data-p="${esc(p)}"></i>`).join(''), sum(d) ? (sum(d) / 60).toFixed(1).replace('.', ',') : '')).join('');
+  const dnes = casDen(cas[today]);
   const tyden = d14.slice(-7).reduce((a, d) => a + sum(d), 0);
   // 💰 peníze: posledních 30 dní, modrá = AUTO EDIT, fialová = DABING
   const d30 = dayList(30), ps = d => (pd[d]?.edit || 0) + (pd[d]?.dabing || 0), maxP = Math.max(0.5, ...d30.map(ps));
@@ -5327,8 +5343,10 @@ function vyrStats() {
     <div class="stgrid">
       <div><h4>⏱️ Čas na projektech <span class="ch">(podle záloh DaVinci – když v projektu pracuješ)</span></h4>
         <div class="stnums"><span>Dnes <b>${hm(sum(today))}</b></span><span>7 dní <b>${hm(tyden)}</b></span></div>
-        ${dnes.length ? `<div class="stlist">${dnes.map(([p, m]) => `<span title="celkem na projektu: ${hm(projTotal(p))}"><i style="background:${projCol(p)}"></i>${esc(p)} <b>${hm(m)}</b></span>`).join('')}</div>` : '<div class="ch">Dnes zatím žádná práce v DaVinci.</div>'}
-        <details><summary class="ch">Celkem po projektech (posledních 120 dní)</summary><div class="stlist">${[...new Set(Object.values(cas).flatMap(Object.keys))].map(p => [p, projTotal(p)]).sort((a, b) => b[1] - a[1]).slice(0, 25)
+        ${dnes.length ? `<div class="stlist">${dnes.map(([p, m]) => p === DROBNE
+          ? `<span class="stmale" title="${esc(dnes.male.map(([q, x]) => `${q} ${hm(x)}`).join(' · '))}"><i style="background:${DROBNE_COL}"></i>${dnes.male.length}× pod ${DROBNE_MIN} min <b>${hm(m)}</b></span>`
+          : `<span title="celkem na projektu: ${hm(projTotal(p))}"><i style="background:${projCol(p)}"></i>${esc(p)} <b>${hm(m)}</b></span>`).join('')}</div>` : '<div class="ch">Dnes zatím žádná práce v DaVinci.</div>'}
+        <details><summary class="ch">Celkem po projektech (posledních 120 dní)</summary><div class="stlist">${[...new Set(Object.values(cas).flatMap(Object.keys))].map(p => [p, projTotal(p)]).filter(([, m]) => m >= DROBNE_MIN).sort((a, b) => b[1] - a[1]).slice(0, 25)
           .map(([p, m]) => `<span><i style="background:${projCol(p)}"></i>${esc(p)} <b>${hm(m)}</b></span>`).join('')}</div></details>
         <div class="stchart${anim}">${tBars}</div><div class="ch">Sloupec = den (číslo nahoře = hodiny), barvy = projekty – najeď myší (na mobilu ťukni) a uvidíš celý den.</div></div>
       <div><h4>💰 Utraceno za AI <span class="ch">(Claude v AUTO EDITU a DABINGU, kurz ${kurz.toFixed(2).replace('.', ',')} Kč/$)</span></h4>
@@ -5346,9 +5364,11 @@ function stTipHtml(t, d) {
   const row = (name, color, val, pct, sub) => `<div class="ttr" data-n="${esc(name)}"><i style="background:${color}"></i><span>${esc(name)}</span><b>${val}</b>
     <u><s style="width:${Math.max(2, pct)}%;background:${color}"></s></u>${sub ? `<em>${sub}</em>` : ''}</div>`;
   if (t === 't') {
-    const e = Object.entries(S0.cas?.[d] || {}).sort((a, b) => b[1] - a[1]), tot = e.reduce((a, [, m]) => a + m, 0);
-    return `<div class="tth"><span>${head}</span><b>${tot ? hm(tot) : '—'}</b></div>${e.length ? e.map(([p, m]) =>
-      row(p, projCol(p), hm(m), m / tot * 100, `celkem na projektu ${hm(projTotal(p))}`)).join('') : '<div class="ch">Ten den žádná práce v DaVinci.</div>'}`;
+    const e = casDen(S0.cas?.[d]), tot = e.reduce((a, [, m]) => a + m, 0);
+    return `<div class="tth"><span>${head}</span><b>${tot ? hm(tot) : '—'}</b></div>${e.length ? e.map(([p, m]) => p === DROBNE
+      ? row(`${e.male.length}× projekt pod ${DROBNE_MIN} min`, DROBNE_COL, hm(m), m / tot * 100, '').replace(`data-n="`, `data-n="${DROBNE}" data-x="`)
+        + `<div class="ttmale">${e.male.map(([q, x]) => `${esc(q)} ${hm(x)}`).join(' · ')}</div>`
+      : row(p, projCol(p), hm(m), m / tot * 100, `celkem na projektu ${hm(projTotal(p))}`)).join('') : '<div class="ch">Ten den žádná práce v DaVinci.</div>'}`;
   }
   const v = S0.penize_den?.[d] || {}, tot = (v.edit || 0) + (v.dabing || 0);
   const pp = Object.entries(S0.penize_den_projekt?.[d] || {}).map(([p, w]) => [p, (w.edit || 0) + (w.dabing || 0), w]).sort((a, b) => b[1] - a[1]);
@@ -5417,11 +5437,14 @@ function vyrLive() {
   const curDnes = cur ? dnes[cur] || 0 : 0;
   const curCelkem = cur ? Math.max(projTotal(cur) - (S0?.cas?.[today]?.[cur] || 0) + curDnes, L?.projekt_celkem || 0) : 0;
   // mini graf dneška: každý projekt jeden proužek; při změně proužky dojedou z minulé délky, nový projekt vyjede
-  const rows = Object.entries(dnes).filter(([, m]) => m >= 0.5).sort((a, b) => b[1] - a[1]);
+  // (projekty pod 10 min = jeden šedý řádek „drobné“; ten, ve kterém právě jsi, je vidět vždy)
+  const vse = Object.entries(dnes).filter(([, m]) => m >= 0.5).sort((a, b) => b[1] - a[1]);
+  const male = vse.filter(([p, m]) => m < DROBNE_MIN && p !== cur);
+  const rows = [...vse.filter(r => !male.includes(r)), ...(male.length ? [[DROBNE, male.reduce((a, [, m]) => a + m, 0)]] : [])];
   const mx = Math.max(1, ...rows.map(r => r[1])), prev = VYR.ui.dayW || {}, nw = {};
   const day = rows.length ? `<div class="vyrday">${rows.map(([p, m]) => { const w = m / mx * 100; nw[p] = w;
-    return `<div class="vdr${p === cur ? ' cur' : ''}${prev[p] == null ? ' new' : ''}"><i style="background:${projCol(p)}"></i><span>${esc(p)}</span>
-      <u><s style="width:${w}%;--from:${prev[p] ?? 0}%;background:${projCol(p)}"></s></u><em>${hm(m)}</em></div>`; }).join('')}</div>` : '';
+    return `<div class="vdr${p === cur ? ' cur' : ''}${prev[p] == null ? ' new' : ''}${p === DROBNE ? ' male' : ''}"${p === DROBNE ? ` title="${esc(male.map(([q, x]) => `${q} ${hm(x)}`).join(' · '))}"` : ''}><i style="background:${casCol(p)}"></i><span>${p === DROBNE ? `${male.length}× pod ${DROBNE_MIN} min` : esc(p)}</span>
+      <u><s style="width:${w}%;--from:${prev[p] ?? 0}%;background:${casCol(p)}"></s></u><em>${hm(m)}</em></div>`; }).join('')}</div>` : '';
   VYR.ui.dayW = nw;
   // když zrovna edituješ: čas tiká po vteřinách (sledování posílá co minutu – nejvýš 90 s napřed, pak stojí do další zprávy)
   const ted = !!(cur && L.aktivni), max = ted ? L.t + 90e3 : L?.t || 0;
@@ -5795,10 +5818,15 @@ addEventListener('hashchange', () => { if (location.hash.startsWith('#cal=')) { 
 var PING = {on:() => typeof Notification !== 'undefined' && Notification.permission === 'granted'};
 async function pingEnable() {
   if (typeof Notification === 'undefined') return status('Tenhle prohlížeč oznámení neumí – zkus Chrome.', true);
+  // už jednou zakázané: prohlížeč se znovu nezeptá → říct přesně, kde to přepnout
+  if (Notification.permission === 'denied') { status(isTouch() ? 'Upozornění jsou v prohlížeči zakázaná: ťukni na zámek / ⓘ vlevo od adresy → Oprávnění → Oznámení → Povolit, pak obnov stránku.' : 'Upozornění jsou v prohlížeči zakázaná: klikni na zámek vlevo od adresy → Oznámení → Povolit, pak obnov stránku.', true); return; }
   const p = await Notification.requestPermission();
-  if (p === 'granted') { try { await navigator.serviceWorker?.register('sw.js'); } catch {} pingSound(); status('🔔 Oznámení zapnutá – až ti Samko pošle zadání miniatury, vyskočí okno se zvukem.'); }
-  else status('Oznámení jsou zakázaná – povol je v nastavení prohlížeče u téhle stránky (ikona zámku vedle adresy).', true);
-  renderMain();
+  if (p === 'granted') {
+    try { await navigator.serviceWorker?.register('sw.js'); await navigator.serviceWorker?.ready; } catch {}
+    status('🔔 Upozornění zapnutá – teď ti přišlo zkušební. Až ti Samko pošle zadání miniatury, vyskočí stejné okno se zvukem.');
+    pingShow({id:'test', title:'zkouška', ping:{text:'Takhle vypadá upozornění od Samka ✔'}}); // ukázat hned, že to funguje
+  } else status('Upozornění nejsou povolená – povol je v nastavení prohlížeče u téhle stránky (ikona zámku vedle adresy).', true);
+  renderHeader(); renderMain();
 }
 function pingSound() {
   try {
