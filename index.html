@@ -825,7 +825,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-30.169'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-30.170'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -5092,7 +5092,18 @@ function renderMain() {
 // Programy na PC zapisují vyroba_dabing.json / vyroba_edit.json do složky na G: (Google Drive pro počítač je nahraje,
 // tools/vyroba_stav.py). Tady se jen čtou přes Disk – co 5 s, dokud je záložka otevřená. Nic se nikam neposílá.
 const VYR = {d:{}, mt:{}, at:0, err:'', busy:false, timer:null};
-const VYR_PROG = {dabing:{name:'🎙️ DABING', hint:'Spustíš S:\\DABING\\SPUSTIT.bat'}, edit:{name:'✂️ AUTO EDIT', hint:'Spustíš S:\\EDIT\\Auto Edit.bat'}};
+const VYR_PROG = {dabing:{name:'🎙️ DABING', hint:'Spustíš S:\\DABING\\SPUSTIT.bat'}, edit:{name:'✂️ AUTO EDIT', hint:'Spustíš S:\\EDIT\\Auto Edit.bat'},
+  render:{name:'🎬 RENDER', hint:'Render v DaVinci hlídá SLEDOVÁNÍ ČASU'}};
+// 📲 upozornění na Samkův mobil (ntfy): konec / chyba DABINGU, AUTO EDITU a renderu – kanál vymyslí PC (vyroba_upozorneni.json)
+function vyrNtfy() {
+  const k = VYR.d.upozorneni?.kanal; if (!k) return '';
+  const ok = ls('bt_ntfyvyr', false);
+  return `<details class="ntfyd"${ok ? '' : ' open'}><summary class="ch">📲 Upozornění na mobil (hotovo / chyba / spadlo)${ok ? ' – nastaveno' : ''}</summary><div class="ntfybox">
+    Když DABING, AUTO EDIT nebo render v DaVinci skončí, selže nebo spadne, přijde ti upozornění na mobil – i se zavřenou stránkou.
+    <ol><li>Nainstaluj appku <b>ntfy</b> (<a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank" rel="noopener">Google Play</a> / <a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noopener">App Store</a>).</li>
+    <li>V appce <b>＋</b> → do „Topic“ vlož kanál níž → <b>Subscribe</b>.</li></ol>
+    <div class="row"><code class="ntfytopic">${esc(k)}</code><button type="button" data-ntfyvyrcopy>📋 Kopírovat kanál</button><button type="button" data-ntfyvyrtest>🔔 Poslat zkoušku</button></div></div></details>`;
+}
 // běží něco teď? (soubor se obnovuje aspoň co 30 s; víc než 2 min ticho = program spadl / okno zavřené)
 const vyrAlive = d => d && d.stav === 'bezi' && Date.now() - (d.t || 0) < 180e3;
 const vyrRunning = () => Object.values(VYR.d).some(vyrAlive);
@@ -5479,11 +5490,11 @@ function renderVyroba() {
   const open = [...document.querySelectorAll('#main .vyrlog')].map(x => x.open);
   const noDrive = REMOTE !== DRIVE_BACKEND;
   // běžící program první; DABING, když neběží, jen tenký řádek (nezabírá místo při editu)
-  const keys = ['edit', 'dabing', ...Object.keys(VYR.d).filter(k => !VYR_PROG[k] && !k.endsWith('_tl') && !['nahled', 'statistiky', 'live', 'dabyt', 'dabyt_rucne', 'dabyt_video'].includes(k))]
+  const keys = ['edit', 'dabing', ...(VYR.d.render ? ['render'] : []), ...Object.keys(VYR.d).filter(k => !VYR_PROG[k] && !k.endsWith('_tl') && !['nahled', 'statistiky', 'live', 'dabyt', 'dabyt_rucne', 'dabyt_video', 'upozorneni'].includes(k))]
     .sort((a, b) => (VYR.d[b] && vyrAlive(VYR.d[b]) ? 1 : 0) - (VYR.d[a] && vyrAlive(VYR.d[a]) ? 1 : 0));
   $('#main').innerHTML = (noDrive || VYR.err ? `<div class="summary">
       ${noDrive ? '<div class="drivegate">☁️ Připoj Google Disk – stav DABINGU a AUTO EDITU se čte z něj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : `<div class="row ch">⚠ ${esc(VYR.err)}</div>`}</div>` : '')
-    + `${vyrLive()}
+    + `${vyrLive()}${vyrNtfy()}
     <div class="vyrgrid">${keys.map(vyrCard).join('')}</div>
     ${vyrStats()}`;
   document.querySelectorAll('#main .vyrlog').forEach((x, i) => { x.open = !!open[i]; });
@@ -5618,6 +5629,9 @@ document.addEventListener('click', e => {
   else if (b.dataset.copy !== undefined) { const t = b.closest('.card').querySelector('.title').textContent; navigator.clipboard?.writeText(t).then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.hasAttribute('data-pingon')) pingEnable();
   else if (b.hasAttribute('data-ntfycopy')) { ss('bt_ntfyok', true); navigator.clipboard?.writeText(ntfyTopic()).then(() => { b.textContent = '✔ Zkopírováno'; }, () => status('Zkopíruj kanál ručně (podrž na něm prst / označ myší).', true)); }
+  else if (b.hasAttribute('data-ntfyvyrcopy')) { ss('bt_ntfyvyr', true); navigator.clipboard?.writeText(VYR.d.upozorneni?.kanal || '').then(() => { b.textContent = '✔ Zkopírováno'; }, () => status('Zkopíruj kanál ručně (podrž na něm prst / označ myší).', true)); }
+  else if (b.hasAttribute('data-ntfyvyrtest')) { ss('bt_ntfyvyr', true); fetch('https://ntfy.sh/', {method:'POST', body:JSON.stringify({topic:VYR.d.upozorneni?.kanal, title:'🔔 Zkouška – Výroba', message:'Takhle ti přijde upozornění, když render / dabing / edit skončí nebo selže ✔', tags:['white_check_mark'], click:location.origin + location.pathname + '#vyr'})})
+      .then(r => status(r.ok ? '🔔 Zkouška odeslána – měla by přijít do appky ntfy.' : 'Zkoušku se nepodařilo odeslat.', !r.ok), () => status('Zkoušku se nepodařilo odeslat.', true)); }
   else if (b.hasAttribute('data-ntfytest')) { ss('bt_ntfyok', true); ntfySend({id:'', title:'zkouška', ping:{text:'Takhle vypadá upozornění od Samka ✔'}}); }
   else if (b.id === 'btnRefresh' || b.hasAttribute('data-refreshnow')) { S.view = null; renderHeader(); showCountry(true); }
   else if (b.id === 'btnMore') loadMore();
