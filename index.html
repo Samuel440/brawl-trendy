@@ -818,7 +818,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-28.166'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-30.167'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3588,7 +3588,27 @@ async function fillDropPreviews() {
     img.src = DROPBLOB.get(fid);
   }
 }
+// ✍️ rozepsaný text v Přenosu: stránka se co 5 s překresluje (kontrola, co přišlo z mobilu) a dřív tím text
+// v poli smazala → teď se pamatuje (i po obnovení stránky) a vrací se zpátky i s kurzorem
+let DROP_DRAFT = (() => { try { return localStorage.getItem('bt_dropdraft') || ''; } catch { return ''; } })();
+function dropDraft(v) { DROP_DRAFT = v; try { localStorage.setItem('bt_dropdraft', v); } catch {} }
+document.addEventListener('input', e => { if (e.target.id === 'dropText') dropDraft(e.target.value); });
+// 📋 Vložit jedním kliknutím (bez držení / pravého tlačítka): text ze schránky do pole na místo kurzoru
+async function dropPaste() {
+  const ta = $('#dropText'); if (!ta) return;
+  let t = '';
+  try { t = await navigator.clipboard.readText(); }
+  catch { ta.focus(); status('Prohlížeč nedovolil číst schránku – vlož ručně (Ctrl+V / podržet → Vložit).', true); return; }
+  if (!t) { status('Schránka je prázdná.', true); return; }
+  const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? ta.value.length;
+  ta.value = ta.value.slice(0, a) + t + ta.value.slice(b);
+  ta.focus(); ta.selectionStart = ta.selectionEnd = a + t.length;
+  dropDraft(ta.value);
+}
 function renderDrop(tabs, who) {
+  const prevTa = $('#dropText'), taFocus = !!prevTa && document.activeElement === prevTa;
+  const taSel = prevTa ? [prevTa.selectionStart, prevTa.selectionEnd, prevTa.scrollTop] : null;
+  if (prevTa) dropDraft(prevTa.value);
   const all = [...ls(dropKey(who), [])].sort(byOrd);
   const head = foldHead('drop', who, all);
   const mine = who === meWho(), list = foldSplit(all, 'drop', who), drive = REMOTE === DRIVE_BACKEND;
@@ -3613,11 +3633,16 @@ function renderDrop(tabs, who) {
     + `${!drive ? '<div class="drivegate">☁️ <b>Přenos funguje přes Google Disk</b> – nejdřív ho připoj. <button class="primary" id="btnDrive">Připojit Disk</button></div>' : ''}
     ${mine && drive ? `<div class="dropbox" id="dropZone">
       <textarea id="dropText" rows="3" placeholder="Napiš nebo vlož text (odkaz, název, poznámku…)"></textarea>
-      <div class="actions"><button class="primary" id="btnDropText">📤 Poslat text</button>
+      <div class="actions"><button id="btnDropPaste" title="Vloží text ze schránky (zkopírovaný z internetu)">📋 Vložit</button><button class="primary" id="btnDropText">📤 Poslat text</button>
         <label class="filebtn">📎 Poslat fotku / soubor<input type="file" id="dropFile" multiple hidden></label>
         <span class="ch">nebo sem přetáhni soubor / vlož obrázek Ctrl+V</span></div></div>` : ''}
     ${inFoldView ? '' : head}
     ${list.length || up ? `<div class="droplist">${up}${list.map(row).join('')}</div>` : `<div class="empty">${inFoldView ? 'Kolekce je zatím prázdná – u položky klikni na 📁 a přidej ji sem.' : 'Zatím nic.'}</div>`}`;
+  const ta = $('#dropText');
+  if (ta) {
+    ta.value = DROP_DRAFT;
+    if (taFocus) { ta.focus({preventScroll:true}); if (taSel) { ta.selectionStart = taSel[0]; ta.selectionEnd = taSel[1]; ta.scrollTop = taSel[2]; } }
+  }
   if (drive) { fillDropPreviews(); if (mine) dropScan(); }
 }
 function renderStars() {
@@ -5623,7 +5648,8 @@ document.addEventListener('click', e => {
   else if (b.dataset.vprev) togglePreview(b, async () => embedHtml(b.dataset.vprev));
   else if (b.dataset.chprev) togglePreview(b, () => channelPreview(b.dataset.chprev));
   else if (b.dataset.playin) { const box = b.closest('.bprev').querySelector('.playin'); box.innerHTML = embedHtml(b.dataset.playin); box.scrollIntoView({behavior:'smooth', block:'nearest'}); }
-  else if (b.id === 'btnDropText') { const t = $('#dropText').value.trim(); if (t) dropText(t); }
+  else if (b.id === 'btnDropText') { const t = $('#dropText').value.trim(); if (t) { dropDraft(''); $('#dropText').value = ''; dropText(t); } }
+  else if (b.id === 'btnDropPaste') dropPaste();
   else if (b.dataset.dropcopy) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropcopy); navigator.clipboard?.writeText(it?.text || '').then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.dataset.dropcal) { const it = ls(dropKey(S.starWho ?? meWho()), []).find(x => x.at === +b.dataset.dropcal); if (it?.text) calPickScript(it.text); }
   else if (b.dataset.mixcal !== undefined) { const s = ls(mixKey(S.starWho ?? meWho()), [])[+b.dataset.mixcal]; if (s) calPickIdea(s); }
