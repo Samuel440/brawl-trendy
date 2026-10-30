@@ -172,6 +172,9 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 #sttip .ttr em{grid-column:2/4;font-style:normal;font-size:11px;color:var(--muted)}
 #sttip .ttmale{font-size:11px;line-height:1.35;color:var(--muted);margin:-2px 0 4px 18px;max-height:4.2em;overflow:hidden}
 .vdr.male,.stlist .stmale{opacity:.7;font-size:12px}
+.ntfybox{background:var(--card,rgba(127,127,127,.08));border-radius:10px;padding:10px 12px;margin-top:6px;font-size:13px;line-height:1.45}
+.ntfybox ol{margin:6px 0;padding-left:20px}.ntfybox .row{gap:8px;flex-wrap:wrap;align-items:center}
+.ntfytopic{font-size:13px;padding:4px 8px;border-radius:6px;background:rgba(127,127,127,.18);user-select:all;word-break:break-all}
 .pingbtn{animation:pingpulse 1.6s ease-in-out infinite}
 @keyframes pingpulse{50%{box-shadow:0 0 0 5px rgba(255,200,0,.35)}}
 #sttip .ttsep{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 2px}
@@ -822,7 +825,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-30.168'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-10-30.169'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2892,7 +2895,8 @@ function renderCal() {
         ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div>
       ${own ? '' : PING.on() ? '<div class="row ch">🔔 Oznámení zapnutá – když ti Samko pošle zadání miniatury, vyskočí okno se zvukem (stačí mít stránku otevřenou, klidně na pozadí).</div>'
-        : '<div class="row"><button class="primary" data-pingon>🔔 Zapnout oznámení od Samka</button><span class="ch">Okno se zvukem na Windows i mobilu, když ti pošle zadání miniatury.</span></div>'}</div>
+        : '<div class="row"><button class="primary" data-pingon>🔔 Zapnout oznámení od Samka</button><span class="ch">Okno se zvukem na Windows i mobilu, když ti pošle zadání miniatury.</span></div>'}
+      ${own || !ntfyTopic() ? '' : `<details class="ntfyd"${ls('bt_ntfyok', false) ? '' : ' open'}><summary class="ch">📲 Upozornění i se zavřenou stránkou (appka ntfy)</summary>${ntfyHelp()}</details>`}</div>
     <div class="caltable${calStale ? ' calstale' : ''}" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
   if (CAL_LINK) setTimeout(openCalLink); // 🔗 přišel odkaz na video z kalendáře
   const hd = $('header');
@@ -3200,6 +3204,7 @@ function calEditor(id, date, focusScript, edit = true) {
       if (b.dataset.calping === 'yes') {
         clearTimeout(timer); grab(); e.ping = {at:Date.now(), text:e.thumb}; calSave(e);
         if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
+        ntfySend(e); // 📲 i na zavřený mobil / PC grafika (appka ntfy)
         logEvent(`🔔 poslal grafikovi zadání miniatury ${shortT(e.title || 'video')}`);
       }
       ov.querySelector('.calping').innerHTML = pingInfo(); return;
@@ -5612,6 +5617,8 @@ document.addEventListener('click', e => {
   else if (b.dataset.tr !== undefined) toggleTranslate(b);
   else if (b.dataset.copy !== undefined) { const t = b.closest('.card').querySelector('.title').textContent; navigator.clipboard?.writeText(t).then(() => { b.textContent = '✔ Zkopírováno'; }, () => {}); }
   else if (b.hasAttribute('data-pingon')) pingEnable();
+  else if (b.hasAttribute('data-ntfycopy')) { ss('bt_ntfyok', true); navigator.clipboard?.writeText(ntfyTopic()).then(() => { b.textContent = '✔ Zkopírováno'; }, () => status('Zkopíruj kanál ručně (podrž na něm prst / označ myší).', true)); }
+  else if (b.hasAttribute('data-ntfytest')) { ss('bt_ntfyok', true); ntfySend({id:'', title:'zkouška', ping:{text:'Takhle vypadá upozornění od Samka ✔'}}); }
   else if (b.id === 'btnRefresh' || b.hasAttribute('data-refreshnow')) { S.view = null; renderHeader(); showCountry(true); }
   else if (b.id === 'btnMore') loadMore();
   else if (b.id === 'btnKey') renderSetup();
@@ -5827,6 +5834,32 @@ async function pingEnable() {
     pingShow({id:'test', title:'zkouška', ping:{text:'Takhle vypadá upozornění od Samka ✔'}}); // ukázat hned, že to funguje
   } else status('Upozornění nejsou povolená – povol je v nastavení prohlížeče u téhle stránky (ikona zámku vedle adresy).', true);
   renderHeader(); renderMain();
+}
+// 📲 ntfy (zdarma, ntfy.sh): upozornění dojde grafikovi i se ZAVŘENOU stránkou – do appky ntfy na mobilu
+// a do webu ntfy.sh na PC. Kanál = tajné jméno odvozené z ID sdílené složky na Disku (zná ho jen ten, kdo do složky vidí);
+// obě strany si ho spočítají samy, nikde se neukládá.
+function ntfyTopic() {
+  const f = DRIVE.folder || ls('bt_ntfyf', '');
+  if (DRIVE.folder && DRIVE.folder !== ls('bt_ntfyf', '')) ss('bt_ntfyf', DRIVE.folder);
+  return f ? 'brawltrendy-' + emailHash('ntfy|' + f) + emailHash(f + '|ntfy2') : '';
+}
+async function ntfySend(e) {
+  const topic = ntfyTopic(); if (!topic) return;
+  try {
+    const r = await fetch('https://ntfy.sh/', {method:'POST', body:JSON.stringify({topic, priority:5, tags:['art'],
+      title:`🔔 Miniatura: ${e.title || 'video'}`, message:String(e.ping?.text || e.thumb || 'Samko ti poslal zadání miniatury.').slice(0, 1000),
+      click:location.origin + location.pathname + '#cal=' + encodeURIComponent(e.id)})});
+    if (!r.ok) throw new Error('ntfy ' + r.status);
+    status('🔔 Upozornění odesláno – grafikovi dojde i se zavřenou stránkou (appka ntfy).');
+  } catch (err) { status('📲 Upozornění přes ntfy se nepodařilo odeslat (' + err.message + ') – grafik ho uvidí na stránce.', true); }
+}
+function ntfyHelp() { // návod pro grafika: kam si kanál přidat
+  const t = ntfyTopic(); if (!t) return '';
+  const web = 'https://ntfy.sh/' + t;
+  return `<div class="ntfybox"><b>📲 Upozornění i se zavřenou stránkou</b> (zdarma, appka ntfy):
+    <ol><li><b>Mobil:</b> nainstaluj appku <b>ntfy</b> (<a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank" rel="noopener">Google Play</a> / <a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noopener">App Store</a>) → <b>＋</b> → do „Topic“ vlož kanál níž → Subscribe.</li>
+    <li><b>PC:</b> otevři <a href="${web}" target="_blank" rel="noopener">${esc(web)}</a> → vlevo <b>Notifications: Grant</b> / povolit oznámení. Pak tu kartu klidně zavři.</li></ol>
+    <div class="row"><code class="ntfytopic">${esc(t)}</code><button type="button" data-ntfycopy>📋 Kopírovat kanál</button><button type="button" data-ntfytest>🔔 Poslat zkoušku</button></div></div>`;
 }
 function pingSound() {
   try {
