@@ -111,6 +111,22 @@ def vfr(path):
     return _VFR[k]
 
 
+_ZVUKY = {}
+
+
+def zvukove_stopy(path):
+    """Kolik zvukových stop má záznam. PC (OBS) má zvlášť hru a mikrofon; Mac nahrává jen JEDNU stopu, kde je hra
+    i mikrofon dohromady – a z té je udělaný i mic.wav, takže zvuk videa by v náhledu zněl podruhé."""
+    k = proxy_name(path)
+    if k not in _ZVUKY:
+        try:
+            info = subprocess.run([FFMPEG, "-hide_banner", "-i", path], capture_output=True, text=True, errors="replace").stderr
+            _ZVUKY[k] = len(re.findall(r"Stream #\S+.*?: Audio:", info))
+        except Exception:  # noqa: BLE001
+            _ZVUKY[k] = -1  # nevím → nechat, jak bylo
+    return _ZVUKY[k]
+
+
 _CACHE = {}
 
 
@@ -128,7 +144,7 @@ def projekt(proj):
         _CACHE[proj] = (key, d, time.time())
     for f in d["_files"]:  # stav lehkých kopií vždy čerstvě
         f["ready"] = os.path.exists(os.path.join(CACHE, f["id"] + ".mp4"))
-    d["soubory"] = [{k: f[k] for k in ("name", "id", "ready", "webka")} for f in d["_files"]]
+    d["soubory"] = [{k: f[k] for k in ("name", "id", "ready", "webka", "smix")} for f in d["_files"]]
     d["mic_ready"] = bool(d["mic"]) and os.path.exists(os.path.join(CACHE, proxy_name(d["_mic"]) + ".m4a"))
     d["ovl"] = [ovl_info(p) for p in d.get("_ovl", [])]
     return d
@@ -156,7 +172,10 @@ def projekt_now(proj):
                     # proměnlivá frekvence: kopie po snímcích jako v Resolve (jiné id → stará kopie podle časů se nepoužije)
                     ifps = _fps(c.findtext("MediaFrameRate")) if vfr(p) else None
                     files.append({"path": p, "name": os.path.basename(p), "id": proxy_name(p) + (f"i{ifps:g}" if ifps else ""),
-                                  "webka": "webka" in p.lower(), "ifps": ifps, "orig": os.path.splitext(p)[1].lower() in ORIG_CT})
+                                  "webka": "webka" in p.lower(), "ifps": ifps, "orig": os.path.splitext(p)[1].lower() in ORIG_CT,
+                                  # 🍎 jediná zvuková stopa (hra + mikrofon dohromady) a k tomu mic.wav → zvuk videa ztlumit
+                                  "smix": "webka" not in p.lower() and os.path.exists(os.path.join(ANALYZA, proj, "mic.wav"))
+                                  and zvukove_stopy(p) == 1})
                 kl.append([round(s / TL_FPS, 3), round((s + d) / TL_FPS, 3), fidx[p], round(i / _fps(c.findtext("MediaFrameRate")), 3)])
             stopy[f"{kind}{ti}"] = sorted(kl)
     for f in files:
@@ -170,7 +189,7 @@ def projekt_now(proj):
     return {
         "vrstvy": vrstvy, "zisk": zisk, **{k: v for k, v in ext.items() if not k.startswith("_")}, "_zvuky": ext.get("_zvuky", []),
         "_ovl": ext.get("_ovl", []),
-        "projekt": proj, "delka": delka, "soubory": [{k: f[k] for k in ("name", "id", "ready", "webka")} for f in files],
+        "projekt": proj, "delka": delka, "soubory": [{k: f[k] for k in ("name", "id", "ready", "webka", "smix")} for f in files],
         "v1": stopy.get("V1", []), "v2": stopy.get("V2", []),
         "intro": ((_rd(proj, "intro.json", {}) or {}).get("intro_end") or 0) / TL_FPS,
         "cam": [[round(f / TL_FPS, 3), s] for f, s in cam],

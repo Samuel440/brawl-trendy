@@ -394,7 +394,8 @@ function syncTrack(tr, clips, t) {
     if (tr.next === i) tr.a = 1 - tr.a; // připravené video
     const el = tr.els[tr.a];
     load(el, c, t);
-    if (tr.main) el.muted = !!D.soubory[c[2]]?.webka; // webka: mikrofon jde z mic.wav
+    // webka: mikrofon jde z mic.wav; smix (Mac): jediná stopa hra + mikrofon je celá i v mic.wav → jinak by zněla dvakrát
+    if (tr.main) el.muted = !!(D.soubory[c[2]]?.webka || (D.soubory[c[2]]?.smix && D.mic_ready));
     el.classList.add('on'); tr.els[1 - tr.a].classList.remove('on');
     if (playing) el.play().catch(() => {}); else el.pause();
     tr.cur = i; tr.next = -1;
