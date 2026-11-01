@@ -2,6 +2,9 @@
 
 Každých 5 s: je DaVinci Resolve okno v popředí a pracoval jsi (myš / klávesnice) za poslední 2 minuty?
 → +5 s k projektu, který máš v Resolve otevřený. Otevřený, ale zapomenutý Resolve se nepočítá.
+Projekt se pozná z TITULKU OKNA Resolve – ne přes skriptovací API: Resolve vyřizuje skriptová volání v hlavním vlákně,
+a když zrovna načítá obrazovku projektů / otevírá projekt, celý zamrzl (1. 11. 2026, potvrzeno – po zastavení
+sledování hned bez lagů). Na API smí jen render, a to přes smi_api() (zřídka, Resolve v pozadí, ne hned po startu).
 Na web co minutu, přepnutí projektu do ~15 s.
 Zapisuje S:\\EDIT\\_cache\\cas_log.json ({den: {projekt: minuty}}) a vyroba_live.json na G: (web ho čte).
 Spouští SLEDOVÁNÍ ČASU.bat (může běžet pořád, sám nic nedělá, když Resolve neběží). Nic neposílá jinam.
@@ -35,37 +38,117 @@ def necinnost_s():
     return (kernel32.GetTickCount() - li.dwTime) / 1000
 
 
-def popredi_exe():
+# všechny pomocné programy (tasklist, ffmpeg, powershell…) BEZ OKNA – sledování běží přes pythonw, takže každý konzolový
+# program by jinak na vteřinu problikl oknem příkazového řádku: subprocess.run([...], creationflags=BEZ_OKNA)
+BEZ_OKNA = 0x08000000  # CREATE_NO_WINDOW
+
+
+def _exe(pid):
+    """Jméno programu (resolve.exe) a čas jeho spuštění (unix s) podle čísla procesu – jen čte, nic nespouští."""
+    h = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return "", 0.0
+    buf, n = ctypes.create_unicode_buffer(512), wintypes.DWORD(512)
+    ft = [wintypes.FILETIME() for _ in range(4)]
+    try:
+        kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n))
+        start = 0.0
+        if kernel32.GetProcessTimes(h, *[ctypes.byref(f) for f in ft]):
+            start = ((ft[0].dwHighDateTime << 32) + ft[0].dwLowDateTime) / 1e7 - 11644473600
+    finally:
+        kernel32.CloseHandle(h)
+    return os.path.basename(buf.value).lower(), start
+
+
+def _titulek(hwnd):
+    n = user32.GetWindowTextLengthW(hwnd)
+    buf = ctypes.create_unicode_buffer(n + 1)
+    user32.GetWindowTextW(hwnd, buf, n + 1)
+    return buf.value
+
+
+def popredi():
+    """(program v popředí, titulek jeho okna)"""
     hwnd = user32.GetForegroundWindow()
     pid = wintypes.DWORD()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    h = kernel32.OpenProcess(0x1000, False, pid.value)  # PROCESS_QUERY_LIMITED_INFORMATION
-    if not h:
+    return _exe(pid.value)[0], _titulek(hwnd)
+
+
+def popredi_exe():
+    return popredi()[0]
+
+
+def resolve_start():
+    """Kdy se spustil Resolve.exe (unix s), nebo None, když neběží. Projde viditelná okna – žádný tasklist, žádné API."""
+    nalezeno = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def kazde(hwnd, _):
+        if user32.IsWindowVisible(hwnd):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            exe, start = _exe(pid.value)
+            if exe == "resolve.exe":
+                nalezeno.append(start)
+                return False
+        return True
+    user32.EnumWindows(kazde, 0)
+    return nalezeno[0] if nalezeno else None
+
+
+def projekt_z_titulku(titulek):
+    """„DaVinci Resolve Studio - Můj projekt“ → „Můj projekt“; obrazovka projektů („Project Manager“) / jen
+    „DaVinci Resolve“ (načítá se) → None; jiné okno Resolve (dialog, nastavení…) → "" = nevím, nechat minulý projekt."""
+    t = (titulek or "").strip()
+    if "project manager" in t.lower():
+        return None
+    if not t.lower().startswith("davinci resolve"):
         return ""
-    buf, n = ctypes.create_unicode_buffer(512), wintypes.DWORD(512)
-    try:
-        kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n))
-    finally:
-        kernel32.CloseHandle(h)
-    return os.path.basename(buf.value).lower()
+    for sep in (" - ", " – ", " — "):
+        if sep in t:
+            return t.split(sep, 1)[1].strip() or None
+    return None
 
 
+# 🎬 skriptovací API Resolve jen pro render – a jen když nemůže zamrazit, na čem pracuješ
+API_KAZDYCH_S = 60       # nejvýš jednou za minutu
+API_PO_STARTU_S = 120    # první 2 min po spuštění Resolve nic (načítá se)
+API_PO_CHYBE_S = 300     # po chybě / zavření Resolve se 5 min znovu nepřipojovat
+_API = {"t": 0.0, "chyba": 0.0}
 _RES = None
 
 
-def projekt():
-    """Jméno projektu otevřeného v Resolve (skriptovací rozhraní), nebo None."""
+def smi_api():
+    """Smí se teď zavolat skriptovací API Resolve (GetRenderJobList, GetRenderJobStatus…)? Jen když Resolve běží
+    déle než 2 min, NENÍ v popředí (render běží a děláš něco jiného), není na obrazovce projektů, od minula
+    uběhla minuta a nedávno nebyla chyba. Když ano, rovnou si to zapíše jako volání."""
+    now = time.time()
+    if now - _API["t"] < API_KAZDYCH_S or now - _API["chyba"] < API_PO_CHYBE_S:
+        return False
+    start = resolve_start()
+    exe, titulek = popredi()
+    if not start or now - start < API_PO_STARTU_S or exe == "resolve.exe" or "project manager" in titulek.lower():
+        return False
+    _API["t"] = now
+    return True
+
+
+def resolve_api():
+    """Spojení na Resolve pro render – volat JEN po smi_api() == True; při chybě zavolat api_chyba()."""
     global _RES
-    try:
-        if _RES is None:
-            sys.path.insert(0, r"S:\EDIT\tools")
-            from resolve_conn import dvr  # noqa: E402
-            _RES = dvr.scriptapp("Resolve")
-        p = _RES.GetProjectManager().GetCurrentProject() if _RES else None
-        return p.GetName() if p else None
-    except Exception:  # noqa: BLE001
-        _RES = None
-        return None
+    if _RES is None:
+        sys.path.insert(0, r"S:\EDIT\tools")
+        from resolve_conn import dvr  # noqa: E402
+        _RES = dvr.scriptapp("Resolve")
+    return _RES
+
+
+def api_chyba():
+    """Spojení zahodit a chvíli se znovu nepřipojovat (Resolve zavřený / spadl / neodpovídá)."""
+    global _RES
+    _RES = None
+    _API["chyba"] = time.time()
 
 
 def nacti():
@@ -225,9 +308,12 @@ def main():
                     dyt = nove
                     vyroba_stav.uloz("dabyt", dict(nove, t=int(time.time() * 1000)))
             den = dt.date.today().isoformat()
-            exe = popredi_exe()
-            v_resolve = exe in ("resolve.exe",)
-            nazev = projekt() if v_resolve or posledni["projekt"] is None else posledni["projekt"]
+            exe, titulek = popredi()
+            v_resolve = exe == "resolve.exe"
+            # projekt z titulku okna (API by Resolve zamrazilo); na obrazovce projektů se nepočítá nic
+            nazev = projekt_z_titulku(titulek) if v_resolve else posledni["projekt"]
+            if nazev == "":
+                nazev = posledni["projekt"]
             aktivni = bool(v_resolve and nazev and necinnost_s() < NECINNOST_S)
             if aktivni:
                 d = data.setdefault(den, {})
@@ -243,7 +329,7 @@ def main():
             if now - zapsano >= ZAPIS_S or (zmena and now - zapsano >= ZMENA_S):
                 celkem = sum(v.get(posledni["projekt"], 0) for v in data.values()) if posledni["projekt"] else 0
                 vyroba_stav.uloz("live", {"t": int(now * 1000), "projekt": posledni["projekt"], "aktivni": aktivni,
-                                          "resolve": exe == "resolve.exe" or _RES is not None, "dnes": data.get(den, {}),
+                                          "resolve": v_resolve or resolve_start() is not None, "dnes": data.get(den, {}),
                                           "projekt_celkem": round(celkem, 1)})
                 zapsano, zapsany_projekt = now, posledni["projekt"]
         except Exception as e:  # noqa: BLE001
