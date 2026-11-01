@@ -864,7 +864,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-10-30.172'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-01.173'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -5339,7 +5339,8 @@ function vyrCard(key, full) {
     : d.stav === 'hotovo' ? '<span class="tag ok">✔ HOTOVO</span>' : '<span class="tag hot">✖ CHYBA</span>';
   const left = d.zbyva_s, end = alive && left != null ? d.t + left * 1000 : null;
   const head = `<div class="vyrhead"><h3>${P.name}</h3>${badge}<b class="vyrname">${esc(d.nazev || '')}</b></div>
-    <div class="vyrbig">${vyrBar(d.procenta, d.stav === 'chyba' ? 'bad' : '')}<b>${Math.round(d.procenta || 0)} %</b></div>
+    <div class="vyrbig">${d.procenta == null && alive ? '<span class="vyrbar neurc"><i></i></span><b>…</b>' // (render bez procent – PC do Resolve neleze)
+      : `${vyrBar(d.procenta ?? 100, d.stav === 'chyba' ? 'bad' : '')}<b>${Math.round(d.procenta ?? 100)} %</b>`}</div>
     <div class="row ch">${d.faze ? `<span>▶ ${esc(d.faze)}</span>` : ''}<span>⏱️ ${alive ? 'běží' : 'trvalo'} ${tik('cas', 0, d.start, alive ? d.t + TIK_REZERVA : (d.konec || d.t))}</span>
       ${alive && left != null ? `<span>zbývá ${d.presne === false ? '≈' : ''}${tik('zbyva', left, d.t, d.t + TIK_REZERVA, -1)} · konec v <b>${hhmm(end)}</b></span>` : ''}
       ${d.zprava ? `<span><b>${esc(d.zprava)}</b></span>` : ''}${d.rezim ? `<span>Výkon: ${esc(d.rezim)}</span>` : ''}
