@@ -865,7 +865,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-02.174'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-05.175'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2414,7 +2414,14 @@ function enrich(it, c) {
 // Jiná hra přímo v NÁZVU (a Brawl v názvu ne) = není to Brawl, ať tvrdí tagy nebo AI cokoli.
 // Kanály jako Holdik dávají „brawl stars“ do tagů u všech videí, i u CS:GO.
 const OTHER_GAME_RX = /cs ?: ?go|\bcs ?2\b|\bcsgo\b|counter[- ]?strike|(^|[^а-яё])(кс ?го|кс ?2|кс)([^а-яё]|$)|standoff|стандофф?|faceit|фейсит|калибровк|kalibrac|valorant|валорант|call of duty|\bcod\b|warzone|fortnite|фортнайт|minecraft|майнкрафт|roblox|роблокс|\bdoors\b|(^|[^а-яё])(дорс|дота|гта)([^а-яё]|$)|pubg|пабг|free ?fire|фри ?фаер|\bdota|\bgta\b|among us|амонг ас|brawlhalla|clash royale|клеш рояль|clash of clans|клеш оф кланс|squad busters|geometry dash|stumble guys|стамбл гайс|subway surf|genshin|tarkov|тарков|apex legends|overwatch|rocket league|fifa\b|фифа|ea fc|mobile legends|mlbb|grand theft|five nights|fnaf|poppy playtime|rainbow six|\bpvz\b|plants vs/i;
-const otherGame = it => OTHER_GAME_RX.test(it.t) && !BRAWL_RX.test(it.t);
+// 🤝 spolupráce Brawl Stars s jinými hrami a značkami (teď GTA): to slovo v názvu NENÍ „jiná hra“, když video jinak
+// patří k Brawlu – Brawl v tazích / popisu, brawler v názvu, nebo kanál točí hlavně Brawl. Další spolupráci stačí připsat sem.
+const COLLAB_RX = /\bgta\b|grand theft|(^|[^а-яё])гта([^а-яё]|$)/gi;
+const otherGame = it => {
+  if (!OTHER_GAME_RX.test(it.t) || BRAWL_RX.test(it.t)) return false;
+  if (OTHER_GAME_RX.test(it.t.replace(COLLAB_RX, ' '))) return true; // i jiná hra než spolupráce
+  return !(it.bs || it.bsT || hasBrawler(it) || dedicatedCh(it.chId));
+};
 function prepare(items, c) {
   return items
     .filter(it => !otherGame(it))
@@ -4063,8 +4070,8 @@ const AI_YES = ['a screenshot of the mobile game Brawl Stars', 'colorful cartoon
 const AI_NO = ['a screenshot of Minecraft', 'a screenshot of Roblox', 'a screenshot of Fortnite', 'a screenshot of Clash Royale', 'a screenshot of Clash of Clans',
   'a screenshot of Stumble Guys', 'a screenshot of Free Fire or PUBG Mobile', 'a screenshot of Squad Busters', 'a screenshot of Geometry Dash', 'a photo of real people', 'a football video game',
   'a screenshot of Counter-Strike CS:GO or Standoff 2', 'a first-person shooter game with guns', 'a competitive rank leaderboard of a shooter game', 'a screenshot of Valorant or Call of Duty',
-  'a screenshot of GTA', 'a horror game like Doors or Poppy Playtime', 'a screenshot of Among Us'];
-const AI_VER = 2; // při změně popisů výš zvýšit – staré verdikty se pak spočítají znovu
+  'a horror game like Doors or Poppy Playtime', 'a screenshot of Among Us']; // (GTA ne – spolupráce s Brawlem má miniatury v jeho stylu)
+const AI_VER = 3; // při změně popisů výš zvýšit – staré verdikty se pak spočítají znovu
 const AI_WEAK = 0.35; // video se slovem sezóny musí mít aspoň tolik (vyřadí jasný Minecraft/Roblox/vlog)
 const AI_SURE = 0.9;  // video úplně bez slov sezóny projde jen při takové jistotě
 function rows(t) {
@@ -4129,8 +4136,9 @@ function aiScore(e) {
   return {s:+(ex.slice(0, AI_YES.length).reduce((a, b) => a + b, 0) / sum).toFixed(2), v:AI_VER};
 }
 // Verdikt se pamatuje navždy (sdílí se přes Disk). Po rozšíření popisů jiných her (AI_VER 2: CS:GO, střílečky…) se znovu
-// kontrolují jen staré verdikty „je to Brawl“ – nové popisy můžou Brawl skóre jen snížit, „není Brawl“ tedy platí dál.
-const aiOf = it => { const a = AI_CACHE[it.id]; return a && ((a.v || 1) >= AI_VER || a.s < 0.5) ? a : null; };
+// kontrolovaly jen verdikty „je to Brawl“ (nové popisy skóre jen snižují). AI_VER 3 naopak popis GTA ubral (spolupráce) –
+// skóre může jen stoupnout, takže se znovu kontrolují verdikty „není Brawl“; „je Brawl“ z verze 2 platí dál.
+const aiOf = it => { const a = AI_CACHE[it.id], v = a?.v || 1; return a && (v >= AI_VER || (v === 2 && a.s >= 0.5)) ? a : null; };
 function aiBadge(it) {
   const a = aiOf(it);
   if (!S.ai || !a || !it.cand) return '';
