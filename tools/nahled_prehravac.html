@@ -108,6 +108,7 @@ const api = (p, q = {}) => fetch(p + '?' + new URLSearchParams({...q, ...(K ? {k
 const fmt = s => { s = Math.max(0, s | 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const MOOD = {CHILL:'#2a9d8f', HYPE:'#e63946', EPIC:'#9d4edd', TENSE:'#f4a261', SAD:'#3a5a8c', FUNNY:'#e9c46a', TROLL:'#f4a261', INTRO:'#888'};
 let D = null, P = '', playing = false, T0 = 0, Tstart = 0, timer = null, poll = null;
+let WAIT = false, WAIT_AT = 0, WAIT_SKIP = 0; // ⏳ čekání na načtení vrstev po skoku (waitCheck)
 const mic = new Audio(), mus = new Audio();
 const tracks = {
   v1: {els:[$('#m0'), $('#m1')], cur:-1, a:0, next:-1, main:true},
@@ -122,6 +123,7 @@ $('#back').addEventListener('click', e => {
 });
 // ---------- čas: hodiny = mikrofon (když je), jinak vlastní
 function now() {
+  if (WAIT) return Tstart; // ⏳ čeká se, až se hra po skoku načte – čas stojí
   if (D?.mic_ready && mic.src && !mic.paused) return mic.currentTime;
   return playing ? Tstart + (performance.now() - T0) / 1000 : Tstart;
 }
@@ -397,7 +399,7 @@ function syncTrack(tr, clips, t) {
     // webka: mikrofon jde z mic.wav; smix (Mac): jediná stopa hra + mikrofon je celá i v mic.wav → jinak by zněla dvakrát
     if (tr.main) el.muted = !!(D.soubory[c[2]]?.webka || (D.soubory[c[2]]?.smix && D.mic_ready));
     el.classList.add('on'); tr.els[1 - tr.a].classList.remove('on');
-    if (playing) el.play().catch(() => {}); else el.pause();
+    if (playing && !WAIT) el.play().catch(() => {}); else el.pause();
     tr.cur = i; tr.next = -1;
     const n = clips[i + 1]; const pre = tr.els[1 - tr.a];
     pre.pause();
@@ -405,13 +407,32 @@ function syncTrack(tr, clips, t) {
   } else {
     const el = tr.els[tr.a];
     // mezitím se dodělala lehká kopie → přepnout na ni (jinak by originál a kopie měly jiný čas a video by skákalo dokola)
-    if (srcOf(c) && el.dataset.src !== srcOf(c)) { load(el, c, t); if (playing) el.play().catch(() => {}); return c; }
-    const want = srcT(c, t, el);
-    if (playing && el.paused) el.play().catch(() => {});
-    if (!playing && !el.paused) el.pause();
-    if (Math.abs(el.currentTime - want) > (playing ? 0.3 : 0.04)) { try { el.currentTime = want; } catch {} }
+    if (srcOf(c) && el.dataset.src !== srcOf(c)) { load(el, c, t); if (playing && !WAIT) el.play().catch(() => {}); return c; }
+    const want = srcT(c, t, el), run = playing && !WAIT;
+    if (run && el.paused) el.play().catch(() => {});
+    if (!run && !el.paused) el.pause();
+    // (během načítání po skoku znovu neposouvat – dřív to načítání pořád restartovalo)
+    if (!el.seeking && Math.abs(el.currentTime - want) > (run ? 0.3 : 0.04)) { try { el.currentTime = want; } catch {} }
   }
   return c;
+}
+// ⏳ ČEKÁNÍ NA NAČTENÍ: po skoku má webka (malý soubor) obraz hned, hra (větší) až za chvíli. Dřív hodiny běžely dál –
+// webka, zoomy a šipky jely podle času a hra je doháněla pozdě (efekty seděly jinde než v editu); navíc ji oprava
+// „ujeté“ hry posouvala znovu a znovu, takže se načítala pořád dokola. Teď hodiny počkají, až mají data VŠECHNY
+// viditelné vrstvy (nejvýš 8 s – když kopie chybí, nečekat věčně).
+const behind = e => !e.error && (e.seeking || e.readyState < 3);
+function waitCheck() {
+  if (!playing) { WAIT = false; return; }
+  const els = [...Object.values(tracks), ...LAYERS].filter(tr => tr.cur >= 0).map(tr => tr.els[tr.a]).filter(e => e.dataset.src && e.classList.contains('on'));
+  const lag = els.some(behind);
+  if (lag && !WAIT && performance.now() > WAIT_SKIP) {
+    Tstart = now(); WAIT = true; WAIT_AT = performance.now();
+    mic.pause(); mus.pause(); sfxStop(); els.forEach(e => e.pause());
+  } else if (WAIT && (!lag || performance.now() - WAIT_AT > 8000)) {
+    if (lag) WAIT_SKIP = performance.now() + 8000; // nedočkali jsme se → chvíli hrát bez čekání
+    WAIT = false; T0 = performance.now();
+    if (D?.mic_ready && mic.src) { mic.currentTime = Tstart; mic.play().catch(() => {}); }
+  }
 }
 const camAt = t => { let st = 'malá'; for (const [s, v] of D.cam) { if (s > t) break; if (v !== 'beze změny') st = v; } return st; };
 let lastPunch = -1, lastCamPunch = '';
@@ -424,7 +445,7 @@ function tick() {
   if (LAYERS.length) {
     // přesně podle sestaveného editu: každá vrstva svůj klip, zoom, posun, kotva, ořez
     for (const L of LAYERS) { const c = syncTrack(L, L.clips, t); if (c) applyFx(L.els[L.a], c, t); if (L.stopa === 2) c2 = c; }
-    syncOverlays(t); adjustLayers(t); stageFx(t); sounds(t);
+    syncOverlays(t); adjustLayers(t); stageFx(t); if (!WAIT) sounds(t);
   } else {
     syncTrack(tracks.v1, D.v1, t);
     c2 = syncTrack(tracks.v2, D.v2, t);
@@ -450,10 +471,12 @@ function tick() {
     if (!G.mus) mus.volume = Math.min(1, Math.pow(10, seg[4] / 20) * ($('#loud').checked ? 4 : 1)); // (bez Web Audio)
     const want = seg[3] + (t - seg[0]);
     if (playing && Math.abs(mus.currentTime - want) > 0.4) mus.currentTime = want;
-    if (playing && mus.paused) mus.play().catch(() => {});
+    if (playing && !WAIT && mus.paused) mus.play().catch(() => {});
   } else if (!mus.paused) mus.pause();
+  if (WAIT && !mus.paused) mus.pause();
   if (!playing && !mus.paused) mus.pause();
   gains(seg);
+  waitCheck();
   // popisky
   const kap = D.kapitoly.findIndex(([s, e]) => t >= s && t < e);
   $('#tag').innerHTML = [t < D.intro ? '🎬 úvod' : '', kap >= 0 ? `📖 ${kap + 1}. ${D.kapitoly[kap][2]}` : '', c2 ? `🎥 ${st}` : '', seg ? `🎵 ${seg[5]}` : ''].filter(Boolean).map(x => `<span>${x}</span>`).join('');
