@@ -865,7 +865,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-06.177'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-06.178'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -2040,7 +2040,7 @@ const getArchive = cid => { const items = Object.values(ls(akey(cid), {})).map(f
 // Počty zhlédnutí se obnovují odstupňovaně: videa mladší 24 h při každé obnově (S.interval, výchozí 30 min),
 // starší jen jednou za S.oldEvery minut (výchozí 2 h) – mění se pomalu a je jich nejvíc, šetří to dotazy.
 // it.st = kdy se počty u videa naposled stáhly.
-async function refreshLight(c, p, set) {
+async function refreshLight(c, p, set, noCh) {
   const now = Date.now(), since = now - PERIODS[p].hours * 3600e3;
   const old = new Map(set.items.map(i => [i.id, i]));
   const keep = [...old.values()].filter(it => new Date(it.pub) >= since);
@@ -2053,7 +2053,7 @@ async function refreshLight(c, p, set) {
   const items = keep.map(it => fresh.get(it.id) || it)
     .filter(it => new Date(it.pub) >= since);
   const have = new Set(items.map(i => i.id));
-  items.push(...await fetchChannelVideos(c, p, have));
+  if (!noCh) items.push(...await fetchChannelVideos(c, p, have)); // (noCh: na pozadí – nová videa kanálů hlídá robot)
   return {...set, ts:Date.now(), items:capItems(items)};
 }
 
@@ -5704,6 +5704,34 @@ setInterval(() => {
   if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || driveGate()) return;
   if (Date.now() >= nextDue()) autoRefresh();
 }, 1000);
+// 🔁 PŘEDEHŘÍVÁNÍ: Novinky 24 h ostatních států se obnovují na pozadí, i když jsi jinde (Kalendář, jiný stát) –
+// přepnutí je pak hned hotové, bez 15 s čekání. Jen levně: zhlédnutí (1 dotaz na 50 videí), NIKDY hledání ani kontrola
+// kanálů (nová videa sledovaných kanálů hlídá robot – 🔔 zvoneček – a z Disku přijdou co 30 s). Po jednom státu,
+// jen když 4 s nescrolluješ / neklepeš (mobil nelaguje) a jen do 6 000 dotazů denně za všechna zařízení.
+const PREF = {i:0, busy:false, input:0}, PREF_Q = 6000;
+for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) addEventListener(ev, () => { PREF.input = Date.now(); }, {passive:true, capture:true});
+const queriesToday = () => Object.values(ls('bt_qs', {})).filter(e => e.d === ptDate()).reduce((a, e) => a + (e.q || 0), 0);
+async function prefetchTick() {
+  if (PREF.busy || AUTO_BUSY || document.hidden || !S.key || !S.auto || REMOTE !== DRIVE_BACKEND || driveGate() || SYNC.inPull
+    || Date.now() - Math.max(PREF.input, LAST_SCROLL) < 4000 || queriesToday() > PREF_Q) return;
+  for (let k = 0; k < COUNTRIES.length; k++) {
+    const c = COUNTRIES[(PREF.i + k) % COUNTRIES.length];
+    if ((c.id === S.country && TIME_PERIODS.includes(S.period)) || busyElsewhere(c.id)) continue; // otevřený stát hlídá autoRefresh
+    // stáří jen z uloženého textu (rozbalit celý seznam každého státu co 20 s by mobil zbytečně zatěžovalo)
+    const raw = kvRaw(ckey(c.id, 'day')), ts = raw ? +((raw.match(/"ts":(\d+)/) || [])[1] || 0) : 0;
+    if (!ts || Date.now() - ts < S.interval * 60e3) continue;
+    const set = getSet(c.id, 'day');
+    PREF.i = (PREF.i + k + 1) % COUNTRIES.length; PREF.busy = true;
+    try {
+      const n = await refreshLight(c, 'day', set, true);
+      if (getSet(c.id, 'day')?.ts !== set.ts) return; // mezitím obnoveno jinde (otevřel jsi ho / jiné zařízení)
+      putSet(c.id, 'day', n); mergeInto(c.id, 'week', n.items); mergeInto(c.id, 'month', n.items); archive(c.id, n.items);
+    } catch {} finally { PREF.busy = false; }
+    return;
+  }
+}
+// (mobil méně často – každé obnovení je práce navíc pro slabší procesor)
+setInterval(prefetchTick, matchMedia('(pointer: coarse)').matches ? 60e3 : 20e3);
 
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
