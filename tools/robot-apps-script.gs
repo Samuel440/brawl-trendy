@@ -158,13 +158,10 @@ const COUNTRIES = [
   {id:'pl', lang:'pl', region:'PL', tz:'Europe/Warsaw'}, {id:'fr', lang:'fr', region:'FR', tz:'Europe/Paris'},
   {id:'es', lang:'es', region:'ES', tz:'Europe/Madrid'}, {id:'br', lang:'pt', region:'BR', tz:'America/Sao_Paulo'},
   {id:'tr', lang:'tr', region:'TR', tz:'Europe/Istanbul'}, {id:'jp', lang:'ja', region:'JP', tz:'Asia/Tokyo', q:'brawl stars|ブロスタ'},
-  {id:'kr', lang:'ko', region:'KR', tz:'Asia/Seoul', q:'brawl stars|브롤스타즈'},
-  // 🌍 angličtina = USA, Británie, Austrálie… → nikdy „noc“: hledá i měří grafy celý den naplno (nonstop)
-  {id:'en', lang:'en', region:'US', tz:'America/New_York', nonstop:true},
+  {id:'kr', lang:'ko', region:'KR', tz:'Asia/Seoul', q:'brawl stars|브롤스타즈'}, {id:'en', lang:'en', region:'US', tz:'America/New_York'},
   {id:'cz', lang:'cs', region:'CZ', tz:'Europe/Prague'}];
 const NS_CAP = 55; // hledání denně pro robota – zbytek ze 100 zůstane stránce na plná hledání
 function nsEvery_(c, d) { // minut mezi hledáními, 0 = teď ne (noc)
-  if (c.nonstop) return 120;
   const h = +Utilities.formatDate(d, c.tz, 'H'), wd = Utilities.formatDate(d, c.tz, 'u'), weekend = wd === '6' || wd === '7';
   if (h < 7 || h >= 23) return 0;
   return (weekend ? h >= 8 && h < 17 : h >= 12 && h < 17) ? 120 : 240;
@@ -289,7 +286,7 @@ function run_() {
   // blíží se denní limit → starší videa řidčeji (úspora: 1–7 dní co 3 h; nouze: jen videa do 24 h)
   const lvl = saving_();
   // 🌙 noc v zemi videa (22–7 h místního času) – lidi spí, graf by se stejně skoro nehnul
-  const night = {}; for (const c of COUNTRIES) { const h = +Utilities.formatDate(new Date(now), c.tz, 'H'); night[c.id] = !c.nonstop && (h >= 22 || h < 7); }
+  const night = {}; for (const c of COUNTRIES) { const h = +Utilities.formatDate(new Date(now), c.tz, 'H'); night[c.id] = h >= 22 || h < 7; }
   const tiers = lvl === 2 ? [[24 * H, 30 * 60e3], [7 * 24 * H, Infinity], [30 * 24 * H, Infinity]]
     : lvl === 1 ? [[24 * H, 30 * 60e3], [7 * 24 * H, 3 * H], [30 * 24 * H, 12 * H]] : TIERS;
   const due = Object.keys(pub).filter(vid => {

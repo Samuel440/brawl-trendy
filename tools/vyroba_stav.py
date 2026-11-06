@@ -25,6 +25,68 @@ HISTORIE_KAZDYCH_S = 20  # bod do grafu průběhu (čas, procenta)
 RADKU = 40
 
 
+WEB_URL = "https://samuel440.github.io/brawl-trendy/#vyr"
+NTFY_SOUBOR = r"S:\EDIT\_cache\ntfy_majitel.txt"
+
+
+def ntfy_kanal() -> str:
+    """Tajný kanál ntfy pro Samkův mobil (vymyslí se jednou, uloží na PC a web ho ukáže ve Výrobě k přihlášení)."""
+    try:
+        k = open(NTFY_SOUBOR, encoding="utf-8").read().strip()
+        if k:
+            return k
+    except Exception:  # noqa: BLE001
+        pass
+    import secrets
+    k = "ultrasami-vyroba-" + secrets.token_hex(8)
+    try:
+        os.makedirs(os.path.dirname(NTFY_SOUBOR), exist_ok=True)
+        open(NTFY_SOUBOR, "w", encoding="utf-8").write(k)
+    except Exception:  # noqa: BLE001
+        pass
+    return k
+
+
+def _ssl_kontexty():
+    import ssl
+    try:
+        import certifi
+        yield ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import truststore
+        yield truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:  # noqa: BLE001
+        pass
+    yield ssl.create_default_context()
+
+
+def upozorni(titulek: str, text: str = "", priorita: int = 4, tagy=None):
+    """📲 Upozornění na mobil přes ntfy.sh (appka ntfy, zdarma) – ve vlákně, nikdy nic neshodí a nezdrží."""
+    def _posli():
+        try:
+            import urllib.request
+            kanal = ntfy_kanal()
+            uloz("upozorneni", {"t": int(time.time() * 1000), "kanal": kanal})  # web ukáže, kam se přihlásit
+            data = json.dumps({"topic": kanal, "title": titulek[:200], "message": (text or titulek)[:1000],
+                               "priority": priorita, "tags": tagy or [], "click": WEB_URL}).encode("utf-8")
+            req = urllib.request.Request("https://ntfy.sh/", data=data, method="POST", headers={"Content-Type": "application/json"})
+            # Python na PC má zastaralé kořenové certifikáty („certificate has expired“) → certifi / truststore, co je po ruce
+            for ctx in _ssl_kontexty():
+                try:
+                    urllib.request.urlopen(req, timeout=15, context=ctx).read()
+                    return
+                except Exception:  # noqa: BLE001
+                    continue
+        except Exception:  # noqa: BLE001
+            pass
+    threading.Thread(target=_posli, daemon=True).start()
+
+
+JMENA = {"edit": "✂️ AUTO EDIT", "dabing": "🎙️ DABING", "render": "🎬 RENDER"}
+
+
 def uloz(nazev: str, data) -> bool:
     """Jednorázově uloží libovolná data jako vyroba_<nazev>.json (např. snímky timeliny z Resolve)."""
     try:
@@ -96,6 +158,12 @@ class Stav:
                     self.d["historie"].append([int(time.time() * 1000), 100.0])
                 self.bezi = False
             self._zapis(True)
+            # 📲 konec běhu na mobil: chyba hlasitě, hotovo normálně
+            jm = JMENA.get(self.d["program"], self.d["program"])
+            if ok:
+                upozorni(f"✔ {jm} hotovo – {self.d.get('nazev', '')}", zprava or "Hotovo.", 3, ["white_check_mark"])
+            else:
+                upozorni(f"✖ {jm} – CHYBA – {self.d.get('nazev', '')}", zprava or "Program skončil chybou.", 5, ["rotating_light"])
         except Exception:  # noqa: BLE001
             pass
 

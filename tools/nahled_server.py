@@ -28,6 +28,15 @@ import zipfile
 import zlib
 import xml.etree.ElementTree as ET
 
+# 🪟 server běží bez okna (pythonw, autostart) → každý ffmpeg / ffprobe / tasklist by si otevřel vlastní černé okno
+# příkazového řádku a hned zmizel (blikalo to i 10× za sebou). Všechno, co server spouští, proto VŽDY bez okna.
+if os.name == "nt":
+    class _PopenBezOkna(subprocess.Popen):  # (subprocess.run používá subprocess.Popen → platí i pro něj)
+        def __init__(self, *a, **k):
+            k["creationflags"] = k.get("creationflags", 0) | 0x08000000  # CREATE_NO_WINDOW
+            super().__init__(*a, **k)
+    subprocess.Popen = _PopenBezOkna
+
 PORT = 8790
 ANALYZA = r"S:\EDIT\analyza"
 CACHE = r"S:\EDIT\_cache\nahled"
