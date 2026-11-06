@@ -214,6 +214,7 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .ntfybox{background:var(--card,rgba(127,127,127,.08));border-radius:10px;padding:10px 12px;margin-top:6px;font-size:13px;line-height:1.45}
 .ntfybox ol{margin:6px 0;padding-left:20px}.ntfybox .row{gap:8px;flex-wrap:wrap;align-items:center}
 .ntfytopic{font-size:13px;padding:4px 8px;border-radius:6px;background:rgba(127,127,127,.18);user-select:all;word-break:break-all}
+.bgwarm{position:fixed;left:max(10px,env(safe-area-inset-left,0px));bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:60;font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 10px;opacity:.85;pointer-events:none}
 .robotstoji{background:var(--hot);color:#fff!important;font-weight:700;padding:5px 10px;border-radius:8px;text-decoration:none;animation:pingpulse 1.6s ease-in-out infinite}
 .pingbtn{animation:pingpulse 1.6s ease-in-out infinite}
 @keyframes pingpulse{50%{box-shadow:0 0 0 5px rgba(255,200,0,.35)}}
@@ -865,7 +866,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-06.174'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-06.175'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1385,6 +1386,7 @@ async function driveConnectInner(create, pick) {
     try { await quickPull(); rerender(); } catch {}
     await pullShared(true);
     SYNC.calFresh = true;
+    setTimeout(bgWarm, 4000); // 🌙 ostatní státy obnovit na pozadí (po jednom), ať je kliknutí hned
     status(`☁️ Disk připojen (${DRIVE.email}).`); ss('bt_nodrive', false);
   } catch (e) { DRIVE.state = 'off'; status(e.message === 'auth' ? 'Přihlášení vypršelo – připoj Disk znovu.' : e.message, true); }
   rerender();
@@ -2038,7 +2040,7 @@ const getArchive = cid => { const items = Object.values(ls(akey(cid), {})).map(f
 // Počty zhlédnutí se obnovují odstupňovaně: videa mladší 24 h při každé obnově (S.interval, výchozí 30 min),
 // starší jen jednou za S.oldEvery minut (výchozí 2 h) – mění se pomalu a je jich nejvíc, šetří to dotazy.
 // it.st = kdy se počty u videa naposled stáhly.
-async function refreshLight(c, p, set) {
+async function refreshLight(c, p, set, kanaly = true) { // kanaly=false: jen počty zhlédnutí (načítání na pozadí – nová videa kanálů hlídá robot přes RSS zdarma)
   const now = Date.now(), since = now - PERIODS[p].hours * 3600e3;
   const old = new Map(set.items.map(i => [i.id, i]));
   const keep = [...old.values()].filter(it => new Date(it.pub) >= since);
@@ -2051,7 +2053,7 @@ async function refreshLight(c, p, set) {
   const items = keep.map(it => fresh.get(it.id) || it)
     .filter(it => new Date(it.pub) >= since);
   const have = new Set(items.map(i => i.id));
-  items.push(...await fetchChannelVideos(c, p, have));
+  if (kanaly) items.push(...await fetchChannelVideos(c, p, have));
   return {...set, ts:Date.now(), items:capItems(items)};
 }
 
@@ -5626,6 +5628,55 @@ async function autoRefresh() {
   try { await showCountry(false); } finally { AUTO_BUSY = false; }
   if (Date.now() >= nextDue()) S.retry = {k:S.country + S.period, at:Date.now() + S.interval * 60e3}; // nepovedlo se (chyba / došla kvóta) → zkusit až za interval
 }
+// 🌙 NAČÍTÁNÍ NA POZADÍ: po otevření stránky (a pak nejvýš co hodinu) se postupně, po jednom, obnoví i státy, na které
+// zrovna nekoukáš – jen počty zhlédnutí (1 dotaz na 50 videí, ~2–6 na stát; hledání ani dotazy na kanály to nestojí –
+// nová videa sledovaných kanálů najde robot přes RSS zdarma). Nejvýš do 60 % denních dotazů, ať zbyde na klikání.
+// Kliknutí na stát pak ukáže čerstvá data hned (dřív se čekalo ~15 s). Když jiné zařízení stát právě obnovilo,
+// vezme se jeho výsledek z Disku. Při tvém kliknutí / načítání otevřeného státu se počká, ať se nic nepere.
+const BG = {busy:false, at:0, msg:''};
+const BG_PERIODS = ['day', 'week'];
+function bgNote(t) {
+  BG.msg = t;
+  let el = document.querySelector('#bgWarm');
+  if (!t) { el?.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'bgWarm'; el.className = 'bgwarm'; document.body.append(el); }
+  el.textContent = t;
+}
+async function bgWarm() {
+  if (BG.busy || !S.key || REMOTE !== DRIVE_BACKEND || !SYNC.ok || driveGate() || document.hidden) return;
+  BG.busy = true; BG.at = Date.now();
+  let hotovo = 0, zmeneno = false;
+  try {
+    const fronta = countryOrder().filter(c => c.id !== S.country).flatMap(c => BG_PERIODS.map(p => [c, p]));
+    for (const [c, p] of fronta) {
+      // počkat, než doběhne načítání otevřeného státu / tvoje kliknutí, a nic nedělat se skrytou stránkou
+      while ((AUTO_BUSY || loadBusy() || document.hidden) && Date.now() - BG.at < 30 * 60e3) await new Promise(r => setTimeout(r, 1500));
+      if (!S.key || REMOTE !== DRIVE_BACKEND) break;
+      let set = getSet(c.id, p);
+      if (!set || Date.now() - set.ts < S.interval * 60e3 || busyElsewhere(c.id)) continue; // čerstvé / nikdy nenačtené (to stojí hledání) / načítá jiné zařízení
+      bgNote(`🔄 na pozadí: ${c.name} – ${PERIODS[p].label} (${++hotovo})`);
+      try {
+        if (await diskNewer(ckey(c.id, p), set.ts)) { await pullShared().catch(() => {}); set = getSet(c.id, p); if (Date.now() - set.ts < S.interval * 60e3) continue; }
+        if (dotazyDnes() > QUERY_MAX * 0.6) break; // šetřit kvótu na tvoje kliknutí
+        const nove = await refreshLight(c, p, set, false);
+        putSet(c.id, p, nove);
+        if (p === 'day') mergeInto(c.id, 'week', nove.items);
+        mergeInto(c.id, 'month', nove.items);
+        archive(c.id, nove.items);
+        zmeneno = true;
+      } catch (e) { if (/quota|kvót/i.test(e.message)) break; }
+      await new Promise(r => setTimeout(r, 1200)); // po jednom, s pauzou – ať stránka nezasekává
+    }
+  } finally {
+    BG.busy = false; bgNote('');
+    if (zmeneno) { clearTimeout(SYNC.timer); SYNC.timer = setTimeout(() => syncPush(), 3000); renderHeader(); } // na Disk najednou (ostatní zařízení to pak nestahují)
+  }
+}
+const loadBusy = () => !!document.querySelector('#loadNote');
+// dnešní dotazy MÉHO klíče (všechna moje zařízení dohromady – sdílené počítadlo bt_qs)
+const dotazyDnes = () => { const d = ptDate(), me = meWho(); return Object.values(ls('bt_qs', {})).filter(e => e.d === d && (e.who || '') === me).reduce((a, e) => a + (e.q || 0), 0); };
+setInterval(() => { if (!BG.busy && Date.now() - BG.at >= Math.max(60, S.interval) * 60e3) bgWarm(); }, 20e3);
+
 setInterval(() => {
   updateUpdated();
   if (!document.hidden) checkAllThumbs(); // sama si hlídá interval 30 min
