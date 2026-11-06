@@ -89,6 +89,7 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .vyrbig .vyrbar{height:16px;border-radius:8px}
 .vyrbar i{position:absolute;left:0;top:0;bottom:0;background:var(--ok);border-radius:inherit;transition:width .6s}
 .vyrbar.bad i{background:var(--hot)}
+.vyrbat.bad{color:var(--hot)}
 .vyrbar u{position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.14);border-radius:inherit}
 .vyrbar.step i{background:var(--blue);opacity:.9}
 .vyrrows{display:flex;flex-direction:column;gap:5px;margin-top:10px}
@@ -268,7 +269,10 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .tlmoments .unfocus{flex-basis:100%;background:var(--hot);border-color:var(--hot);color:#fff;font-size:16px;font-weight:900;padding:10px 14px}
 .vyrpulse{animation:vyrpulse 1.4s ease-in-out infinite}
 @keyframes vyrpulse{50%{opacity:.45}}
-#tabs .vyrlive{box-shadow:inset 0 -3px 0 var(--hot)}
+/* 🛠️ pod záložkou Výroba: pruh průběhu toho, co skončí poslední (slabá červená = zbývá), a čas konce */
+#tabs .vyrlive{box-shadow:inset 0 -4px 0 color-mix(in srgb,var(--hot) 28%,transparent);background-image:linear-gradient(var(--hot),var(--hot));
+  background-size:var(--vp,100%) 4px;background-repeat:no-repeat;background-position:left bottom;transition:background-size .8s}
+#tabs .vyrend{font-size:.85em;font-weight:800;color:var(--hot);margin-left:3px}
 @media (max-width:600px){.vyrgrid{grid-template-columns:1fr}.vyrrow{grid-template-columns:2.4em minmax(0,6.5em) 1fr auto}.vyrrow > .ch:last-child{display:none}.vyrrow.step{grid-template-columns:2.4em minmax(0,1fr) 64px 78px}.vyrrow.step > .ch:last-child{display:block;font-size:11px;white-space:nowrap;text-align:right}}
 /* 🔴 grafik uložil nové video */
 .staralert{background:var(--hot)!important;color:#fff!important;border-color:var(--hot)!important}
@@ -864,7 +868,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-01.173'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-06.180'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1518,6 +1522,8 @@ const searchLeft = () => !searchBlocked() && quota().s + (meWho() ? 0 : robotSea
 // ---------- YouTube API ----------
 async function api(endpoint, params) {
   const isSearch = endpoint === 'search', q = quota();
+  // bez klíče by Google odpověděl „Method doesn't allow unregistered callers“ – klíč je uložený zvlášť v každém prohlížeči
+  if (!S.key) throw Object.assign(new Error('V tomhle prohlížeči není uložený YouTube API klíč – vlož ho v ⚙️ Nastavení → 🔑 YouTube API (klidně stejný jako na PC).'), {code:'nokey'});
   // vlastní denní limit hledání (např. grafik 20) – nad něj se nic nehledá
   if (isSearch && !searchLeft()) throw Object.assign(new Error(`Na dnešek došla hledání (${q.s}/${S.slimit}). Obnovují se v 9:00. Do té doby se dál obnovují zhlédnutí a nová videa ze sledovaných kanálů.`), {code:'search'});
   if (q.q >= QUERY_MAX) throw new Error('Došel denní limit dotazů. Obnoví se v 9:00.');
@@ -2037,7 +2043,7 @@ const getArchive = cid => { const items = Object.values(ls(akey(cid), {})).map(f
 // Počty zhlédnutí se obnovují odstupňovaně: videa mladší 24 h při každé obnově (S.interval, výchozí 30 min),
 // starší jen jednou za S.oldEvery minut (výchozí 2 h) – mění se pomalu a je jich nejvíc, šetří to dotazy.
 // it.st = kdy se počty u videa naposled stáhly.
-async function refreshLight(c, p, set) {
+async function refreshLight(c, p, set, noCh) {
   const now = Date.now(), since = now - PERIODS[p].hours * 3600e3;
   const old = new Map(set.items.map(i => [i.id, i]));
   const keep = [...old.values()].filter(it => new Date(it.pub) >= since);
@@ -2050,7 +2056,7 @@ async function refreshLight(c, p, set) {
   const items = keep.map(it => fresh.get(it.id) || it)
     .filter(it => new Date(it.pub) >= since);
   const have = new Set(items.map(i => i.id));
-  items.push(...await fetchChannelVideos(c, p, have));
+  if (!noCh) items.push(...await fetchChannelVideos(c, p, have)); // (noCh: na pozadí – nová videa kanálů hlídá robot)
   return {...set, ts:Date.now(), items:capItems(items)};
 }
 
@@ -2093,18 +2099,23 @@ const termHits = it => tokens(it.t).filter(w => brawlTerms().has(w));
 //  - nebo si je AI úplně jistá.
 // kanály, které točí hlavně Brawl Stars (napříč státy) – jejich video s „Brawl Stars“ v tazích je skoro jistě Brawl,
 // i když název je jen „ZALOŽIL JSEM PROKLETÝ CAT IN THE HAT ÚČET…“ a AI z miniatury nepozná Brawl (dala 0,3)
-let DED = null, DED_V = -1;
+let DED = null, MAN = null, DED_V = -1;
 function dedicatedCh(chId) {
   if (!DED || DED_V !== DATAVER) {
-    DED = new Set(); DED_V = DATAVER;
-    for (const c of COUNTRIES) for (const [id, e] of Object.entries(ls(chKey(c.id), {}))) if (isDedicated(e)) DED.add(id);
+    DED = new Set(); MAN = new Set(); DED_V = DATAVER;
+    for (const c of COUNTRIES) for (const [id, e] of Object.entries(ls(chKey(c.id), {}))) { if (isDedicated(e)) DED.add(id); if (e.manual) MAN.add(id); }
   }
   return DED.has(chId);
 }
+// 📌 kanál, který sis sám označil (sledovaný ručně) – víš, že točí Brawl
+const manualCh = chId => (dedicatedCh(chId), MAN.has(chId));
 function candOk(it) {
   const a = S.ai ? aiOf(it) : null;
   // Brawl kanál + Brawl v tazích → pustit, ledaže AI jasně řekla, že to Brawl není (pod 0,2)
   if ((it.bsTag ?? it.bsT) && dedicatedCh(it.chId) && !(a && a.s < 0.2)) return true;
+  // 📌 tvůj označený kanál: video pustit, i když Brawl nemá v názvu ani tazích – jen ne, když AI jasně řekla „není Brawl“
+  // (jiná hra v názvu se vyřadí už dřív – otherGame)
+  if (manualCh(it.chId) && !(a && a.s < 0.2)) return true;
   if (termHits(it).length || (it.weak && it.src !== 'ch')) return !a || a.s >= AI_WEAK;
   if (it.src === 'ch') return !!a && a.s >= 0.5;
   return !!a && a.s >= AI_SURE;
@@ -2411,7 +2422,14 @@ function enrich(it, c) {
 // Jiná hra přímo v NÁZVU (a Brawl v názvu ne) = není to Brawl, ať tvrdí tagy nebo AI cokoli.
 // Kanály jako Holdik dávají „brawl stars“ do tagů u všech videí, i u CS:GO.
 const OTHER_GAME_RX = /cs ?: ?go|\bcs ?2\b|\bcsgo\b|counter[- ]?strike|(^|[^а-яё])(кс ?го|кс ?2|кс)([^а-яё]|$)|standoff|стандофф?|faceit|фейсит|калибровк|kalibrac|valorant|валорант|call of duty|\bcod\b|warzone|fortnite|фортнайт|minecraft|майнкрафт|roblox|роблокс|\bdoors\b|(^|[^а-яё])(дорс|дота|гта)([^а-яё]|$)|pubg|пабг|free ?fire|фри ?фаер|\bdota|\bgta\b|among us|амонг ас|brawlhalla|clash royale|клеш рояль|clash of clans|клеш оф кланс|squad busters|geometry dash|stumble guys|стамбл гайс|subway surf|genshin|tarkov|тарков|apex legends|overwatch|rocket league|fifa\b|фифа|ea fc|mobile legends|mlbb|grand theft|five nights|fnaf|poppy playtime|rainbow six|\bpvz\b|plants vs/i;
-const otherGame = it => OTHER_GAME_RX.test(it.t) && !BRAWL_RX.test(it.t);
+// 🤝 spolupráce Brawl Stars s jinými hrami a značkami (teď GTA): to slovo v názvu NENÍ „jiná hra“, když video jinak
+// patří k Brawlu – Brawl v tazích / popisu, brawler v názvu, nebo kanál točí hlavně Brawl. Další spolupráci stačí připsat sem.
+const COLLAB_RX = /\bgta\b|grand theft|(^|[^а-яё])гта([^а-яё]|$)/gi;
+const otherGame = it => {
+  if (!OTHER_GAME_RX.test(it.t) || BRAWL_RX.test(it.t)) return false;
+  if (OTHER_GAME_RX.test(it.t.replace(COLLAB_RX, ' '))) return true; // i jiná hra než spolupráce
+  return !(it.bs || it.bsT || hasBrawler(it) || dedicatedCh(it.chId));
+};
 function prepare(items, c) {
   return items
     .filter(it => !otherGame(it))
@@ -4060,8 +4078,8 @@ const AI_YES = ['a screenshot of the mobile game Brawl Stars', 'colorful cartoon
 const AI_NO = ['a screenshot of Minecraft', 'a screenshot of Roblox', 'a screenshot of Fortnite', 'a screenshot of Clash Royale', 'a screenshot of Clash of Clans',
   'a screenshot of Stumble Guys', 'a screenshot of Free Fire or PUBG Mobile', 'a screenshot of Squad Busters', 'a screenshot of Geometry Dash', 'a photo of real people', 'a football video game',
   'a screenshot of Counter-Strike CS:GO or Standoff 2', 'a first-person shooter game with guns', 'a competitive rank leaderboard of a shooter game', 'a screenshot of Valorant or Call of Duty',
-  'a screenshot of GTA', 'a horror game like Doors or Poppy Playtime', 'a screenshot of Among Us'];
-const AI_VER = 2; // při změně popisů výš zvýšit – staré verdikty se pak spočítají znovu
+  'a horror game like Doors or Poppy Playtime', 'a screenshot of Among Us']; // (GTA ne – spolupráce s Brawlem má miniatury v jeho stylu)
+const AI_VER = 4; // při změně popisů výš zvýšit – staré verdikty se pak spočítají znovu
 const AI_WEAK = 0.35; // video se slovem sezóny musí mít aspoň tolik (vyřadí jasný Minecraft/Roblox/vlog)
 const AI_SURE = 0.9;  // video úplně bez slov sezóny projde jen při takové jistotě
 function rows(t) {
@@ -4074,6 +4092,41 @@ function rows(t) {
   return out;
 }
 const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+// 🖼️ VZORY: obecný model nezná skiny / brawlery / módy z posledního updatu, proto se nová miniatura porovná i přímo
+// s miniaturami OVĚŘENÝCH videí – Brawl Stars přímo v názvu (přednost má oficiální kanál a Brawl Talk, kde se novinky
+// ukazují první) – a videí s jinou hrou v názvu. Berou se vždy ty nejnovější, takže se vzory s každým updatem obnoví samy.
+// Uložené jen v tomhle prohlížeči (bt_airef), zmenšené na 8 bitů (~700 znaků na miniaturu).
+const REF_N = 24, REF_OFF = 10, REF_MIN = 0.75; // vzorů Brawl / jiných her; z toho oficiálních; podobnost „stejná hra“
+const isOfficial = x => x.chId === 'UCooVYzDxdwTtGYAkcPmOgOw' || /^brawl stars$/i.test((x.ch || '').trim()) || /brawl ?talk/i.test(x.t || '');
+const REF = (() => { try { return JSON.parse(localStorage.getItem('bt_airef') || '{}'); } catch { return {}; } })(); // id → {e, p:1 Brawl / 0 jiná hra, t}
+const q8 = e => btoa(String.fromCharCode(...new Uint8Array(Int8Array.from(e, x => Math.max(-127, Math.min(127, Math.round(x * 300)))).buffer)));
+const dq8 = b64 => { const b = atob(b64), v = Array.from(b, ch => { const x = ch.charCodeAt(0); return x > 127 ? x - 256 : x; });
+  const n = Math.hypot(...v) || 1; return v.map(x => x / n); };
+let REF_VER = null; // čas nejnovějšího vzoru Brawlu (spočítá se jednou, po doplnění vzorů znovu)
+const refVer = () => REF_VER ??= Math.max(0, ...Object.values(REF).filter(r => r.p).map(r => r.t || 0));
+function refPick() {
+  const all = new Map(), t = x => Date.parse(x.pub) || 0;
+  for (const c of COUNTRIES) for (const x of [...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])])
+    if (x?.id && !all.has(x.id)) all.set(x.id, x);
+  const v = [...all.values()].sort((a, b) => t(b) - t(a));
+  const brawl = v.filter(x => (x.bsN ?? BRAWL_RX.test(x.t)) && !OTHER_GAME_RX.test(x.t));
+  const off = brawl.filter(isOfficial).slice(0, REF_OFF);
+  const pos = [...off, ...brawl.filter(x => !off.includes(x))].slice(0, REF_N);
+  return [...pos.map(x => [x, 1]), ...v.filter(otherGame).slice(0, REF_N).map(x => [x, 0])];
+}
+// doplní chybějící vzory (první spuštění ~50 miniatur, pak jen nové) a připraví je pro aiScore
+async function aiRefs() {
+  const want = refPick(), keep = new Set(want.map(([x]) => x.id));
+  for (const id of Object.keys(REF)) if (!keep.has(id)) delete REF[id];
+  let n = 0;
+  for (const [x, p] of want) {
+    if (REF[x.id] || AI.bad.has(x.id) || !S.ai) continue;
+    status(`🤖 Učím se z nejnovějších Brawl miniatur… (${++n})`);
+    try { REF[x.id] = {e:q8(await embed(thumb(x))), p, t:Date.parse(x.pub) || 0}; } catch { AI.bad.add(x.id); }
+  }
+  AI.ref = Object.values(REF).map(r => ({e:dq8(r.e), p:r.p})); REF_VER = null;
+  try { localStorage.setItem('bt_airef', JSON.stringify(REF)); } catch {}
+}
 // 🤖 AI běží v samostatném vlákně (Web Worker) – výpočet jedné miniatury trvá na mobilu i vteřinu a v hlavním
 // vlákně by po tu dobu zamrzlo scrollování. Když worker nejde (starý prohlížeč), jede to postaru v hlavním vlákně.
 const AI_WORKER_SRC = `
@@ -4123,11 +4176,27 @@ async function embed(url) {
 function aiScore(e) {
   const logits = AI.text.map(t => dot(e, t) * 100), mx = Math.max(...logits);
   const ex = logits.map(l => Math.exp(l - mx)), sum = ex.reduce((a, b) => a + b, 0);
-  return {s:+(ex.slice(0, AI_YES.length).reduce((a, b) => a + b, 0) / sum).toFixed(2), v:AI_VER};
+  let s = ex.slice(0, AI_YES.length).reduce((a, b) => a + b, 0) / sum;
+  // 🖼️ vzory: jak moc se miniatura podobá nejbližším ověřeným Brawl miniaturám oproti miniaturám jiných her
+  // (průměr 3 nejpodobnějších; bez vzorů jiných her se srovnává s pevnou hranicí). Skóre může jen zvednout.
+  const P = [], N = [];
+  for (const r of AI.ref || []) (r.p ? P : N).push(dot(e, r.e));
+  if (P.length >= 5) {
+    const top = a => { a.sort((x, y) => y - x); return (a[0] + a[1] + a[2]) / 3; };
+    s = Math.max(s, 1 / (1 + Math.exp(-(top(P) - Math.max(N.length >= 3 ? top(N) : 0, REF_MIN)) * 40)));
+  }
+  return {s:+s.toFixed(2), v:AI_VER, rv:refVer()};
 }
 // Verdikt se pamatuje navždy (sdílí se přes Disk). Po rozšíření popisů jiných her (AI_VER 2: CS:GO, střílečky…) se znovu
-// kontrolují jen staré verdikty „je to Brawl“ – nové popisy můžou Brawl skóre jen snížit, „není Brawl“ tedy platí dál.
-const aiOf = it => { const a = AI_CACHE[it.id]; return a && ((a.v || 1) >= AI_VER || a.s < 0.5) ? a : null; };
+// kontrolovaly jen verdikty „je to Brawl“ (nové popisy skóre jen snižují). AI_VER 3 (bez GTA) a 4 (vzory) skóre jen
+// zvedají, takže se znovu kontrolují verdikty „není Brawl“; „je Brawl“ od verze 2 platí dál. „Není Brawl“ u videa
+// z posledních 30 dní se zkontroluje znovu, když mezitím přibyl novější vzor (nový update) – den po něm.
+const aiOf = it => {
+  const a = AI_CACHE[it.id], v = a?.v || 1;
+  if (!a || !(v >= AI_VER || (v >= 2 && a.s >= 0.5))) return null;
+  if (a.s < 0.5 && refVer() > (a.rv || 0) + 864e5 && Date.now() - (Date.parse(it.pub) || 0) < 30 * 864e5) return null;
+  return a;
+};
 function aiBadge(it) {
   const a = aiOf(it);
   if (!S.ai || !a || !it.cand) return '';
@@ -4143,6 +4212,7 @@ async function aiCheck(items) {
   let newCand = false, done = 0;
   try {
     await aiInit();
+    await aiRefs();
     while (AI.pending.size && S.ai) {
       const it = AI.pending.values().next().value; AI.pending.delete(it.id);
       if (aiOf(it)) continue;
@@ -4322,7 +4392,7 @@ function renderHeader() {
   const lastP = [...TIME_PERIODS, 'arch'].includes(ls('bt_lastp', 'week')) ? ls('bt_lastp', 'week') : 'week';
   $('#tabs').innerHTML = tab('cal') + `<button data-period="${inVideos ? S.period : lastP}" class="${inVideos ? 'on' : ''}">🎬 Videa</button>`
     + tab('star').replace('class="', `${starAlert() ? 'title="Grafik uložil nová videa" ' : ''}class="${starAlert() ? 'staralert ' : ''}`) + tab('ideas')
-    + (isOwner() ? tab('vyr').replace('class="', `class="${vyrRunning() ? 'vyrlive ' : ''}`) : '');
+    + (isOwner() ? (vb => tab('vyr').replace('class="', `${vb.attr}class="${vyrRunning() ? 'vyrlive ' : ''}`).replace(/<\/button>$/, vb.txt + '</button>'))(vyrTabBar()) : '');
   $('#periods').style.display = inVideos ? 'flex' : 'none';
   $('#periods').innerHTML = TIME_PERIODS.map(tab).join('') + `<button data-period="arch" class="archbtn ${S.period === 'arch' ? 'on' : ''}" title="Archiv – jen z uložených dat, kvótu nebere">${PERIODS.arch.label}</button>`;
   STICK = stickFor(); setTimeout(applyStick); // 📱 přilepit záložky (stránka se někdy kreslí bez renderMain)
@@ -5147,6 +5217,17 @@ function vyrNtfy() {
 // běží něco teď? (soubor se obnovuje aspoň co 30 s; víc než 2 min ticho = program spadl / okno zavřené)
 const vyrAlive = d => d && d.stav === 'bezi' && Date.now() - (d.t || 0) < 180e3;
 const vyrRunning = () => Object.values(VYR.d).some(vyrAlive);
+// 🛠️ pruh v záložce: z běžících programů ten, co skončí poslední – jeho % a čas konce (vidět z dálky, bez otevření Výroby)
+function vyrTabBar() {
+  const run = Object.entries(VYR.d).filter(([k, d]) => VYR_PROG[k] && vyrAlive(d));
+  if (!run.length) return {attr:'', txt:''};
+  const end = d => d.zbyva_s != null ? d.t + d.zbyva_s * 1000 : 0;
+  const last = run.map(([, d]) => d).sort((a, b) => end(b) - end(a))[0];
+  const pct = last.procenta != null ? Math.max(2, Math.min(100, last.procenta)) : 100;
+  const tip = run.map(([k, d]) => `${VYR_PROG[k].name}: ${d.procenta != null ? Math.round(d.procenta) + ' %' : 'běží'}${end(d) ? ' · hotovo v ' + hhmm(end(d)) : ''}`).join('\n');
+  return {attr:`style="--vp:${pct.toFixed(1)}%" title="${esc(tip)}" `,
+    txt:end(last) ? `<span class="vyrend">${hhmm(end(last))}</span>` : last.procenta != null ? `<span class="vyrend">${Math.round(last.procenta)} %</span>` : ''};
+}
 async function vyrPull() {
   if (VYR.busy || REMOTE !== DRIVE_BACKEND || !DRIVE.folder) return;
   VYR.busy = true;
@@ -5181,7 +5262,8 @@ async function vyrPull() {
   finally { VYR.busy = false; }
 }
 // co 5 s, když je záložka vidět; jinak co 2 min (jen kvůli značce „běží“ na záložce)
-setInterval(() => { if (!document.hidden && isOwner() && (S.period === 'vyr' || Date.now() - VYR.at > 120e3)) vyrPull(); }, 5e3);
+// (když něco běží, i mimo Výrobu co 30 s – pruh v záložce ukazuje průběh)
+setInterval(() => { if (!document.hidden && isOwner() && (S.period === 'vyr' || Date.now() - VYR.at > (vyrRunning() ? 30e3 : 120e3))) vyrPull(); }, 5e3);
 const hhmm = ms => new Date(ms).toLocaleTimeString('cs', {hour:'2-digit', minute:'2-digit'});
 function vyrGraph(h, start) {
   if (!h || h.length < 2) return '';
@@ -5343,6 +5425,7 @@ function vyrCard(key, full) {
       : `${vyrBar(d.procenta ?? 100, d.stav === 'chyba' ? 'bad' : '')}<b>${Math.round(d.procenta ?? 100)} %</b>`}</div>
     <div class="row ch">${d.faze ? `<span>▶ ${esc(d.faze)}</span>` : ''}<span>⏱️ ${alive ? 'běží' : 'trvalo'} ${tik('cas', 0, d.start, alive ? d.t + TIK_REZERVA : (d.konec || d.t))}</span>
       ${alive && left != null ? `<span>zbývá ${d.presne === false ? '≈' : ''}${tik('zbyva', left, d.t, d.t + TIK_REZERVA, -1)} · konec v <b>${hhmm(end)}</b></span>` : ''}
+      ${vyrBaterie(d, alive)}
       ${d.zprava ? `<span><b>${esc(d.zprava)}</b></span>` : ''}${d.rezim ? `<span>Výkon: ${esc(d.rezim)}</span>` : ''}
       <span>aktualizováno ${ago((Date.now() - d.t) / 3600e3)}</span></div>`;
   let body = '';
@@ -5370,6 +5453,16 @@ function vyrCard(key, full) {
   const tl = key === 'edit' && VYR.d.edit_tl?.start === d.start ? vyrTimeline(VYR.d.edit_tl) : '';
   const close = alive ? '' : `<button class="vyrclose" data-vyrhide="${key}" title="Skrýt hotový běh (sbalí se na jeden řádek)">✖</button>`;
   return `<div class="vyrcard ${alive ? 'live' : ''}${tl ? ' wide' : ''}">${close}${head}${nahled}${tl}${vyrGraph(d.historie, d.start)}${body}${log ? `<details class="vyrlog"><summary class="ch">📜 Výpis (posledních ${d.radky.length} řádků)</summary><div>${log}</div></details>` : ''}</div>`;
+}
+// 🔋 baterka MacBooku (jen když AUTO EDIT běží na Macu – na PC pole „baterie“ chybí): hotový řádek z okna AUTO EDITU,
+// po skončení skutečná spotřeba („konec“); červeně, když nemusí vydržet
+function vyrBaterie(d, alive) {
+  const b = d.baterie; if (!b) return '';
+  const txt = !alive && b.konec ? b.konec : b.text; if (!txt) return '';
+  const bad = alive && b.nevydrzi;
+  const tip = [b.procenta != null && `teď ${b.procenta} %`, b.start != null && `na začátku ${b.start} %`, b.spotrebovano != null && `zatím −${b.spotrebovano} %`,
+    alive && b.spotrebuje != null && `do konce ještě ~−${b.spotrebuje} %`, alive && b.zbyde != null && `na konci zbyde ~${b.zbyde} %`].filter(Boolean).join(' · ');
+  return `<span class="vyrbat${bad ? ' bad' : ''}" title="${esc(tip)}">${bad ? '<b>' + esc(txt) + '</b>' : esc(txt)}</span>`;
 }
 const vyrCas = s => { s = Math.max(0, Math.round(s)); return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 // ⏱️ tikající čas: hodnota „b“ sekund platila v čase t0, web k ní sám přičítá vteřinu po vteřině – ale nejvýš do „max“
@@ -5439,7 +5532,7 @@ function vyrStats() {
           .map(([p, m]) => `<span><i style="background:${projCol(p)}"></i>${esc(p)} <b>${hm(m)}</b></span>`).join('')}</div></details>
         <div class="stchart${anim}">${tBars}</div></div>
       <div class="stpen"><h4>💰 Utraceno</h4>
-        <div class="stnums"><span>Dnes <b>${kc(ps(today))}</b></span><span>Tento měsíc <b>${kc(mSum('edit') + mSum('dabing'))}</b></span><span>Celkem <b>${kc((C.edit || 0) + (C.dabing || 0))}</b></span></div>
+        <div class="stnums"><span>Dnes <b>${kc(ps(today))}</b></span><span title="Jen tento kalendářní měsíc (od 1.)">${new Date().toLocaleDateString('cs', {month:'long'}).replace(/^./, x => x.toUpperCase())} <b>${kc(mSum('edit') + mSum('dabing'))}</b></span><span title="Součet sloupců v grafu (posledních 30 dní)">30 dní <b>${kc(d30.reduce((a, d) => a + ps(d), 0))}</b></span><span>Celkem <b>${kc((C.edit || 0) + (C.dabing || 0))}</b></span></div>
         <div class="stlist"><span><i style="background:${PEN_EDIT}"></i>AUTO EDIT <b>${kc(C.edit || 0)}</b></span><span><i style="background:${PEN_DAB}"></i>DABING <b>${kc(C.dabing || 0)}</b></span></div>
         <div class="stchart${anim}">${pBars}</div>
         <details><summary class="ch">Podle projektů</summary><div class="stlist">${projP.map(([p, s, v]) => `<span title="AUTO EDIT ${kc(v.edit || 0)} · DABING ${kc(v.dabing || 0)}">${esc(p)} <b>${kc(s)}</b></span>`).join('')}</div></details></div>
@@ -5626,6 +5719,34 @@ setInterval(() => {
   if (!S.key || !S.auto || PERIODS[S.period].local || S.period === 'ideas' || document.hidden || driveGate()) return;
   if (Date.now() >= nextDue()) autoRefresh();
 }, 1000);
+// 🔁 PŘEDEHŘÍVÁNÍ: Novinky 24 h ostatních států se obnovují na pozadí, i když jsi jinde (Kalendář, jiný stát) –
+// přepnutí je pak hned hotové, bez 15 s čekání. Jen levně: zhlédnutí (1 dotaz na 50 videí), NIKDY hledání ani kontrola
+// kanálů (nová videa sledovaných kanálů hlídá robot – 🔔 zvoneček – a z Disku přijdou co 30 s). Po jednom státu,
+// jen když 4 s nescrolluješ / neklepeš (mobil nelaguje) a jen do 6 000 dotazů denně za všechna zařízení.
+const PREF = {i:0, busy:false, input:0}, PREF_Q = 6000;
+for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) addEventListener(ev, () => { PREF.input = Date.now(); }, {passive:true, capture:true});
+const queriesToday = () => Object.values(ls('bt_qs', {})).filter(e => e.d === ptDate()).reduce((a, e) => a + (e.q || 0), 0);
+async function prefetchTick() {
+  if (PREF.busy || AUTO_BUSY || document.hidden || !S.key || !S.auto || REMOTE !== DRIVE_BACKEND || driveGate() || SYNC.inPull
+    || Date.now() - Math.max(PREF.input, LAST_SCROLL) < 4000 || queriesToday() > PREF_Q) return;
+  for (let k = 0; k < COUNTRIES.length; k++) {
+    const c = COUNTRIES[(PREF.i + k) % COUNTRIES.length];
+    if ((c.id === S.country && TIME_PERIODS.includes(S.period)) || busyElsewhere(c.id)) continue; // otevřený stát hlídá autoRefresh
+    // stáří jen z uloženého textu (rozbalit celý seznam každého státu co 20 s by mobil zbytečně zatěžovalo)
+    const raw = kvRaw(ckey(c.id, 'day')), ts = raw ? +((raw.match(/"ts":(\d+)/) || [])[1] || 0) : 0;
+    if (!ts || Date.now() - ts < S.interval * 60e3) continue;
+    const set = getSet(c.id, 'day');
+    PREF.i = (PREF.i + k + 1) % COUNTRIES.length; PREF.busy = true;
+    try {
+      const n = await refreshLight(c, 'day', set, true);
+      if (getSet(c.id, 'day')?.ts !== set.ts) return; // mezitím obnoveno jinde (otevřel jsi ho / jiné zařízení)
+      putSet(c.id, 'day', n); mergeInto(c.id, 'week', n.items); mergeInto(c.id, 'month', n.items); archive(c.id, n.items);
+    } catch {} finally { PREF.busy = false; }
+    return;
+  }
+}
+// (mobil méně často – každé obnovení je práce navíc pro slabší procesor)
+setInterval(prefetchTick, matchMedia('(pointer: coarse)').matches ? 60e3 : 20e3);
 
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
