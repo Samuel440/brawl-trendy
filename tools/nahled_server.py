@@ -38,6 +38,7 @@ if os.name == "nt":
     subprocess.Popen = _PopenBezOkna
 
 PORT = 8790
+KUS = 2 * 1024 * 1024  # odpověď na Range nejvýš 2 MB (viz H._file)
 ANALYZA = r"S:\EDIT\analyza"
 CACHE = r"S:\EDIT\_cache\nahled"
 TOOLS = os.path.dirname(os.path.abspath(__file__))
@@ -742,7 +743,9 @@ class H(http.server.BaseHTTPRequestHandler):
         if rng:
             a = int(rng.group(1)) if rng.group(1) else max(0, size - int(rng.group(2)))
             b = int(rng.group(2)) if rng.group(1) and rng.group(2) else size - 1
-            b = min(b, size - 1)
+            # ⚡ po kouscích (2 MB): dřív se na každý skok posílal CELÝ zbytek souboru (stovky MB) – prohlížeč smí mít
+            # k serveru jen 6 spojení, ta se ucpala starými přenosy a další skoky na ně čekaly i 2 s
+            b = min(b, size - 1, a + KUS - 1)
         self.send_response(206 if rng else 200)
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
