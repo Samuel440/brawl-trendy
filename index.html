@@ -866,7 +866,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-06.176'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-06.177'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -5648,7 +5648,8 @@ async function bgWarm() {
   BG.busy = true; BG.at = Date.now();
   let hotovo = 0, zmeneno = false;
   try {
-    const fronta = countryOrder().filter(c => c.id !== S.country).flatMap(c => BG_PERIODS.map(p => [c, p]));
+    // pořadí podle tvých záložek států (🇨🇿 Česko první, pak angličtina…) – co máš nejvíc po ruce, je čerstvé nejdřív
+    const fronta = countryOrder().flatMap(c => BG_PERIODS.map(p => [c, p]));
     for (const [c, p] of fronta) {
       // počkat, než doběhne načítání otevřeného státu / tvoje kliknutí, a nic nedělat se skrytou stránkou
       while ((AUTO_BUSY || loadBusy() || document.hidden) && Date.now() - BG.at < 30 * 60e3) await new Promise(r => setTimeout(r, 1500));
@@ -5665,12 +5666,16 @@ async function bgWarm() {
         mergeInto(c.id, 'month', nove.items);
         archive(c.id, nove.items);
         zmeneno = true;
+        // ⚡ hned vidět: koukáš na ten stát → překreslit seznam (Týden/Měsíc se doplnily taky); tlačítka států vždy
+        if (S.country === c.id && TIME_PERIODS.includes(S.period) && !S.view) calmRerender();
+        renderHeader();
+        clearTimeout(SYNC.timer); SYNC.timer = setTimeout(() => syncPush(), 4000); // i na Disk (mobil, grafik) průběžně
       } catch (e) { if (/quota|kvót/i.test(e.message)) break; }
       await new Promise(r => setTimeout(r, 1200)); // po jednom, s pauzou – ať stránka nezasekává
     }
   } finally {
     BG.busy = false; bgNote('');
-    if (zmeneno) { clearTimeout(SYNC.timer); SYNC.timer = setTimeout(() => syncPush(), 3000); renderHeader(); } // na Disk najednou (ostatní zařízení to pak nestahují)
+    if (zmeneno) renderHeader();
   }
 }
 const loadBusy = () => !!document.querySelector('#loadNote');
