@@ -29,23 +29,28 @@ const TIERS = [[24 * H, 30 * 60e3], [7 * 24 * H, 2 * H], [30 * 24 * H, 12 * H]];
 // ⏱ Hlídání denního limitu Googlu (90 min běhu robotů denně zdarma): robot si sčítá, kolik dnes spotřeboval,
 // a když se blíží limitu, zpomalí starší videa – ať se nezastaví úplně. Videa do 24 h a 📌 kanály jedou vždy naplno.
 //   0 = normál · 1 = úspora (1–7 dní a ostatní kanály co 3 h) · 2 = nouze (jen videa do 24 h a 📌 kanály)
-const BUDGET_MIN = 90;
+// ⚠ (6/11) Google NEpočítá limit od půlnoci, ale za POSLEDNÍCH 24 h – a když ho robot přetáhne, spouštěče tiše
+// přestanou běžet a SAMY se už neobnoví (28/10 19:34 a 6/11 9:58 – robot stál, dokud se znovu nespustilo „nastavit“).
+// Proto se spotřeba počítá po hodinách za posledních 24 h a robot se zastaví s rezervou (BUDGET_MIN pod 90).
+const BUDGET_MIN = 75;
 function usage_() {
-  const p = PropertiesService.getScriptProperties(), k = 'rt_' + Utilities.formatDate(new Date(), 'Europe/Prague', 'yyyy-MM-dd');
-  return {p, k, used: +(p.getProperty(k) || 0)};
+  const p = PropertiesService.getScriptProperties(), all = p.getProperties(), now = Date.now();
+  const k = 'rh_' + Math.floor(now / H);
+  let used = 0;
+  for (const key in all) if (/^rh_\d+$/.test(key)) { if (now - +key.slice(3) * H < 24 * H) used += +all[key] || 0; }
+  return {p, k, used, cur: +(all[k] || 0), all};
 }
 function addUsage_(ms) {
-  const u = usage_(); u.p.setProperty(u.k, String(u.used + ms));
-  for (const key of u.p.getKeys()) if (/^rt_/.test(key) && key !== u.k) u.p.deleteProperty(key); // včerejšek pryč
+  const u = usage_(), now = Date.now(); u.p.setProperty(u.k, String(u.cur + ms));
+  for (const key in u.all) if ((/^rh_\d+$/.test(key) && now - +key.slice(3) * H >= 25 * H) || /^rt_/.test(key)) u.p.deleteProperty(key); // starší než den pryč
 }
 function saving_() {
-  const min = usage_().used / 60e3, d = new Date();
-  const hrs = +Utilities.formatDate(d, 'Europe/Prague', 'H') + +Utilities.formatDate(d, 'Europe/Prague', 'm') / 60;
-  const projected = min / Math.max(hrs, 2) * 24; // kolik by to dalo za celý den, když to půjde takhle dál
+  const min = usage_().used / 60e3;
   if (min > BUDGET_MIN - 10) return 2;
-  if (min > BUDGET_MIN - 30 || projected > BUDGET_MIN - 10) return 1;
+  if (min > BUDGET_MIN - 30) return 1;
   return 0;
 }
+const plno_ = () => usage_().used / 60e3 > BUDGET_MIN; // úplně na hraně → tenhle běh vynechat
 const SAVE_NAME = ['normál', '🟡 úspora – starší videa a ostatní kanály co 3 h', '🔴 nouze – jen videa do 24 h a 📌 kanály'];
 const MAX_CALLS = 400; // pojistka: nejvýš tolik dotazů na YouTube za jeden běh
 const MAX_MS = 4.5 * 60e3; // Google dovolí běh max 6 min – po 4,5 min se zbytek nechá na příště
@@ -94,7 +99,8 @@ function zvonecek() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return; // zrovna běží sběr grafů – zvoneček počká na příště (za 10 min)
   const t0 = Date.now();
-  try { zvonecek_(); } finally { addUsage_(Date.now() - t0); lock.releaseLock(); }
+  try { if (plno_()) { console.log('⏸ limit 24 h skoro vyčerpaný – zvoneček tentokrát vynechán'); return; } zvonecek_(); }
+  finally { addUsage_(Date.now() - t0); lock.releaseLock(); }
 }
 function zvonecek_() {
   const t0 = Date.now(), folder = folder_(), cache = CacheService.getScriptCache();
@@ -145,8 +151,8 @@ function zvonecek_() {
   const ns = usage_().used / 60e3 < BUDGET_MIN - 2 ? novinky_(nw, now, t0) : 0; added += ns;
   for (const vid in nw) if (vid[0] !== '_' && now - Date.parse(nw[vid].pub) > 30 * 24 * H) delete nw[vid]; // starší než měsíc pryč
   if (added || (nw._robot && nw._robot.at === now)) f.setContent(JSON.stringify({k: 'bt_new', v: nw, t: now}));
-  if (allDue) cache.put('zv_all', '1', (lvl ? 3 : 2) * 3600);
-  console.log(`🔔 ${Object.keys(lists.manual).length} 📌 kanálů${allDue ? ` + ${Object.keys(lists.auto).length} sledovaných` : ''}, nových videí: ${added} (z hledání ${ns}), hledání dnes ${(nw._robot || {}).s || 0}/${NS_CAP}, trvalo ${Math.round((Date.now() - t0) / 1000)} s · dnes ${Math.round(usage_().used / 60e3)}/${BUDGET_MIN} min · ${SAVE_NAME[lvl]}`);
+  if (allDue) cache.put('zv_all', '1', (lvl ? 6 : 4) * 3600); // (6/11: dřív co 2 h – nejdražší část robota, běhy až 4 min)
+  console.log(`🔔 ${Object.keys(lists.manual).length} 📌 kanálů${allDue ? ` + ${Object.keys(lists.auto).length} sledovaných` : ''}, nových videí: ${added} (z hledání ${ns}), hledání dnes ${(nw._robot || {}).s || 0}/${NS_CAP}, trvalo ${Math.round((Date.now() - t0) / 1000)} s · za 24 h ${Math.round(usage_().used / 60e3)}/${BUDGET_MIN} min · ${SAVE_NAME[lvl]}`);
 }
 
 // 🕐 Nejnovější videa každého státu (hledání order=date) podle místního času – v hlavní čas vydávání častěji, v noci vůbec.
@@ -202,7 +208,8 @@ function sber() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) { console.log('Předchozí běh ještě neskončil – přeskakuji.'); return; }
   const t0 = Date.now();
-  try { run_(); } finally { addUsage_(Date.now() - t0); lock.releaseLock(); }
+  try { if (plno_()) { console.log('⏸ limit 24 h skoro vyčerpaný – sběr tentokrát vynechán'); return; } run_(); }
+  finally { addUsage_(Date.now() - t0); lock.releaseLock(); }
 }
 
 function thin_(p) {
@@ -295,7 +302,7 @@ function run_() {
     if (night[cidOf[vid]]) every = Math.max(every, 4 * H); // 🌙 v noci té země se skoro nesleduje → jen co 4 h
     return now - lastM >= every - 60e3;
   }).sort((a, b) => pub[b] - pub[a]); // nejnovější první (když dojde čas, ať se obnoví hlavně ty)
-  console.log(`videí do 30 dní: ${Object.keys(pub).length}, k obnovení: ${due.length} · dnes ${Math.round(usage_().used / 60e3)}/${BUDGET_MIN} min · ${SAVE_NAME[lvl]}`);
+  console.log(`videí do 30 dní: ${Object.keys(pub).length}, k obnovení: ${due.length} · za 24 h ${Math.round(usage_().used / 60e3)}/${BUDGET_MIN} min · ${SAVE_NAME[lvl]}`);
 
   // zhlédnutí z YouTube po 50 videích (1 dotaz = 1 jednotka z 10 000 denních)
   let calls = 0;
