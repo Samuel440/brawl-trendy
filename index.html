@@ -868,7 +868,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-06.179'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-06.180'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -5532,7 +5532,7 @@ function vyrStats() {
           .map(([p, m]) => `<span><i style="background:${projCol(p)}"></i>${esc(p)} <b>${hm(m)}</b></span>`).join('')}</div></details>
         <div class="stchart${anim}">${tBars}</div></div>
       <div class="stpen"><h4>💰 Utraceno</h4>
-        <div class="stnums"><span>Dnes <b>${kc(ps(today))}</b></span><span>Tento měsíc <b>${kc(mSum('edit') + mSum('dabing'))}</b></span><span>Celkem <b>${kc((C.edit || 0) + (C.dabing || 0))}</b></span></div>
+        <div class="stnums"><span>Dnes <b>${kc(ps(today))}</b></span><span title="Jen tento kalendářní měsíc (od 1.)">${new Date().toLocaleDateString('cs', {month:'long'}).replace(/^./, x => x.toUpperCase())} <b>${kc(mSum('edit') + mSum('dabing'))}</b></span><span title="Součet sloupců v grafu (posledních 30 dní)">30 dní <b>${kc(d30.reduce((a, d) => a + ps(d), 0))}</b></span><span>Celkem <b>${kc((C.edit || 0) + (C.dabing || 0))}</b></span></div>
         <div class="stlist"><span><i style="background:${PEN_EDIT}"></i>AUTO EDIT <b>${kc(C.edit || 0)}</b></span><span><i style="background:${PEN_DAB}"></i>DABING <b>${kc(C.dabing || 0)}</b></span></div>
         <div class="stchart${anim}">${pBars}</div>
         <details><summary class="ch">Podle projektů</summary><div class="stlist">${projP.map(([p, s, v]) => `<span title="AUTO EDIT ${kc(v.edit || 0)} · DABING ${kc(v.dabing || 0)}">${esc(p)} <b>${kc(s)}</b></span>`).join('')}</div></details></div>
