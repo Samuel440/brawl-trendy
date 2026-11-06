@@ -2,7 +2,7 @@
 // Běží zdarma na tvém Google účtu každých 30 minut, i když jsou všechna zařízení vypnutá.
 // Stejná práce jako GitHub robot (tools/hist.py): vezme videa z Novinek/Týdne/Měsíce všech států ze složky
 // „Brawl Trendy – data“, stáhne jejich aktuální zhlédnutí z YouTube a připíše body do s_bt_h_0…f__github-action.json.
-// Stejná pravidla jako stránka: videa do 24 h každých 30 min, 1–7 dní co 2 h, 7–30 dní co 12 h.
+// Videa do 24 h každých 30 min, 2. den co 2 h, 3. den co 3 h, do týdne co 4 h, 7–30 dní 1× denně.
 //
 // Nastavení (jednou): vlevo „Služby +“ → YouTube Data API v3 → Přidat, pak nahoře vybrat funkci „nastavit“ → Spustit.
 
@@ -24,11 +24,12 @@ function memSave_(obj) {
   return Math.round(s.length / 1024);
 }
 const HIST_DAYS = 45, HIST_MAX = 40, H = 3600e3;
-const TIERS = [[24 * H, 30 * 60e3], [7 * 24 * H, 2 * H], [30 * 24 * H, 12 * H]]; // [stáří do, obnovit po]
+// [stáří do, obnovit po] – 1. den co 30 min, 2. den co 2 h, 3. den co 3 h, do týdne co 4 h, pak do měsíce 1× denně
+const TIERS = [[24 * H, 30 * 60e3], [48 * H, 2 * H], [72 * H, 3 * H], [7 * 24 * H, 4 * H], [30 * 24 * H, 24 * H]];
 
 // ⏱ Hlídání denního limitu Googlu (90 min běhu robotů denně zdarma): robot si sčítá, kolik dnes spotřeboval,
 // a když se blíží limitu, zpomalí starší videa – ať se nezastaví úplně. Videa do 24 h a 📌 kanály jedou vždy naplno.
-//   0 = normál · 1 = úspora (1–7 dní a ostatní kanály co 3 h) · 2 = nouze (jen videa do 24 h a 📌 kanály)
+//   0 = normál · 1 = úspora (starší videa o krok řidčeji, ostatní kanály co 6 h) · 2 = nouze (jen videa do 24 h a 📌 kanály)
 // ⚠ (6/11) Google NEpočítá limit od půlnoci, ale za POSLEDNÍCH 24 h – a když ho robot přetáhne, spouštěče tiše
 // přestanou běžet a SAMY se už neobnoví (28/10 19:34 a 6/11 9:58 – robot stál, dokud se znovu nespustilo „nastavit“).
 // Proto se spotřeba počítá po hodinách za posledních 24 h a robot se zastaví s rezervou (BUDGET_MIN pod 90).
@@ -290,12 +291,12 @@ function run_() {
   const nf = robotFile_(folder, 'bt_new'), nd = nf && readJson_(nf);
   for (const id in (nd && nd.v) || {}) { const tp = Date.parse(nd.v[id].pub); if (tp && now - tp < 30 * 24 * H && !pub[id]) { pub[id] = tp; cidOf[id] = nd.v[id].cid; } }
   for (const id in pub) if (chk[id]) newChk[id] = chk[id];
-  // blíží se denní limit → starší videa řidčeji (úspora: 1–7 dní co 3 h; nouze: jen videa do 24 h)
+  // blíží se denní limit → starší videa řidčeji (úspora: o krok řidčeji; nouze: jen videa do 24 h)
   const lvl = saving_();
   // 🌙 noc v zemi videa (22–7 h místního času) – lidi spí, graf by se stejně skoro nehnul
   const night = {}; for (const c of COUNTRIES) { const h = +Utilities.formatDate(new Date(now), c.tz, 'H'); night[c.id] = h >= 22 || h < 7; }
-  const tiers = lvl === 2 ? [[24 * H, 30 * 60e3], [7 * 24 * H, Infinity], [30 * 24 * H, Infinity]]
-    : lvl === 1 ? [[24 * H, 30 * 60e3], [7 * 24 * H, 3 * H], [30 * 24 * H, 12 * H]] : TIERS;
+  const tiers = lvl === 2 ? [[24 * H, 30 * 60e3], [30 * 24 * H, Infinity]]
+    : lvl === 1 ? [[24 * H, 30 * 60e3], [48 * H, 3 * H], [72 * H, 4 * H], [7 * 24 * H, 6 * H], [30 * 24 * H, 24 * H]] : TIERS;
   const due = Object.keys(pub).filter(vid => {
     const lastPt = (last[vid] || [0])[0] * 60e3, lastM = Math.max(lastPt, (chk[vid] || 0) * 60e3);
     let every = tiers.find(x => now - pub[vid] < x[0])[1];
