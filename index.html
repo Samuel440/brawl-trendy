@@ -269,7 +269,10 @@ nav button.costly{background:transparent;color:var(--muted);border-color:transpa
 .tlmoments .unfocus{flex-basis:100%;background:var(--hot);border-color:var(--hot);color:#fff;font-size:16px;font-weight:900;padding:10px 14px}
 .vyrpulse{animation:vyrpulse 1.4s ease-in-out infinite}
 @keyframes vyrpulse{50%{opacity:.45}}
-#tabs .vyrlive{box-shadow:inset 0 -3px 0 var(--hot)}
+/* 🛠️ pod záložkou Výroba: pruh průběhu toho, co skončí poslední (slabá červená = zbývá), a čas konce */
+#tabs .vyrlive{box-shadow:inset 0 -4px 0 color-mix(in srgb,var(--hot) 28%,transparent);background-image:linear-gradient(var(--hot),var(--hot));
+  background-size:var(--vp,100%) 4px;background-repeat:no-repeat;background-position:left bottom;transition:background-size .8s}
+#tabs .vyrend{font-size:.85em;font-weight:800;color:var(--hot);margin-left:3px}
 @media (max-width:600px){.vyrgrid{grid-template-columns:1fr}.vyrrow{grid-template-columns:2.4em minmax(0,6.5em) 1fr auto}.vyrrow > .ch:last-child{display:none}.vyrrow.step{grid-template-columns:2.4em minmax(0,1fr) 64px 78px}.vyrrow.step > .ch:last-child{display:block;font-size:11px;white-space:nowrap;text-align:right}}
 /* 🔴 grafik uložil nové video */
 .staralert{background:var(--hot)!important;color:#fff!important;border-color:var(--hot)!important}
@@ -865,7 +868,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-06.178'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-06.179'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4389,7 +4392,7 @@ function renderHeader() {
   const lastP = [...TIME_PERIODS, 'arch'].includes(ls('bt_lastp', 'week')) ? ls('bt_lastp', 'week') : 'week';
   $('#tabs').innerHTML = tab('cal') + `<button data-period="${inVideos ? S.period : lastP}" class="${inVideos ? 'on' : ''}">🎬 Videa</button>`
     + tab('star').replace('class="', `${starAlert() ? 'title="Grafik uložil nová videa" ' : ''}class="${starAlert() ? 'staralert ' : ''}`) + tab('ideas')
-    + (isOwner() ? tab('vyr').replace('class="', `class="${vyrRunning() ? 'vyrlive ' : ''}`) : '');
+    + (isOwner() ? (vb => tab('vyr').replace('class="', `${vb.attr}class="${vyrRunning() ? 'vyrlive ' : ''}`).replace(/<\/button>$/, vb.txt + '</button>'))(vyrTabBar()) : '');
   $('#periods').style.display = inVideos ? 'flex' : 'none';
   $('#periods').innerHTML = TIME_PERIODS.map(tab).join('') + `<button data-period="arch" class="archbtn ${S.period === 'arch' ? 'on' : ''}" title="Archiv – jen z uložených dat, kvótu nebere">${PERIODS.arch.label}</button>`;
   STICK = stickFor(); setTimeout(applyStick); // 📱 přilepit záložky (stránka se někdy kreslí bez renderMain)
@@ -5214,6 +5217,17 @@ function vyrNtfy() {
 // běží něco teď? (soubor se obnovuje aspoň co 30 s; víc než 2 min ticho = program spadl / okno zavřené)
 const vyrAlive = d => d && d.stav === 'bezi' && Date.now() - (d.t || 0) < 180e3;
 const vyrRunning = () => Object.values(VYR.d).some(vyrAlive);
+// 🛠️ pruh v záložce: z běžících programů ten, co skončí poslední – jeho % a čas konce (vidět z dálky, bez otevření Výroby)
+function vyrTabBar() {
+  const run = Object.entries(VYR.d).filter(([k, d]) => VYR_PROG[k] && vyrAlive(d));
+  if (!run.length) return {attr:'', txt:''};
+  const end = d => d.zbyva_s != null ? d.t + d.zbyva_s * 1000 : 0;
+  const last = run.map(([, d]) => d).sort((a, b) => end(b) - end(a))[0];
+  const pct = last.procenta != null ? Math.max(2, Math.min(100, last.procenta)) : 100;
+  const tip = run.map(([k, d]) => `${VYR_PROG[k].name}: ${d.procenta != null ? Math.round(d.procenta) + ' %' : 'běží'}${end(d) ? ' · hotovo v ' + hhmm(end(d)) : ''}`).join('\n');
+  return {attr:`style="--vp:${pct.toFixed(1)}%" title="${esc(tip)}" `,
+    txt:end(last) ? `<span class="vyrend">${hhmm(end(last))}</span>` : last.procenta != null ? `<span class="vyrend">${Math.round(last.procenta)} %</span>` : ''};
+}
 async function vyrPull() {
   if (VYR.busy || REMOTE !== DRIVE_BACKEND || !DRIVE.folder) return;
   VYR.busy = true;
@@ -5248,7 +5262,8 @@ async function vyrPull() {
   finally { VYR.busy = false; }
 }
 // co 5 s, když je záložka vidět; jinak co 2 min (jen kvůli značce „běží“ na záložce)
-setInterval(() => { if (!document.hidden && isOwner() && (S.period === 'vyr' || Date.now() - VYR.at > 120e3)) vyrPull(); }, 5e3);
+// (když něco běží, i mimo Výrobu co 30 s – pruh v záložce ukazuje průběh)
+setInterval(() => { if (!document.hidden && isOwner() && (S.period === 'vyr' || Date.now() - VYR.at > (vyrRunning() ? 30e3 : 120e3))) vyrPull(); }, 5e3);
 const hhmm = ms => new Date(ms).toLocaleTimeString('cs', {hour:'2-digit', minute:'2-digit'});
 function vyrGraph(h, start) {
   if (!h || h.length < 2) return '';
