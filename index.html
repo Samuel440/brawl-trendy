@@ -865,7 +865,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-06.176'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-06.177'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -4076,7 +4076,7 @@ const AI_NO = ['a screenshot of Minecraft', 'a screenshot of Roblox', 'a screens
   'a screenshot of Stumble Guys', 'a screenshot of Free Fire or PUBG Mobile', 'a screenshot of Squad Busters', 'a screenshot of Geometry Dash', 'a photo of real people', 'a football video game',
   'a screenshot of Counter-Strike CS:GO or Standoff 2', 'a first-person shooter game with guns', 'a competitive rank leaderboard of a shooter game', 'a screenshot of Valorant or Call of Duty',
   'a horror game like Doors or Poppy Playtime', 'a screenshot of Among Us']; // (GTA ne – spolupráce s Brawlem má miniatury v jeho stylu)
-const AI_VER = 3; // při změně popisů výš zvýšit – staré verdikty se pak spočítají znovu
+const AI_VER = 4; // při změně popisů výš zvýšit – staré verdikty se pak spočítají znovu
 const AI_WEAK = 0.35; // video se slovem sezóny musí mít aspoň tolik (vyřadí jasný Minecraft/Roblox/vlog)
 const AI_SURE = 0.9;  // video úplně bez slov sezóny projde jen při takové jistotě
 function rows(t) {
@@ -4089,6 +4089,41 @@ function rows(t) {
   return out;
 }
 const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+// 🖼️ VZORY: obecný model nezná skiny / brawlery / módy z posledního updatu, proto se nová miniatura porovná i přímo
+// s miniaturami OVĚŘENÝCH videí – Brawl Stars přímo v názvu (přednost má oficiální kanál a Brawl Talk, kde se novinky
+// ukazují první) – a videí s jinou hrou v názvu. Berou se vždy ty nejnovější, takže se vzory s každým updatem obnoví samy.
+// Uložené jen v tomhle prohlížeči (bt_airef), zmenšené na 8 bitů (~700 znaků na miniaturu).
+const REF_N = 24, REF_OFF = 10, REF_MIN = 0.75; // vzorů Brawl / jiných her; z toho oficiálních; podobnost „stejná hra“
+const isOfficial = x => x.chId === 'UCooVYzDxdwTtGYAkcPmOgOw' || /^brawl stars$/i.test((x.ch || '').trim()) || /brawl ?talk/i.test(x.t || '');
+const REF = (() => { try { return JSON.parse(localStorage.getItem('bt_airef') || '{}'); } catch { return {}; } })(); // id → {e, p:1 Brawl / 0 jiná hra, t}
+const q8 = e => btoa(String.fromCharCode(...new Uint8Array(Int8Array.from(e, x => Math.max(-127, Math.min(127, Math.round(x * 300)))).buffer)));
+const dq8 = b64 => { const b = atob(b64), v = Array.from(b, ch => { const x = ch.charCodeAt(0); return x > 127 ? x - 256 : x; });
+  const n = Math.hypot(...v) || 1; return v.map(x => x / n); };
+let REF_VER = null; // čas nejnovějšího vzoru Brawlu (spočítá se jednou, po doplnění vzorů znovu)
+const refVer = () => REF_VER ??= Math.max(0, ...Object.values(REF).filter(r => r.p).map(r => r.t || 0));
+function refPick() {
+  const all = new Map(), t = x => Date.parse(x.pub) || 0;
+  for (const c of COUNTRIES) for (const x of [...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])])
+    if (x?.id && !all.has(x.id)) all.set(x.id, x);
+  const v = [...all.values()].sort((a, b) => t(b) - t(a));
+  const brawl = v.filter(x => (x.bsN ?? BRAWL_RX.test(x.t)) && !OTHER_GAME_RX.test(x.t));
+  const off = brawl.filter(isOfficial).slice(0, REF_OFF);
+  const pos = [...off, ...brawl.filter(x => !off.includes(x))].slice(0, REF_N);
+  return [...pos.map(x => [x, 1]), ...v.filter(otherGame).slice(0, REF_N).map(x => [x, 0])];
+}
+// doplní chybějící vzory (první spuštění ~50 miniatur, pak jen nové) a připraví je pro aiScore
+async function aiRefs() {
+  const want = refPick(), keep = new Set(want.map(([x]) => x.id));
+  for (const id of Object.keys(REF)) if (!keep.has(id)) delete REF[id];
+  let n = 0;
+  for (const [x, p] of want) {
+    if (REF[x.id] || AI.bad.has(x.id) || !S.ai) continue;
+    status(`🤖 Učím se z nejnovějších Brawl miniatur… (${++n})`);
+    try { REF[x.id] = {e:q8(await embed(thumb(x))), p, t:Date.parse(x.pub) || 0}; } catch { AI.bad.add(x.id); }
+  }
+  AI.ref = Object.values(REF).map(r => ({e:dq8(r.e), p:r.p})); REF_VER = null;
+  try { localStorage.setItem('bt_airef', JSON.stringify(REF)); } catch {}
+}
 // 🤖 AI běží v samostatném vlákně (Web Worker) – výpočet jedné miniatury trvá na mobilu i vteřinu a v hlavním
 // vlákně by po tu dobu zamrzlo scrollování. Když worker nejde (starý prohlížeč), jede to postaru v hlavním vlákně.
 const AI_WORKER_SRC = `
@@ -4138,12 +4173,27 @@ async function embed(url) {
 function aiScore(e) {
   const logits = AI.text.map(t => dot(e, t) * 100), mx = Math.max(...logits);
   const ex = logits.map(l => Math.exp(l - mx)), sum = ex.reduce((a, b) => a + b, 0);
-  return {s:+(ex.slice(0, AI_YES.length).reduce((a, b) => a + b, 0) / sum).toFixed(2), v:AI_VER};
+  let s = ex.slice(0, AI_YES.length).reduce((a, b) => a + b, 0) / sum;
+  // 🖼️ vzory: jak moc se miniatura podobá nejbližším ověřeným Brawl miniaturám oproti miniaturám jiných her
+  // (průměr 3 nejpodobnějších; bez vzorů jiných her se srovnává s pevnou hranicí). Skóre může jen zvednout.
+  const P = [], N = [];
+  for (const r of AI.ref || []) (r.p ? P : N).push(dot(e, r.e));
+  if (P.length >= 5) {
+    const top = a => { a.sort((x, y) => y - x); return (a[0] + a[1] + a[2]) / 3; };
+    s = Math.max(s, 1 / (1 + Math.exp(-(top(P) - Math.max(N.length >= 3 ? top(N) : 0, REF_MIN)) * 40)));
+  }
+  return {s:+s.toFixed(2), v:AI_VER, rv:refVer()};
 }
 // Verdikt se pamatuje navždy (sdílí se přes Disk). Po rozšíření popisů jiných her (AI_VER 2: CS:GO, střílečky…) se znovu
-// kontrolovaly jen verdikty „je to Brawl“ (nové popisy skóre jen snižují). AI_VER 3 naopak popis GTA ubral (spolupráce) –
-// skóre může jen stoupnout, takže se znovu kontrolují verdikty „není Brawl“; „je Brawl“ z verze 2 platí dál.
-const aiOf = it => { const a = AI_CACHE[it.id], v = a?.v || 1; return a && (v >= AI_VER || (v === 2 && a.s >= 0.5)) ? a : null; };
+// kontrolovaly jen verdikty „je to Brawl“ (nové popisy skóre jen snižují). AI_VER 3 (bez GTA) a 4 (vzory) skóre jen
+// zvedají, takže se znovu kontrolují verdikty „není Brawl“; „je Brawl“ od verze 2 platí dál. „Není Brawl“ u videa
+// z posledních 30 dní se zkontroluje znovu, když mezitím přibyl novější vzor (nový update) – den po něm.
+const aiOf = it => {
+  const a = AI_CACHE[it.id], v = a?.v || 1;
+  if (!a || !(v >= AI_VER || (v >= 2 && a.s >= 0.5))) return null;
+  if (a.s < 0.5 && refVer() > (a.rv || 0) + 864e5 && Date.now() - (Date.parse(it.pub) || 0) < 30 * 864e5) return null;
+  return a;
+};
 function aiBadge(it) {
   const a = aiOf(it);
   if (!S.ai || !a || !it.cand) return '';
@@ -4159,6 +4209,7 @@ async function aiCheck(items) {
   let newCand = false, done = 0;
   try {
     await aiInit();
+    await aiRefs();
     while (AI.pending.size && S.ai) {
       const it = AI.pending.values().next().value; AI.pending.delete(it.id);
       if (aiOf(it)) continue;
