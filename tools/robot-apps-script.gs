@@ -33,7 +33,7 @@ const TIERS = [[24 * H, 30 * 60e3], [48 * H, 2 * H], [72 * H, 3 * H], [7 * 24 * 
 // ⚠ (6/11) Google NEpočítá limit od půlnoci, ale za POSLEDNÍCH 24 h – a když ho robot přetáhne, spouštěče tiše
 // přestanou běžet a SAMY se už neobnoví (28/10 19:34 a 6/11 9:58 – robot stál, dokud se znovu nespustilo „nastavit“).
 // Proto se spotřeba počítá po hodinách za posledních 24 h a robot se zastaví s rezervou (BUDGET_MIN pod 90).
-const BUDGET_MIN = 75;
+const BUDGET_MIN = 60; // (22/11: při 75 ho Google 21/11 12:06 stejně zastavil – Google počítá víc, než robot naměří)
 function usage_() {
   const p = PropertiesService.getScriptProperties(), all = p.getProperties(), now = Date.now();
   const k = 'rh_' + Math.floor(now / H);
@@ -150,7 +150,9 @@ function zvonecek_() {
   // 🕐 + hledání nejnovějších videí (i od youtuberů, které ještě nesledujeme) – dřív jen při otevřené stránce
   // hledání je rychlé (~2 s) a nejcennější → jede i v nouzi, jen ne úplně na hraně limitu
   const ns = usage_().used / 60e3 < BUDGET_MIN - 2 ? novinky_(nw, now, t0) : 0; added += ns;
-  for (const vid in nw) if (vid[0] !== '_' && now - Date.parse(nw[vid].pub) > 30 * 24 * H) delete nw[vid]; // starší než měsíc pryč
+  // (22/11) jen poslední 4 dny – stránka si nová videa převezme hned; dřív se drželo 30 dní → 33 000 videí, obří soubor
+  // čtený a zapisovaný každých 10 min a sběr grafů pak sledoval i tisíce ne-Brawl výsledků hledání → došel denní limit
+  for (const vid in nw) if (vid[0] !== '_' && now - Date.parse(nw[vid].pub) > 4 * 24 * H) delete nw[vid];
   if (added || (nw._robot && nw._robot.at === now)) f.setContent(JSON.stringify({k: 'bt_new', v: nw, t: now}));
   if (allDue) cache.put('zv_all', '1', (lvl ? 6 : 4) * 3600); // (6/11: dřív co 2 h – nejdražší část robota, běhy až 4 min)
   console.log(`🔔 ${Object.keys(lists.manual).length} 📌 kanálů${allDue ? ` + ${Object.keys(lists.auto).length} sledovaných` : ''}, nových videí: ${added} (z hledání ${ns}), hledání dnes ${(nw._robot || {}).s || 0}/${NS_CAP}, trvalo ${Math.round((Date.now() - t0) / 1000)} s · za 24 h ${Math.round(usage_().used / 60e3)}/${BUDGET_MIN} min · ${SAVE_NAME[lvl]}`);
@@ -289,7 +291,9 @@ function run_() {
   }
   // + videa od 🔔 zvonečku (ještě nemusí být v seznamech – stránka je doplní, až se otevře)
   const nf = robotFile_(folder, 'bt_new'), nd = nf && readJson_(nf);
-  for (const id in (nd && nd.v) || {}) { const tp = Date.parse(nd.v[id].pub); if (tp && now - tp < 30 * 24 * H && !pub[id]) { pub[id] = tp; cidOf[id] = nd.v[id].cid; } }
+  // ze zvonečku jen videa z 📌/sledovaných KANÁLŮ (ne výsledky hledání – mezi nimi je spousta ne-Brawl) a do 3 dnů;
+  // pak už je stránka má ve svých seznamech, odkud je sběr bere sám
+  for (const id in (nd && nd.v) || {}) { const e = nd.v[id], tp = Date.parse(e.pub); if (tp && !e.s && now - tp < 3 * 24 * H && !pub[id]) { pub[id] = tp; cidOf[id] = e.cid; } }
   for (const id in pub) if (chk[id]) newChk[id] = chk[id];
   // blíží se denní limit → starší videa řidčeji (úspora: o krok řidčeji; nouze: jen videa do 24 h)
   const lvl = saving_();
