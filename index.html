@@ -866,7 +866,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-06.177'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-22.179'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -1673,7 +1673,8 @@ async function ingestNew() {
   for (const [id, e] of Object.entries(ls('bt_new', {}))) {
     if (NEWDONE.has(id) || !COUNTRIES.some(c => c.id === e.cid)) continue;
     NEWDONE.add(id);
-    if (!(Date.now() - Date.parse(e.pub) < 30 * 864e5)) continue;
+    // (22/11: jen poslední 4 dny – dřív celý měsíc = desítky tisíc videí a stovky dotazů při každém otevření)
+    if (!(Date.now() - Date.parse(e.pub) < 4 * 864e5)) continue;
     if (known(e.cid).has(id)) continue; // už ho máme
     (by[e.cid] = by[e.cid] || []).push(id);
   }
@@ -2016,14 +2017,24 @@ async function ensureSet(c, p, force, light, extra) {
   archive(c.id, set.items);
   return set;
 }
-const MAX_SET = 2000, MAX_ARCH = 3000; // data jsou v IndexedDB, místa je dost
-// při přeplnění necháme nejsledovanější
-const capItems = items => items.length <= MAX_SET ? items : [...items].sort((a, b) => b.views - a.views).slice(0, MAX_SET);
+const MAX_SET = 2000, MAX_ARCH = 12000; // data jsou v IndexedDB, místa je dost
+// ⚠ (22/11) při přeplnění se dřív nechávala jen NEJSLEDOVANĚJŠÍ → do plného Týdne/Měsíce (2000) se nové video
+// s pár tisíci zhlédnutí vůbec nevešlo a hned se zahodilo (ULTRA SAMI a Štěps tak v Česku chyběli). Teď videa
+// z posledních 3 dnů zůstanou VŽDY, o zbytek místa se dělí podle zhlédnutí.
+const FRESH_MS = 3 * 864e5;
+function capItems(items, max = MAX_SET) {
+  if (items.length <= max) return items;
+  const now = Date.now(), fresh = items.filter(i => now - new Date(i.pub) < FRESH_MS);
+  const rest = items.filter(i => !(now - new Date(i.pub) < FRESH_MS)).sort((a, b) => b.views - a.views);
+  return [...fresh.sort((a, b) => b.views - a.views), ...rest].slice(0, max);
+}
 function mergeInto(cid, p, items) {
   const set = getSet(cid, p);
   if (!set) return;
-  const byId = new Map(set.items.map(i => [i.id, i]));
-  items.forEach(i => byId.set(i.id, i)); // novější data (počty zhlédnutí) vyhrávají
+  // jen videa, která do období patří (dřív Týden/Měsíc nikdy nepročišťoval → plný starých hitů)
+  const since = PERIODS[p]?.hours ? Date.now() - PERIODS[p].hours * 3600e3 : 0;
+  const byId = new Map(set.items.filter(i => !since || new Date(i.pub) >= since).map(i => [i.id, i]));
+  items.forEach(i => { if (!since || new Date(i.pub) >= since) byId.set(i.id, i); }); // novější data (počty zhlédnutí) vyhrávají
   putSet(cid, p, {...set, items:capItems([...byId.values()])});
 }
 // ---------- Archiv: všechna kdy nalezená videa daného státu (bez API, jen z uložených dat) ----------
@@ -2032,7 +2043,10 @@ function archive(cid, items) {
   const db = ls(akey(cid), {});
   items.forEach(i => { db[i.id] = i; });
   let all = Object.values(db);
-  if (all.length > MAX_ARCH) all = all.sort((a, b) => b.views - a.views).slice(0, MAX_ARCH);
+  if (all.length > MAX_ARCH) { // posledních 30 dní vždy, starší podle zhlédnutí (dřív se nová malá videa hned vyhodila)
+    const now = Date.now(), nove = all.filter(i => now - new Date(i.pub) < 30 * 864e5);
+    all = [...nove, ...all.filter(i => !(now - new Date(i.pub) < 30 * 864e5)).sort((a, b) => b.views - a.views)].slice(0, Math.max(MAX_ARCH, nove.length));
+  }
   ss(akey(cid), Object.fromEntries(all.map(i => [i.id, i])));
 }
 const getArchive = cid => { const items = Object.values(ls(akey(cid), {})).map(fixItem); return items.length ? {ts:Date.now(), items, next:null} : null; };
@@ -3832,13 +3846,17 @@ function peerIndex(cs) {
 const PEER_MAX = 10;
 // posledních 10 videí kanálu, která mají OPRAVDU změřený graf (aspoň 5 bodů) – videa s jediným měřením by místo
 // zabrala a pásmo by se nedalo spočítat (v.110–112 tak zmizelo i u kanálů jako Tia s desítkami videí)
+// (19/11) KLOUZAVĚ: jen videa, jejichž graf dosahuje do stáří tohohle videa. Dřív se braly prostě 10 nejnovějších –
+// po pár nových videích kanálu byly všechny mladší než porovnávané video, žádné se nedalo srovnat a žebříček
+// spadl na „0/5 videí s grafem“. Teď nové video vytlačí nejstarší, až když je samo porovnatelné.
 function channelPeers(it) {
   if (!it.chId) return [];
+  const my = histOf(it), age = my[my.length - 1][0] - my[0][0];
   const out = [], list = (peerIndex(it.c?.id ? [it.c] : COUNTRIES).get(it.chId) || []).slice().sort((a, b) => new Date(b.pub) - new Date(a.pub));
   for (const x of list) {
     if (x.id === it.id || !!x.short !== !!it.short) continue;
     const pts = x._pts ||= histOf(x);
-    if (pts.length >= 5) out.push({it:x, pts});
+    if (pts.length >= 5 && (age < 3600e3 || viewsAt(pts, age) != null)) out.push({it:x, pts});
     if (out.length >= PEER_MAX) break;
   }
   return out;
@@ -3926,7 +3944,21 @@ function showHistory(it) {
         ${x.me ? '' : `<button data-rankhist="${i}" title="Porovnat v grafu (modrá čára) – znovu kliknout = schovat">📈</button>`}<button class="rkplay" data-rankplay="${esc(x.it.id)}" title="Pustit tady v okně">▶</button><a class="rkplay" href="${ytUrl(x.it.id)}" target="_blank" rel="noopener" title="Otevřít na YouTube">↗</a></div>`).join('')}</div>
 `;
     rankAll = all;
-  } else if (peers.length) rankHtml = `<span class="ch" title="Srovnání s kanálem se ukáže, až bude mít aspoň ${PEER_MIN} Brawl videí s grafem v tomhle stáří">📊 srovnání s kanálem: ${cmp.length}/${PEER_MIN} videí s grafem</span>`;
+  } else {
+    // 🔁 (19/11) málo videí s grafem ve STEJNÉM stáří (starší videa kanálu se začala měřit až dny po zveřejnění – Štěps:
+    // 31 videí, ale první měření 70–600 h po vydání) → místo „0/5“ pořadí podle CELKOVÝCH zhlédnutí posledních 10 videí
+    const ost = (peerIndex(it.c?.id ? [it.c] : COUNTRIES).get(it.chId) || []).filter(x => x.id !== it.id && !!x.short === !!it.short)
+      .sort((a, b) => new Date(b.pub) - new Date(a.pub)).slice(0, PEER_MAX);
+    if (ost.length >= PEER_MIN - 1) {
+      const all = [...ost.map(x => ({it:x, v:x.views})), {it, v:it.views, me:true}].sort((a, b) => b.v - a.v);
+      const pos = all.findIndex(x => x.me) + 1, score = 1 + Math.round((pos - 1) / (all.length - 1) * 9);
+      const tip = `Pořadí podle CELKOVÝCH zhlédnutí mezi posledními ${all.length} videi kanálu – starší videa nemají graf z prvních hodin, ve stejném stáří je zatím porovnat nejde (${cmp.length}/${PEER_MIN}). Mladé video tu má nevýhodu: ostatní měla na zhlédnutí víc času.`;
+      rankHtml = `<button class="rankbtn rmid" data-rank title="${esc(tip)}">🏅 ${score}/10 · ${pos}. z ${all.length} <small>(celkově)</small></button>`;
+      listHtml = `<div class="ranklist" hidden><div class="ch">Celková zhlédnutí (srovnání ve stejném stáří bude, až budou mít videa grafy od zveřejnění):</div>
+        ${all.map((x, i) => `<div class="rankrow${x.me ? ' me' : ''}"><b>${i + 1}.</b><img src="https://i.ytimg.com/vi/${esc(x.it.id)}/mqdefault.jpg" alt="" loading="lazy"><span class="rt" title="${esc(x.it.t)}" data-orig="${esc(x.it.t)}">${esc(trT(x.it.t))}</span><span class="rv">${n(x.v)}</span>
+          <button class="rkplay" data-rankplay="${esc(x.it.id)}" title="Pustit tady v okně">▶</button><a class="rkplay" href="${ytUrl(x.it.id)}" target="_blank" rel="noopener" title="Otevřít na YouTube">↗</a></div>`).join('')}</div>`;
+    } else if (peers.length) rankHtml = `<span class="ch" title="Srovnání s kanálem se ukáže, až bude mít aspoň ${PEER_MIN} Brawl videí s grafem v tomhle stáří">📊 srovnání s kanálem: ${cmp.length}/${PEER_MIN} videí s grafem</span>`;
+  }
   const ov = document.createElement('div'); ov.className = 'histov';
   ov.innerHTML = `<div class="histbox"><button class="histx" title="Zavřít">✖</button><div class="histmain">
     <h3 data-orig="${esc(it.t)}">📈 ${esc(trT(it.t))}</h3><div class="ch">${esc(it.ch)} · ${n(it.views)} zhlédnutí · ${pts.length - 1} ${pts.length - 1 === 1 ? 'měření' : 'měření'}${pts.length <= 3 ? ' – víc bodů přibude s každou obnovou (na všech zařízeních)' : ''}</div>
@@ -5926,9 +5958,15 @@ function reloadMemory() {
 }
 // data, jejichž změna na stránce nic viditelného nemění (počítadla, protokol, značky robota…) → nepřekreslovat
 const QUIET_KEYS = /^bt_(qs|busy|log(_g_[a-z0-9_]+)?|tomb|new|autoAt|aicache|qtr|trash)$/;
+let INGEST_ONCE = false;
 async function pullShared() {
   // (data mohla přijít i „mimochodem“ při nahrávání – i tehdy překreslit, jinak zůstalo třeba poloviční šedé pásmo)
-  if (!await syncPull() && !SYNC.changedKeys?.size) return;
+  if (!await syncPull() && !SYNC.changedKeys?.size) {
+    // 🔔 zvoneček zpracovat aspoň jednou po otevření, i když se na Disku nic nezměnilo (dřív se pak vůbec nezpracoval)
+    if (!INGEST_ONCE && SYNC.ok) { INGEST_ONCE = true; try { if (await ingestNew()) { calmRerender(); if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); } } } catch (e) { console.warn('zvoneček', e); } }
+    return;
+  }
+  INGEST_ONCE = true;
   const keys = SYNC.changedKeys || new Set(); SYNC.changedKeys = new Set();
   reloadMemory(); renderQuotaBar();
   // 🔔 robot hlásí nová videa 📌 kanálů → doplnit do seznamů (a hned poslat na Disk ostatním)
