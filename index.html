@@ -868,7 +868,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-23.180'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
+const APP_VERSION = '2026-11-23.181'; // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
 const KV = new Map(); // klíč → JSON text
 var KV_OK = false;
 const inKV = k => KV_OK && KV_RX.test(k);
@@ -3853,9 +3853,10 @@ const PEER_MAX = 10;
 // na kanál, platí 6 h). Dřív „posledních 10, které stránka zná“ + klouzavě dál do minulosti, dokud se nenašlo 10 s grafem –
 // a tam byly hlavně 🏆 nejpopulárnější videa kanálu (Celá doba) a staré hity, obyčejná starší videa systém zahazoval.
 // Teď NIKDY nic staršího než posledních 10 videí; video bez grafu v tom stáří se jen nezapočítá.
-const UPL_TTL = 6 * 3600e3, UPL_KEEP = 12, UPL_CH = 60;
-var UPL = null; // bt_upl {chId: {at, items}} – jen tohle zařízení (localStorage, na Disk nejde)
-const uplDb = () => UPL ??= ls('bt_upl', {});
+const UPL_TTL = 6 * 3600e3, UPL_KEEP = 16, UPL_CH = 60;
+var UPL = null; // bt_upl2 {chId: {at, items}} – jen tohle zařízení (localStorage, na Disk nejde)
+const uplDb = () => UPL ??= ls('bt_upl2', {});
+try { localStorage.removeItem('bt_upl'); } catch {} // v.180 bral jen videa s Brawl v názvu → stáhnout znovu
 const uplGet = chId => { const e = chId && uplDb()[chId]; return e && Date.now() - e.at < 14 * 864e5 ? e : null; };
 const UPL_RUN = {};
 function uplFetch(chId) {
@@ -3863,12 +3864,12 @@ function uplFetch(chId) {
     const r = await api('playlistItems', {part:'contentDetails', playlistId:'UU' + chId.slice(2), maxResults:50}, 1);
     const ids = (r.items || []).map(i => i.contentDetails.videoId), now = Date.now();
     const got = (ids.length ? await details(ids) : []).map(it => ({...classify(it, 'ch'), st:now})).sort((a, b) => new Date(b.pub) - new Date(a.pub));
-    // stačí nejnovějších 12 Brawl videí a 12 Brawl shorts (jiné hry / ne-Brawl místo nezabírají)
+    // stačí nejnovějších 16 videí a 16 shorts (jiné hry místo nezabírají; jestli je to Brawl, rozhodne až lastTen)
     const keep = [], cnt = {v:0, s:0};
-    for (const x of got) { if (otherGame(x) || (x.cand && !candOk(x))) continue; const k = x.dur > 0 && x.dur <= 180 ? 's' : 'v'; if (cnt[k]++ < UPL_KEEP) keep.push(x); }
+    for (const x of got) { if (otherGame(x)) continue; const k = x.dur > 0 && x.dur <= 180 ? 's' : 'v'; if (cnt[k]++ < UPL_KEEP) keep.push(x); }
     const db = uplDb(); db[chId] = {at:now, items:keep};
     for (const k of Object.keys(db).sort((a, b) => db[b].at - db[a].at).slice(UPL_CH)) delete db[k];
-    ss('bt_upl', db);
+    ss('bt_upl2', db);
     return db[chId];
   })().finally(() => { delete UPL_RUN[chId]; });
 }
@@ -3879,7 +3880,9 @@ function lastTen(it) {
   let list = pool;
   if (u) {
     const have = new Map(pool.map(x => [x.id, x])), newest = Math.max(0, ...u.items.map(x => +new Date(x.pub)));
-    const real = prepare(u.items, it.c || COUNTRIES[0]).map(x => { const p = have.get(x.id); return p && (p.st || 0) >= (x.st || 0) ? p : x; });
+    // Brawl video = projde filtrem stránky, NEBO ho stránka už má (uznala ho dřív – třeba „400.000 POHÁRKŮ“ bez slova Brawl)
+    const c = it.c || COUNTRIES[0], prep = new Map(prepare(u.items, c).map(x => [x.id, x]));
+    const real = u.items.filter(x => have.has(x.id) || prep.has(x.id)).map(x => { const p = have.get(x.id), q = prep.get(x.id) || enrich(x, c); return p && (p.st || 0) >= (q.st || 0) ? p : q; });
     const ids = new Set(real.map(x => x.id));
     // videa vydaná až PO stažení seznamu (stránka je už zná) patří taky mezi poslední
     list = [...real, ...pool.filter(x => !ids.has(x.id) && +new Date(x.pub) > newest)];
