@@ -675,9 +675,10 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 .calphotos{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
 .calphotos:empty{display:none}
 .calphoto{position:relative;width:150px;aspect-ratio:4/3;border-radius:8px;overflow:hidden;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:26px}
-.calphoto>button[data-calphoto]{all:unset;cursor:zoom-in;position:absolute;inset:0}
+.calphoto>button[data-calphoto],.calphoto>button[data-pp]{all:unset;cursor:zoom-in;position:absolute;inset:0}
+.calphoto>button[data-pp]{cursor:pointer}
 .calphoto img{width:100%;height:100%;object-fit:cover;display:block}
-.calphoto.nophoto>button[data-calphoto]::after{content:'📷';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:26px;opacity:.5}
+.calphoto.nophoto>button::after{content:'📷';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:26px;opacity:.5}
 .calphoto .x{position:absolute;top:4px;right:4px;width:26px;height:26px;padding:0;border-radius:50%;background:rgba(0,0,0,.75);color:#fff;border:none;font-size:13px;z-index:1}
 .calphoto .x:hover{background:var(--hot)}
 .calphoto.busy{animation:lnpuls 1.4s ease-in-out infinite}
@@ -889,7 +890,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-24.183';
+const APP_VERSION = '2026-11-24.184';
 // po obnovení stránky NEvracet starou pozici – kalendář sám sjede na dnešek (dřív prohlížeč skočil na starou pozici,
 // stránka pak nahoru a zase dolů na dnešek)
 try { history.scrollRestoration = 'manual'; } catch {} // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
@@ -3254,7 +3255,7 @@ function calEditor(id, date, focusScript, edit = true) {
     ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt script">${esc(e.script)}</div>`}` : ''}
     ${showPhotos ? `<h4 class="calphotoh">${photoHead()}</h4>
     <div class="calphotos">${photoGrid()}</div>
-    ${own ? '<div class="row"><button data-calphotopick>📷 Přidat fotky</button><input type="file" accept="image/*" multiple data-calphotoadd hidden><span class="ch">nebo fotku vlož Ctrl+V / přetáhni sem · ukládá se na Google Disk</span></div>' : ''}` : ''}
+    ${own ? '<div class="row"><button data-calphotopick>📷 Přidat fotky</button><button data-calphotosaved>🖼️ Z Uložených</button><input type="file" accept="image/*" multiple data-calphotoadd hidden><span class="ch">nebo fotku vlož Ctrl+V / přetáhni sem · ukládá se na Google Disk</span></div>' : ''}` : ''}
     ${showNotes ? `<h4>🎨 Poznámky (grafik a ostatní)</h4>
     <div class="calnotes">${notes()}</div>` : ''}
     ${noteAdd ? '<div class="addch"><input data-calnote placeholder="Např. miniatury, ze kterých si půjčím (odkaz na YouTube), nápad…"><button data-calnoteadd>➕ Přidat</button></div>' : ''}
@@ -3275,19 +3276,20 @@ function calEditor(id, date, focusScript, edit = true) {
   // 📷 přidání fotek: tlačítko (výběr souborů / foťák na mobilu), Ctrl+V, přetažení souborů do okna
   const addPhotos = async files => {
     files = [...files].filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name));
-    if (!own || !files.length) return;
-    if (REMOTE !== DRIVE_BACKEND) return status('📷 Fotky se ukládají na Google Disk – nejdřív připoj Disk (☁️ vpravo nahoře).', true);
-    const box = ov.querySelector('.calphotos');
+    if (!own || !files.length) return 0;
+    if (REMOTE !== DRIVE_BACKEND) { status('📷 Fotky se ukládají na Google Disk – nejdřív připoj Disk (☁️ vpravo nahoře).', true); return 0; }
+    const box = ov.querySelector('.calphotos'); let ok = 0;
     for (const file of files) {
       const ph = document.createElement('div'); ph.className = 'calphoto busy'; ph.textContent = '⏳'; box.append(ph);
       try {
         const p = await photoUpload(file);
-        clearTimeout(timer); grab(); e.photos = [...photos(), p]; calSave(e);
+        clearTimeout(timer); grab(); e.photos = [...photos(), p]; calSave(e); ok++;
       } catch (err) { status('📷 Fotku se nepodařilo nahrát: ' + (err.message === 'auth' ? 'přihlášení k Disku vypršelo, připoj ho znovu' : err.message), true); }
       ph.remove();
     }
     box.innerHTML = photoGrid(); ov.querySelector('.calphotoh').innerHTML = photoHead(); fillPhotos(box); renderMain();
     if (SCRIPT_OPTS === sOpts) scriptWindowSync(e.script, e.title); // 📷 počet i v otevřeném okně scénáře
+    return ok;
   };
   ov.addEventListener('paste', ev => {
     const fs = [...(ev.clipboardData?.files || [])].filter(f => /^image\//.test(f.type));
@@ -3344,6 +3346,13 @@ function calEditor(id, date, focusScript, edit = true) {
     }
     if (b?.dataset.calphoto != null) return photoViewer(photos(), +b.dataset.calphoto);
     if (b?.hasAttribute('data-calphotopick')) return ov.querySelector('[data-calphotoadd]').click();
+    // 🖼️ z Přenosu: stáhnout originál z Disku → zmenšit a uložit k videu jako ostatní fotky (v Přenosu zůstane)
+    if (b?.hasAttribute('data-calphotosaved')) return photoPicker(async its => {
+      status(`📷 Načítám ${its.length} ${its.length === 1 ? 'fotku' : 'fotky'} z Přenosu…`);
+      const files = [];
+      for (const it of its) { try { const bl = await dropBlob(it); files.push(new File([bl], it.name || 'fotka.jpg', {type:bl.type || it.mime || 'image/jpeg'})); } catch { status(`📷 ${it.name} se nepodařilo stáhnout z Disku.`, true); } }
+      if (await addPhotos(files)) status(`📷 Fotky z Přenosu přidané k videu.`);
+    });
     if (b?.dataset.calphotodel != null) {
       const p = photos()[+b.dataset.calphotodel]; if (!p) return;
       return askConfirm('Smazat tuhle fotku od videa (i z Disku)?').then(yes => {
@@ -3420,6 +3429,7 @@ async function photoUpload(file) {
 }
 async function photoSrc(id) {
   if (PHOTO_URL.has(id)) return PHOTO_URL.get(id);
+  if (DROPBLOB.has(id)) return DROPBLOB.get(id); // fotka z Přenosu už stažená / právě odeslaná
   const key = location.origin + location.pathname + '__foto/' + id; let blob = null;
   try { const hit = await (await caches.open('bt-fotky')).match(key); if (hit) blob = await hit.blob(); } catch {}
   if (!blob) {
@@ -3433,6 +3443,27 @@ async function photoSrc(id) {
 // náhledy v okně: <img data-photo="id"> bez src → doplnit (bez Disku zůstane šedé 📷)
 function fillPhotos(root) {
   root.querySelectorAll('img[data-photo]:not([src])').forEach(img => photoSrc(img.dataset.photo).then(u => { img.src = u; }).catch(() => img.closest('.calphoto')?.classList.add('nophoto')));
+}
+// 🖼️ výběr fotek z ⭐ Uložené → 📤 Přenos (klik = vybrat/odebrat, pak „Přidat“) → pick(seznam položek Přenosu)
+function photoPicker(pick) {
+  const items = ls(dropKey(), []).filter(x => x.kind === 'file' && x.fid && (/^image\//.test(x.mime || '') || /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(x.name || ''))).sort((a, b) => b.at - a.at);
+  const chosen = new Set(), ov = document.createElement('div'); ov.className = 'histov';
+  ov.innerHTML = `<div class="histbox pickbox"><button class="histx" title="Zavřít">✖</button><h3>🖼️ Fotky z Uložených (📤 Přenos)</h3>
+    <div class="ch">Klikni na fotky, které chceš k videu, a pak „Přidat“. V Přenosu zůstanou i dál.</div>
+    <div class="calphotos">${items.map((x, i) => `<div class="calphoto"><button data-pp="${i}" title="${esc(x.name || '')}"><img data-photo="${esc(x.fid)}" alt=""></button></div>`).join('')}</div>
+    ${items.length ? '<div class="row"><button class="primary" data-ppok disabled>➕ Přidat k videu</button></div>' : `<div class="ch">${REMOTE === DRIVE_BACKEND ? 'V Přenosu zatím nemáš žádné fotky – pošli si je v ⭐ Uložené → 📤 Přenos (třeba z mobilu).' : 'Připoj Disk (☁️ vpravo nahoře) – fotky z Přenosu jsou na něm.'}</div>`}</div>`;
+  ov.addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (bgClick(ev, ov) || b?.classList.contains('histx')) return ov.remove();
+    if (b?.dataset.pp != null) {
+      const i = +b.dataset.pp; chosen.has(i) ? chosen.delete(i) : chosen.add(i);
+      b.parentElement.style.outline = chosen.has(i) ? '3px solid var(--accent)' : '';
+      const ok = ov.querySelector('[data-ppok]'); ok.disabled = !chosen.size; ok.textContent = `➕ Přidat k videu${chosen.size ? ` (${chosen.size})` : ''}`;
+    }
+    if (b?.hasAttribute('data-ppok') && chosen.size) { ov.remove(); pick([...chosen].map(i => items[i])); }
+  });
+  document.body.append(ov);
+  fillPhotos(ov);
 }
 // 🖼️ prohlížení: přes celou obrazovku JEN fotka (černé pozadí). ← → / přejetí prstem = další, Esc / ✖ / klik vedle = zavřít,
 // klik na fotku = schovat i tlačítka. doc = i samostatné okno se scénářem (styly jsou proto přímo u prvků).
