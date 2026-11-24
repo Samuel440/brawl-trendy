@@ -671,6 +671,18 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 .inspoitem .ch{font-size:11.5px;line-height:1.3}
 .inspoitem .x{position:absolute;top:4px;right:4px;width:26px;height:26px;padding:0;border-radius:50%;background:rgba(0,0,0,.75);color:#fff;border:none;font-size:13px}
 .inspoitem .x:hover{background:var(--hot)}
+/* 📷 fotky ke scénáři (náhledy; klik = přes celou obrazovku jen fotka) */
+.calphotos{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.calphotos:empty{display:none}
+.calphoto{position:relative;width:150px;aspect-ratio:4/3;border-radius:8px;overflow:hidden;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:26px}
+.calphoto>button[data-calphoto]{all:unset;cursor:zoom-in;position:absolute;inset:0}
+.calphoto img{width:100%;height:100%;object-fit:cover;display:block}
+.calphoto.nophoto>button[data-calphoto]::after{content:'📷';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:26px;opacity:.5}
+.calphoto .x{position:absolute;top:4px;right:4px;width:26px;height:26px;padding:0;border-radius:50%;background:rgba(0,0,0,.75);color:#fff;border:none;font-size:13px;z-index:1}
+.calphoto .x:hover{background:var(--hot)}
+.calphoto.busy{animation:lnpuls 1.4s ease-in-out infinite}
+.calbox.photodrop{outline:3px dashed var(--accent);outline-offset:-6px}
+@media (max-width:600px){.calphoto{width:calc(50% - 4px)}}
 .calstrip{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
 .calpick,.pickvid{position:relative;padding:0;border-radius:7px;overflow:hidden;flex:none;border:2px solid transparent}
 .calpick img{width:120px;display:block}
@@ -877,7 +889,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-24.182';
+const APP_VERSION = '2026-11-24.183';
 // po obnovení stránky NEvracet starou pozici – kalendář sám sjede na dnešek (dřív prohlížeč skočil na starou pozici,
 // stránka pak nahoru a zase dolů na dnešek)
 try { history.scrollRestoration = 'manual'; } catch {} // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
@@ -2931,13 +2943,13 @@ function renderCal() {
   const own = isOwner();
   setTimeout(calSyncNote, 0); // ☁️ stav synchronizace hned po vykreslení
   // úplně prázdné záznamy (bez názvu, scénáře, miniatury i inspirace) – vznikly omylem, majitel je rovnou uklidí
-  if (own) Object.values(ls(calKey(), {})).filter(e => !e.title && !e.script && !e.thumb && !e.inspo && !e.alt).forEach(e => calDelete(e.id));
+  if (own) Object.values(ls(calKey(), {})).filter(e => !e.title && !e.script && !e.thumb && !e.inspo && !e.alt && !e.photos?.length).forEach(e => calDelete(e.id));
   const all = Object.values(ls(calKey(), {}));
   const t = new Date(); t.setHours(0, 0, 0, 0);
   const start = new Date(t); start.setDate(t.getDate() - ((t.getDay() + 6) % 7) + (S.calOff || 0) * 7);
   const days = Array.from({length:14}, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
   const today = isoDay(t);
-  const badge = e => [e.script ? '📝' : '', e.thumb ? '🖼️' : '', ytIds(e.inspo).length ? `💡${ytIds(e.inspo).length}` : '', calNotes(e.id).length ? `🎨${calNotes(e.id).length}` : ''].filter(Boolean).join(' ');
+  const badge = e => [e.script ? '📝' : '', e.thumb ? '🖼️' : '', e.photos?.length ? `📷${e.photos.length}` : '', ytIds(e.inspo).length ? `💡${ytIds(e.inspo).length}` : '', calNotes(e.id).length ? `🎨${calNotes(e.id).length}` : ''].filter(Boolean).join(' ');
   // tabulka jako v Google Tabulkách: DEN | NÁZEV (největší) | INSPIRACE | POPIS K MINIATUŘE – každé video jeden řádek; scénář až po rozkliknutí
   const day = d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => calCreated(a) - calCreated(b));
     const cls = `${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''} ${d.getDay() % 6 === 0 ? 'weekend' : ''} ${d.getDay() === 1 && iso !== isoDay(days[0]) ? 'weekstart' : ''}`;
@@ -3215,10 +3227,15 @@ function calEditor(id, date, focusScript, edit = true) {
   const inspoHtml = s => ytIds(s).map(v => { const i = vidInfo(v);
     return `<div class="inspoitem"><a href="${ytUrl(v)}" target="_blank" rel="noopener" title="Otevřít na YouTube"><img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt=""></a>
       <div class="ch">${esc(i?.t || '')}${i?.views ? ` · ${n(i.views)} zhl.` : ''}</div>${own ? `<button class="x" data-calunpick="${v}" title="Odebrat">✖</button>` : ''}</div>`; }).join('') || '<span class="ch">Zatím žádná.</span>';
+  // 📷 fotky ke scénáři (na Disku, u videa jen jejich ID)
+  const photos = () => e.photos || [];
+  const photoGrid = () => photos().map((p, i) => `<div class="calphoto"><button data-calphoto="${i}" title="Otevřít přes celou obrazovku"><img data-photo="${esc(p.t)}" alt=""></button>${own ? `<button class="x" data-calphotodel="${i}" title="Smazat fotku">✖</button>` : ''}</div>`).join('');
+  const photoHead = () => `📷 Fotky ke scénáři${photos().length ? ` <button data-calphoto="0">🖼️ Prohlížet${photos().length > 1 ? ` (${photos().length})` : ''}</button>` : ''}`;
+  const hasContent = () => e.title || e.script || e.thumb || e.inspo || e.alt || photos().length;
   const ov = document.createElement('div'); ov.className = 'histov';
   const dt = e.date ? new Date(e.date + 'T12:00') : null;
   // 👁 přehled je čistý: prázdné části (inspirace, miniatura, scénář, poznámky) se vůbec neukážou – všechno je v ✏️ úpravách
-  const showInspo = own || ytIds(e.inspo).length, showThumb = own || e.thumb, showScript = own || e.script;
+  const showInspo = own || ytIds(e.inspo).length, showThumb = own || e.thumb, showScript = own || e.script, showPhotos = own || photos().length;
   const showNotes = own || !admin || calNotes(e.id).length, noteAdd = own || !admin;
   ov.innerHTML = `<div class="histbox calbox ${own ? '' : 'calview'}"><button class="histx" title="Zavřít">✖</button>${admin && !own ? '<button class="histedit" data-caledit2 title="Upravit">✏️</button>' : ''}${!own && all[e.id] ? `<button class="histshare${admin ? '' : ' solo'}" data-calshare title="Sdílet – zkopíruje odkaz přímo na tohle video (třeba pro grafika)">🔗</button>` : ''}
     ${own ? `<div class="calttl"><input class="calin title" data-f="title" value="${esc(e.title)}" placeholder="Název videa"><button class="calcopy" data-calcopy title="Zkopírovat název">📋</button></div>
@@ -3235,6 +3252,9 @@ function calEditor(id, date, focusScript, edit = true) {
     ${showScript ? `<h4>📝 Scénář <button data-calfull title="Samostatné okno – posuneš si ho kamkoli, i na druhý monitor">🪟 Otevřít v okně</button>${own ? ' <button data-caltext>📥 Vložit z uložených</button>' : ''}</h4>
     ${own ? `<label class="chkopt"><input type="checkbox" data-f="checks" ${e.checks ? 'checked' : ''}> ☑️ Fajfkování řádků v okně scénáře <span class="ch">(každý řádek si při natáčení odškrtneš)</span>${(e.done || []).length ? ` <button type="button" data-calundone>↺ Zrušit fajfky (${e.done.length})</button>` : ''}</label>` : ''}
     ${own ? `<textarea class="calin script" data-f="script" rows="10" placeholder="Úvod – hook v prvních 5 vteřinách…">${esc(e.script)}</textarea>` : `<div class="caltxt script">${esc(e.script)}</div>`}` : ''}
+    ${showPhotos ? `<h4 class="calphotoh">${photoHead()}</h4>
+    <div class="calphotos">${photoGrid()}</div>
+    ${own ? '<div class="row"><button data-calphotopick>📷 Přidat fotky</button><input type="file" accept="image/*" multiple data-calphotoadd hidden><span class="ch">nebo fotku vlož Ctrl+V / přetáhni sem · ukládá se na Google Disk</span></div>' : ''}` : ''}
     ${showNotes ? `<h4>🎨 Poznámky (grafik a ostatní)</h4>
     <div class="calnotes">${notes()}</div>` : ''}
     ${noteAdd ? '<div class="addch"><input data-calnote placeholder="Např. miniatury, ze kterých si půjčím (odkaz na YouTube), nápad…"><button data-calnoteadd>➕ Přidat</button></div>' : ''}
@@ -3246,13 +3266,42 @@ function calEditor(id, date, focusScript, edit = true) {
   const save = () => { clearTimeout(timer); timer = setTimeout(() => { grab(); calSave(e); renderMain(); }, 600); };
   // 📱 přepnutí do jiné aplikace / zamknutí telefonu s otevřeným oknem → uložit hned
   const onHide = () => { if (!ov.isConnected) return document.removeEventListener('visibilitychange', onHide);
-    if (document.hidden && own) { clearTimeout(timer); grab(); if (e.title || e.script || e.thumb || e.inspo || e.alt) calSave(e); } };
+    if (document.hidden && own) { clearTimeout(timer); grab(); if (hasContent()) calSave(e); } };
   document.addEventListener('visibilitychange', onHide);
   // ☑️ fajfky v okně scénáře: ukládají se k videu (jen majitel; grafik si je odškrtá jen u sebe na chvíli)
-  const sOpts = {get checks() { return !!e.checks; }, done:new Set(e.done || []),
+  const sOpts = {get checks() { return !!e.checks; }, get photos() { return photos(); }, done:new Set(e.done || []),
     toggle() { e.done = [...sOpts.done]; if (admin) { calSave(e); if (!own) renderMain(); } }};
   // „change“ u textarea = dopsáno a kliknuto jinam
+  // 📷 přidání fotek: tlačítko (výběr souborů / foťák na mobilu), Ctrl+V, přetažení souborů do okna
+  const addPhotos = async files => {
+    files = [...files].filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name));
+    if (!own || !files.length) return;
+    if (REMOTE !== DRIVE_BACKEND) return status('📷 Fotky se ukládají na Google Disk – nejdřív připoj Disk (☁️ vpravo nahoře).', true);
+    const box = ov.querySelector('.calphotos');
+    for (const file of files) {
+      const ph = document.createElement('div'); ph.className = 'calphoto busy'; ph.textContent = '⏳'; box.append(ph);
+      try {
+        const p = await photoUpload(file);
+        clearTimeout(timer); grab(); e.photos = [...photos(), p]; calSave(e);
+      } catch (err) { status('📷 Fotku se nepodařilo nahrát: ' + (err.message === 'auth' ? 'přihlášení k Disku vypršelo, připoj ho znovu' : err.message), true); }
+      ph.remove();
+    }
+    box.innerHTML = photoGrid(); ov.querySelector('.calphotoh').innerHTML = photoHead(); fillPhotos(box); renderMain();
+    if (SCRIPT_OPTS === sOpts) scriptWindowSync(e.script, e.title); // 📷 počet i v otevřeném okně scénáře
+  };
+  ov.addEventListener('paste', ev => {
+    const fs = [...(ev.clipboardData?.files || [])].filter(f => /^image\//.test(f.type));
+    if (!own || !fs.length) return;
+    // text zkopírovaný z Wordu nese i obrázek – do textového pole s textem vložit text, ne fotku
+    if (ev.target.closest('input,textarea') && (ev.clipboardData.getData('text/plain') || '').trim()) return;
+    ev.preventDefault(); addPhotos(fs);
+  });
+  const box0 = ov.firstElementChild, hasFiles = ev => [...(ev.dataTransfer?.types || [])].includes('Files');
+  ov.addEventListener('dragover', ev => { if (!own || !hasFiles(ev)) return; ev.preventDefault(); box0.classList.add('photodrop'); });
+  ov.addEventListener('dragleave', ev => { if (ev.target === ov || !ov.contains(ev.relatedTarget)) box0.classList.remove('photodrop'); });
+  ov.addEventListener('drop', ev => { if (!own || !hasFiles(ev)) return; ev.preventDefault(); box0.classList.remove('photodrop'); addPhotos(ev.dataTransfer.files); });
   ov.addEventListener('change', ev => {
+    if (ev.target.matches?.('[data-calphotoadd]')) { addPhotos(ev.target.files); ev.target.value = ''; return; }
     if (!own || ev.target.dataset?.f !== 'thumb' || !ev.target.value.trim() || ev.target.value === e.ping?.text) return;
     ov.querySelector('.calping').innerHTML = pingAsk();
   });
@@ -3293,6 +3342,18 @@ function calEditor(id, date, focusScript, edit = true) {
       }
       ov.querySelector('.calping').innerHTML = pingInfo(); return;
     }
+    if (b?.dataset.calphoto != null) return photoViewer(photos(), +b.dataset.calphoto);
+    if (b?.hasAttribute('data-calphotopick')) return ov.querySelector('[data-calphotoadd]').click();
+    if (b?.dataset.calphotodel != null) {
+      const p = photos()[+b.dataset.calphotodel]; if (!p) return;
+      return askConfirm('Smazat tuhle fotku od videa (i z Disku)?').then(yes => {
+        if (!yes) return;
+        clearTimeout(timer); grab(); e.photos = photos().filter(x => x !== p); calSave(e);
+        if (REMOTE === DRIVE_BACKEND) { dDel(p.f); dDel(p.t); }
+        const bx = ov.querySelector('.calphotos'); bx.innerHTML = photoGrid(); ov.querySelector('.calphotoh').innerHTML = photoHead(); fillPhotos(bx); renderMain();
+        if (SCRIPT_OPTS === sOpts) scriptWindowSync(e.script, e.title);
+      });
+    }
     if (b?.dataset.calpick) return toggleInspo(b.dataset.calpick);
     if (b?.dataset.calunpick) return toggleInspo(b.dataset.calunpick);
     if (b?.dataset.calbrowse) return videoPicker(sel, toggleInspo, b.dataset.calbrowse);
@@ -3301,18 +3362,18 @@ function calEditor(id, date, focusScript, edit = true) {
       ta.value = ta.value.slice(0, p) + (p && ta.value[p - 1] !== '\n' ? '\n' : '') + txt + '\n' + ta.value.slice(p);
       e.script = ta.value; save(); ta.focus();
     });
-    if (bgClick(ev, ov) || b?.classList.contains('histx')) { clearTimeout(timer); grab(); if (own && (e.title || e.script || e.thumb || e.inspo || e.alt)) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || 'video')} na ${e.date}`); } ov.remove(); renderMain(); return; }
+    if (bgClick(ev, ov) || b?.classList.contains('histx')) { clearTimeout(timer); grab(); if (own && hasContent()) { calSave(e); if (!all[e.id]) logEvent(`📅 naplánoval ${shortT(e.title || 'video')} na ${e.date}`); } ov.remove(); renderMain(); return; }
     if (!b) return;
     if (b.matches('[data-caldel]')) {
       askConfirm(`Smazat video „${e.title || 'bez názvu'}“${e.script ? ' i se scénářem' : ''}?`).then(yes => {
         if (!yes) return;
-        clearTimeout(timer); grab(); if (e.title || e.script || e.thumb || e.inspo || e.alt) calSave(e); // do koše i s neuloženými úpravami
+        clearTimeout(timer); grab(); if (hasContent()) calSave(e); // do koše i s neuloženými úpravami
         calDelete(e.id, true); ov.remove(); renderMain();
       });
     }
     else if (b.matches('[data-caledit2]')) { ov.remove(); calEditor(e.id); }
     else if (b.matches('[data-calshare]')) shareCal(e, b);
-    else if (b.matches('[data-calview]')) { clearTimeout(timer); grab(); if (e.title || e.script || e.thumb || e.inspo || e.alt) calSave(e); ov.remove(); renderMain(); calEditor(e.id, null, false, false); }
+    else if (b.matches('[data-calview]')) { clearTimeout(timer); grab(); if (hasContent()) calSave(e); ov.remove(); renderMain(); calEditor(e.id, null, false, false); }
     else if (b.matches('[data-calfull]')) scriptWindow(own ? ov.querySelector('[data-f="script"]').value : e.script, e.title, sOpts);
     else if (b.matches('[data-calundone]')) { sOpts.done.clear(); e.done = []; b.remove(); calSave(e); if (SCRIPT_OPTS === sOpts) scriptWindowSync(e.script, e.title); }
     else if (b.matches('[data-calnoteadd]')) {
@@ -3323,10 +3384,98 @@ function calEditor(id, date, focusScript, edit = true) {
     }
   });
   document.body.append(ov);
+  fillPhotos(ov); // 📷 náhledy fotek z Disku
   // poslané z Přenosu / Nápadů → otevřít rovnou u scénáře, kurzor za vloženým textem
   const sc = ov.querySelector('[data-f="script"]');
   if (focusScript && sc) { sc.scrollIntoView({block:'center'}); sc.focus({preventScroll:true}); sc.setSelectionRange(sc.value.length, sc.value.length); sc.scrollTop = sc.scrollHeight; }
   else if (own && !e.title) ov.querySelector('[data-f="title"]')?.focus();
+}
+// ---------- 📷 Fotky ke scénáři (kalendář) ----------
+// Fotka se zmenší (delší strana max 2560 px, JPEG) a nahraje na Google Disk do složky „fotky“ i s malým náhledem.
+// U videa je jen seznam souborů (e.photos = [{f: fotka, t: náhled, w, h, at}]) → kalendář zůstane malý a rychlý.
+// Vidí je každý, kdo vidí kalendář (složka je nasdílená), stažené fotky si prohlížeč pamatuje (Cache Storage).
+const PHOTO_MAX = 2560, PHOTO_THUMB = 480;
+const PHOTO_URL = new Map(); // id souboru na Disku → adresa obrázku v paměti
+async function photoFolder() {
+  if (DRIVE.photos) return DRIVE.photos;
+  const mime = "mimeType='application/vnd.google-apps.folder' and trashed=false";
+  return DRIVE.photos = (await dList(`name='fotky' and '${DRIVE.folder}' in parents and ${mime}`))[0]?.id || await dFolder('fotky', DRIVE.folder);
+}
+async function photoShrink(file, max, q) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, {imageOrientation:'from-image'}); } // otočení podle fotoaparátu
+  catch { throw new Error(/heic|heif/i.test(file.type + file.name) ? 'formát HEIC tenhle prohlížeč neumí – pošli fotku jako JPG' : 'tohle není obrázek, který jde otevřít'); }
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height)), w = Math.round(bmp.width * k), h = Math.round(bmp.height * k);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(bmp, 0, 0, w, h); bmp.close?.();
+  return {blob:await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(new Error('obrázek nejde převést')), 'image/jpeg', q)), w, h};
+}
+async function photoUpload(file) {
+  const dir = await photoFolder(), at = Date.now(), base = `${at}-${Math.random().toString(36).slice(2, 7)}`;
+  const big = await photoShrink(file, PHOTO_MAX, .88), small = await photoShrink(file, PHOTO_THUMB, .78);
+  const [f, t] = await Promise.all([dUpload(base + '.jpg', dir, big.blob), dUpload(base + '_nahled.jpg', dir, small.blob)]);
+  if (!f?.id || !t?.id) throw new Error('nahrání na Disk se nepovedlo');
+  PHOTO_URL.set(f.id, URL.createObjectURL(big.blob)); PHOTO_URL.set(t.id, URL.createObjectURL(small.blob));
+  return {f:f.id, t:t.id, w:big.w, h:big.h, at};
+}
+async function photoSrc(id) {
+  if (PHOTO_URL.has(id)) return PHOTO_URL.get(id);
+  const key = location.origin + location.pathname + '__foto/' + id; let blob = null;
+  try { const hit = await (await caches.open('bt-fotky')).match(key); if (hit) blob = await hit.blob(); } catch {}
+  if (!blob) {
+    if (REMOTE !== DRIVE_BACKEND) throw new Error('Disk není připojený');
+    const r = await dGet(id); if (!r.ok) throw new Error('fotka není na Disku');
+    blob = await r.blob();
+    try { await (await caches.open('bt-fotky')).put(key, new Response(blob, {headers:{'Content-Type':'image/jpeg'}})); } catch {}
+  }
+  const u = URL.createObjectURL(blob); PHOTO_URL.set(id, u); return u;
+}
+// náhledy v okně: <img data-photo="id"> bez src → doplnit (bez Disku zůstane šedé 📷)
+function fillPhotos(root) {
+  root.querySelectorAll('img[data-photo]:not([src])').forEach(img => photoSrc(img.dataset.photo).then(u => { img.src = u; }).catch(() => img.closest('.calphoto')?.classList.add('nophoto')));
+}
+// 🖼️ prohlížení: přes celou obrazovku JEN fotka (černé pozadí). ← → / přejetí prstem = další, Esc / ✖ / klik vedle = zavřít,
+// klik na fotku = schovat i tlačítka. doc = i samostatné okno se scénářem (styly jsou proto přímo u prvků).
+function photoViewer(list, start = 0, doc = document) {
+  if (!list?.length) return;
+  let i = Math.max(0, Math.min(list.length - 1, start | 0)), clean = false;
+  const ov = doc.createElement('div'), host = doc.fullscreenElement || doc.body;
+  const btn = 'position:absolute;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#000;display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,sans-serif';
+  ov.innerHTML = `<img alt="" style="max-width:100%;max-height:100%;object-fit:contain;display:block;user-select:none;-webkit-user-drag:none">
+    <div data-n style="position:absolute;top:14px;left:18px;color:#fff;opacity:.65;font-size:15px"></div>
+    <button data-x title="Zavřít (Esc)" style="${btn}top:10px;right:12px;width:46px;height:46px;font-size:20px">✖</button>
+    ${list.length > 1 ? `<button data-p title="Předchozí (←)" style="${btn}left:10px;top:50%;transform:translateY(-50%);width:54px;height:54px;font-size:34px">‹</button><button data-nx title="Další (→)" style="${btn}right:10px;top:50%;transform:translateY(-50%);width:54px;height:54px;font-size:34px">›</button>` : ''}`;
+  const img = ov.querySelector('img'), num = ov.querySelector('[data-n]');
+  const show = () => {
+    const p = list[i], want = i;
+    num.textContent = list.length > 1 ? `${i + 1} / ${list.length}` : '';
+    img.removeAttribute('src');
+    if (PHOTO_URL.has(p.f)) img.src = PHOTO_URL.get(p.f);
+    else {
+      if (PHOTO_URL.has(p.t)) img.src = PHOTO_URL.get(p.t); // náhled hned, ostrá fotka za chvilku
+      photoSrc(p.f).then(u => { if (want === i) img.src = u; }).catch(() => { if (want === i && !img.getAttribute('src')) num.textContent = '📷 Fotku se nepodařilo načíst – je připojený Disk?'; });
+    }
+    const nx = list[(i + 1) % list.length]; if (nx && !PHOTO_URL.has(nx.f)) photoSrc(nx.f).catch(() => {}); // další předem
+  };
+  const go = d => { i = (i + d + list.length) % list.length; show(); };
+  const root = doc.documentElement, ovf = root.style.overflow; root.style.overflow = 'hidden'; // ani posuvník stránky – jen fotka
+  const close = () => { doc.removeEventListener('keydown', key, true); root.style.overflow = ovf; if (doc.fullscreenElement === ov) doc.exitFullscreen().catch(() => {}); ov.remove(); };
+  const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } else if (ev.key === 'ArrowRight') go(1); else if (ev.key === 'ArrowLeft') go(-1); };
+  ov.addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (b?.hasAttribute('data-p')) return go(-1);
+    if (b?.hasAttribute('data-nx')) return go(1);
+    if (ev.target === img) { clean = !clean; ov.querySelectorAll('button,[data-n]').forEach(x => { x.style.visibility = clean ? 'hidden' : ''; }); return; }
+    if (b?.hasAttribute('data-x') || ev.target === ov) close();
+  });
+  let sx = null;
+  ov.addEventListener('touchstart', ev => { sx = ev.touches.length === 1 ? ev.touches[0].clientX : null; }, {passive:true});
+  ov.addEventListener('touchend', ev => { if (sx == null) return; const dx = ev.changedTouches[0].clientX - sx; sx = null; if (Math.abs(dx) > 50 && list.length > 1) go(dx < 0 ? 1 : -1); });
+  doc.addEventListener('keydown', key, true);
+  host.append(ov); show();
+  // celá obrazovka (když už je něco přes celou – scénář na mobilu – fotka se ukáže v něm)
+  if (!doc.fullscreenElement) { ov.requestFullscreen?.().catch(() => {}); ov.addEventListener('fullscreenchange', () => { if (!doc.fullscreenElement && ov.isConnected) close(); }); }
 }
 // 🪟 Scénář v samostatném okně (PC/Mac) – okno jde posunout kamkoli, i na druhý monitor, a měnit velikost.
 // Při psaní ve scénáři se text v okně rovnou aktualizuje. Na mobilu (nebo když prohlížeč okno zablokuje) celá obrazovka.
@@ -3366,7 +3515,7 @@ function scriptWindow(text, title, opts) {
     button:hover{border-color:#ffcc00}
     #t{flex:1;overflow:auto;padding:16px 20px 30vh;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;font-weight:600;font-size:${fs}px}
     ${SCRIPT_CHK_CSS}
-  </style></head><body><div class="bar"><b id="h"></b><button id="m">A−</button><button id="p">A+</button><button id="f" title="Celá obrazovka (Esc = zpět)">⛶</button></div><div id="t"></div></body></html>`);
+  </style></head><body><div class="bar"><b id="h"></b><button id="ph" title="Fotky ke scénáři – přes celé okno jen fotka" hidden>📷</button><button id="m">A−</button><button id="p">A+</button><button id="f" title="Celá obrazovka (Esc = zpět)">⛶</button></div><div id="t"></div></body></html>`);
   w.document.close();
   const d = w.document, t = d.getElementById('t');
   d.getElementById('h').textContent = title || 'Scénář';
@@ -3376,12 +3525,16 @@ function scriptWindow(text, title, opts) {
   d.getElementById('m').onclick = () => size(-3);
   d.getElementById('p').onclick = () => size(3);
   d.getElementById('f').onclick = () => d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen?.().catch(() => {});
+  // 📷 fotky ke scénáři přímo v tomhle okně (počet se obnoví i při psaní – scriptWindowSync)
+  d.getElementById('ph').onclick = () => photoViewer(SCRIPT_OPTS?.photos || [], 0, d);
+  scriptPhotoBtn(d);
   w.focus();
 }
+const scriptPhotoBtn = d => { const b = d.getElementById('ph'), n = SCRIPT_OPTS?.photos?.length || 0; if (b) { b.hidden = !n; b.textContent = `📷 ${n}`; } };
 // při psaní ve scénáři poslat nový text do otevřeného okna
 function scriptWindowSync(text, title) {
   try { if (!SCRIPT_WIN || SCRIPT_WIN.closed) return;
-    scriptBody(SCRIPT_WIN.document.getElementById('t'), text, SCRIPT_OPTS);
+    scriptBody(SCRIPT_WIN.document.getElementById('t'), text, SCRIPT_OPTS); scriptPhotoBtn(SCRIPT_WIN.document);
     if (title != null) { SCRIPT_WIN.document.getElementById('h').textContent = title || 'Scénář'; SCRIPT_WIN.document.title = '📝 ' + (title || 'Scénář'); }
   } catch {}
 }
@@ -3389,7 +3542,8 @@ function scriptWindowSync(text, title) {
 function teleprompter(text, title) {
   const ov = document.createElement('div'); ov.className = 'tele';
   let fs = +ls('bt_telefs', 44);
-  ov.innerHTML = `<div class="telebar"><b>${esc(title || 'Scénář')}</b><span><button data-fs="-">A−</button><button data-fs="+">A+</button><button data-tclose>✖ Zavřít</button></span></div>
+  const np = SCRIPT_OPTS?.photos?.length || 0;
+  ov.innerHTML = `<div class="telebar"><b>${esc(title || 'Scénář')}</b><span>${np ? `<button data-tphoto title="Fotky ke scénáři">📷 ${np}</button>` : ''}<button data-fs="-">A−</button><button data-fs="+">A+</button><button data-tclose>✖ Zavřít</button></span></div>
     <div class="teletext" style="font-size:${fs}px"></div>`;
   scriptBody(ov.querySelector('.teletext'), text, SCRIPT_OPTS); // ☑️ i tady jde fajfkovat (mobil)
   const close = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); ov.remove(); };
@@ -3398,6 +3552,7 @@ function teleprompter(text, title) {
     const b = ev.target.closest('button'); if (!b) return;
     if (b.dataset.fs) { fs = Math.max(18, Math.min(120, fs + (b.dataset.fs === '+' ? 6 : -6))); ov.querySelector('.teletext').style.fontSize = fs + 'px'; ss('bt_telefs', fs); }
     if (b.hasAttribute('data-tclose')) close();
+    if (b.hasAttribute('data-tphoto')) photoViewer(SCRIPT_OPTS?.photos || [], 0);
   });
   document.addEventListener('fullscreenchange', function f() { if (!document.fullscreenElement) { ov.remove(); document.removeEventListener('fullscreenchange', f); } });
   ov.addEventListener('keydown', ev => { if (ev.key === 'Escape') close(); });
