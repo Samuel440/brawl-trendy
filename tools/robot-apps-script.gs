@@ -139,7 +139,8 @@ function zvonecek_() {
     lists = {manual, auto};
     cache.put('zv_chans2', JSON.stringify(lists), 3600);
   }
-  const chans = Object.assign({}, lists.manual), lvl = saving_(), light = usage_().zv / 60e3 > ZV_BUDGET;
+  // nad vlastním stropem, NEBO když je celý limit skoro vyčerpaný (pak čas patří grafům) → jen 📌 kanály a ⏰ pravidelné
+  const u0 = usage_(), chans = Object.assign({}, lists.manual), lvl = saving_(), light = u0.zv / 60e3 > ZV_BUDGET || u0.used / 60e3 > BUDGET_MIN - 12;
   const allDue = !cache.get('zv_all') && lvl < 2 && !light; // ostatní sledované co 4 h (v úspoře co 6 h, v nouzi / nad stropem zvonečku vůbec)
   if (allDue) Object.assign(chans, lists.auto);
   // ⏰ (25/11) kanály, které vydávají PRAVIDELNĚ ve stejnou dobu (Štěps 13:00), se kontrolují každých 10 min od 20 min
@@ -181,7 +182,7 @@ function zvonecek_() {
   if (added || (nw._robot && nw._robot.at === now)) f.setContent(JSON.stringify({k: 'bt_new', v: nw, t: now}));
   if (allDue) cache.put('zv_all', '1', (lvl ? 6 : 4) * 3600); // (6/11: dřív co 2 h – nejdražší část robota, běhy až 4 min)
   const u = usage_();
-  console.log(`🔔 ${Object.keys(lists.manual).length} 📌 kanálů${allDue ? ` + ${Object.keys(lists.auto).length} sledovaných (pravidelných ${Object.keys(slots).length})` : nSlot ? ` + ${nSlot} ⏰ v jejich čase` : ''}, nových videí: ${added} (z hledání ${ns}), hledání dnes ${(nw._robot || {}).s || 0}/${NS_CAP}, trvalo ${Math.round((Date.now() - t0) / 1000)} s · za 24 h ${Math.round(u.used / 60e3)}/${BUDGET_MIN} min (zvoneček ${Math.round(u.zv / 60e3)}/${ZV_BUDGET}${light ? ' – nad stropem, jen 📌' : ''}) · ${SAVE_NAME[lvl]}`);
+  console.log(`🔔 ${Object.keys(lists.manual).length} 📌 kanálů${allDue ? ` + ${Object.keys(lists.auto).length} sledovaných (pravidelných ${Object.keys(slots).length})` : nSlot ? ` + ${nSlot} ⏰ v jejich čase` : ''}, nových videí: ${added} (z hledání ${ns}), hledání dnes ${(nw._robot || {}).s || 0}/${NS_CAP}, trvalo ${Math.round((Date.now() - t0) / 1000)} s · za 24 h ${Math.round(u.used / 60e3)}/${BUDGET_MIN} min (zvoneček ${Math.round(u.zv / 60e3)}/${ZV_BUDGET}${light ? ' – šetří, jen 📌 a ⏰' : ''}) · ${SAVE_NAME[lvl]}`);
 }
 // obvyklý čas vydávání kanálu (minuta dne v UTC): aspoň 3 videa za 14 dní vyšla do ±45 min od sebe, jinak null
 function slot_(mins) {
