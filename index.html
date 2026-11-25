@@ -890,7 +890,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-24.184';
+const APP_VERSION = '2026-11-25.185';
 // po obnovení stránky NEvracet starou pozici – kalendář sám sjede na dnešek (dřív prohlížeč skočil na starou pozici,
 // stránka pak nahoru a zase dolů na dnešek)
 try { history.scrollRestoration = 'manual'; } catch {} // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
@@ -4043,6 +4043,20 @@ const viewsAt = (pts, age) => { // zhlédnutí v daném stáří (mezi měření
   if (a === pts[0] ? b[0] - a[0] > Math.max(3 * 3600e3, age * .6) : b[0] - a[0] > Math.max(24 * 3600e3, age * 1.5)) return null;
   return Math.round(a[1] + (b[1] - a[1]) * (b[0] === a[0] ? 1 : (t - a[0]) / (b[0] - a[0])));
 };
+// (25/11) ≈ ODHAD pro video, které se začalo měřit až pozdě (výpadek robota / nové video našel až za pár hodin):
+// v daném stáří nemá číslo, ale má graf později → zhlédnutí z PRVNÍHO měření po tom stáří × typický poměr kanálu
+// (kolik z toho měla ostatní videa kanálu, která obě čísla změřená mají). Štěps: první měření až 4,8–9 h po vydání,
+// v žebříčku 2,6h videa to dřív psalo „bez grafu“, i když graf existoval. null = graf do toho stáří vůbec nesahá.
+function viewsAtEst(pts, age, others) {
+  const v = viewsAt(pts, age); if (v != null) return {v, est:false};
+  if (pts.length < 2) return null;
+  const pub = pts[0][0], i = pts.findIndex(p => p[0] >= pub + age); if (i < 1) return null; // graf tak daleko nesahá
+  const b = pts[i], T = b[0] - pub, prev = i > 1 ? pts[i - 1][1] : 0;
+  const r = others.filter(o => o.pts !== pts).map(o => { const a = viewsAt(o.pts, age), bb = viewsAt(o.pts, T); return a != null && bb > 0 ? a / bb : null; })
+    .filter(x => x != null && x <= 1).sort((x, y) => x - y);
+  if (r.length < 3) return null;
+  return {v:Math.max(prev, Math.min(b[1], Math.round(b[1] * quant(r, .5)))), est:true, T};
+}
 // rejstřík Brawl videí podle kanálu – postaví se JEDNOU (pak 60 s z paměti), ať šedé pásmo zvládnou i desítky karet bez lagu
 var PEERIDX = null; // var: ss() ho maže při každé změně dat (a ss běží už při startu stránky)
 function peerIndex(cs) {
@@ -4194,20 +4208,22 @@ function showHistory(it) {
   // Video z posledních 10, které v tom stáří změřené nemá, se ukáže šedě a do pořadí se nepočítá.
   const age = pts[pts.length - 1][0] - pts[0][0], ageTxt = ago(age / 3600e3).replace('před ', '');
   let band = [], rankAll = [];
-  const rkRow = (x, i) => `<div class="rankrow${x.me ? ' me' : ''}${x.v == null ? ' nodata' : ''}"><b>${x.v == null ? '–' : i + 1 + '.'}</b><img src="https://i.ytimg.com/vi/${esc(x.it.id)}/mqdefault.jpg" alt="" loading="lazy"><span class="rt" title="${esc(x.it.t)}" data-orig="${esc(x.it.t)}">${esc(trT(x.it.t))}</span><span class="rv"${x.v == null ? ` title="Z prvních ${esc(ageTxt)} po zveřejnění nemá měření – nezapočítané"` : ''}>${x.v == null ? 'bez grafu' : n(x.v)}</span>
+  const rkRow = (x, i) => `<div class="rankrow${x.me ? ' me' : ''}${x.v == null ? ' nodata' : ''}"><b>${x.v == null ? '–' : i + 1 + '.'}</b><img src="https://i.ytimg.com/vi/${esc(x.it.id)}/mqdefault.jpg" alt="" loading="lazy"><span class="rt" title="${esc(x.it.t)}" data-orig="${esc(x.it.t)}">${esc(trT(x.it.t))}</span><span class="rv"${x.v == null ? ` title="Graf tohohle videa do ${esc(ageTxt)} po zveřejnění nesahá – nezapočítané"` : x.est ? ` title="≈ odhad: první měření až ${esc(ago(x.T / 3600e3).replace('před ', ''))} po zveřejnění (robot ho našel pozdě) – dopočítané podle toho, jak v prvních hodinách rostla ostatní videa kanálu"` : ''}>${x.v == null ? 'bez grafu' : (x.est ? '≈ ' : '') + n(x.v)}</span>
     ${x.me || x.v == null ? '' : `<button data-rankhist="${i}" title="Porovnat v grafu (modrá čára) – znovu kliknout = schovat">📈</button>`}<button class="rkplay" data-rankplay="${esc(x.it.id)}" title="Pustit tady v okně">▶</button><a class="rkplay" href="${ytUrl(x.it.id)}" target="_blank" rel="noopener" title="Otevřít na YouTube">↗</a></div>`;
   function rankParts(loading) {
     band = []; rankAll = [];
     if (loading) return `<div class="row"><span class="ch">⏳ Načítám posledních 10 videí kanálu z YouTube…</span></div>`;
     const peers = channelPeers(it); band = peerBand(pts, peers);
     if (!peers.length) return '';
-    const vs = peers.map(p => ({it:p.it, v:viewsAt(p.pts, age), pts:p.pts})), cmp = vs.filter(p => p.v != null), none = vs.filter(p => p.v == null);
+    // ≈ = video se začalo měřit až později (výpadek / pozdě nalezené) → dopočítané podle křivky ostatních videí kanálu
+    const vs = peers.map(p => { const r = viewsAtEst(p.pts, age, peers); return {it:p.it, v:r ? r.v : null, est:!!r?.est, T:r?.T, pts:p.pts}; });
+    const cmp = vs.filter(p => p.v != null), none = vs.filter(p => p.v == null), nEst = cmp.filter(p => p.est).length;
     if (!cmp.length) return `<div class="row"><span class="ch" title="Ostatní videa nemají měření z prvních ${esc(ageTxt)} po zveřejnění – nová videa sledovaných kanálů se měří od vydání, takže žebříček se postupně zaplní">📊 posledních ${peers.length} videí kanálu zatím nemá graf z prvních ${esc(ageTxt)}</span></div>`;
     const all = [...cmp, {it, v:pts[pts.length - 1][1], me:true}].sort((a, b) => b.v - a.v);
     // první = 1/10, poslední = 10/10, mezi tím rovnoměrně (dřív ↑(pořadí/počet×10) → 1. z 5 vyšlo jako 2/10)
     const pos = all.findIndex(x => x.me) + 1, score = all.length <= 1 ? 1 : 1 + Math.round((pos - 1) / (all.length - 1) * 9);
     rankAll = all;
-    const tip = `Pořadí mezi posledními ${peers.length} Brawl videi kanálu podle zhlédnutí ${ageTxt} po zveřejnění (jako v YouTube Studiu)${none.length ? ` – ${none.length} z nich v tomhle stáří měření nemá, nezapočítaná` : ''}. Klikni pro seznam.`;
+    const tip = `Pořadí mezi posledními ${peers.length} Brawl videi kanálu podle zhlédnutí ${ageTxt} po zveřejnění (jako v YouTube Studiu)${nEst ? ` – u ${nEst} (≈) je číslo dopočítané, začala se měřit až později` : ''}${none.length ? ` – ${none.length} graf do tohohle stáří nemá, nezapočítaná` : ''}. Klikni pro seznam.`;
     return `<div class="row"><button class="rankbtn r${score <= 3 ? 'good' : score >= 8 ? 'bad' : 'mid'}" data-rank title="${esc(tip)}">🏅 ${score}/10 · ${pos}. z ${all.length}</button></div>
       <div class="ranklist" hidden><div class="ch">Posledních ${peers.length} videí kanálu – zhlédnutí ${esc(ageTxt)} po zveřejnění:</div>
       ${all.map(rkRow).join('')}${none.map(x => rkRow(x)).join('')}</div>`;
