@@ -34,17 +34,33 @@ const TIERS = [[24 * H, 30 * 60e3], [48 * H, 2 * H], [72 * H, 3 * H], [7 * 24 * 
 // přestanou běžet a SAMY se už neobnoví (28/10 19:34 a 6/11 9:58 – robot stál, dokud se znovu nespustilo „nastavit“).
 // Proto se spotřeba počítá po hodinách za posledních 24 h a robot se zastaví s rezervou (BUDGET_MIN pod 90).
 const BUDGET_MIN = 60; // (22/11: při 75 ho Google 21/11 12:06 stejně zastavil – Google počítá víc, než robot naměří)
+// (25/11) 🔔 zvoneček (co 10 min + hledání) sám snědl skoro celý limit (51/60 min) → robot byl pořád v „nouzi“
+// a starší videa vůbec neměřil. Teď má zvoneček vlastní strop ZV_BUDGET; nad ním jen 📌 kanály (bez hledání a bez
+// všech sledovaných), zbytek limitu zůstane GRAFŮM. Spotřeba zvonečku se počítá zvlášť (rz_<hodina>).
+const ZV_BUDGET = 22;
 function usage_() {
   const p = PropertiesService.getScriptProperties(), all = p.getProperties(), now = Date.now();
   const k = 'rh_' + Math.floor(now / H);
-  let used = 0;
-  for (const key in all) if (/^rh_\d+$/.test(key)) { if (now - +key.slice(3) * H < 24 * H) used += +all[key] || 0; }
-  return {p, k, used, cur: +(all[k] || 0), all};
+  let used = 0, zv = 0;
+  for (const key in all) {
+    if (!/^r[hz]_\d+$/.test(key) || now - +key.slice(3) * H >= 24 * H) continue;
+    if (key[1] === 'h') used += +all[key] || 0; else zv += +all[key] || 0;
+  }
+  return {p, k, used, zv, cur: +(all[k] || 0), all};
 }
-function addUsage_(ms) {
-  const u = usage_(), now = Date.now(); u.p.setProperty(u.k, String(u.cur + ms));
-  for (const key in u.all) if ((/^rh_\d+$/.test(key) && now - +key.slice(3) * H >= 25 * H) || /^rt_/.test(key)) u.p.deleteProperty(key); // starší než den pryč
+function addUsage_(ms, zvon) {
+  // krátký zámek jen na zápis čísla (zvoneček a sběr teď běží souběžně)
+  const lock = LockService.getScriptLock(), ok = lock.tryLock(10000);
+  try {
+    const u = usage_(), now = Date.now(); u.p.setProperty(u.k, String(u.cur + ms));
+    if (zvon) { const kz = 'rz_' + Math.floor(now / H); u.p.setProperty(kz, String((+u.all[kz] || 0) + ms)); }
+    for (const key in u.all) if ((/^r[hz]_\d+$/.test(key) && now - +key.slice(3) * H >= 25 * H) || /^rt_/.test(key)) u.p.deleteProperty(key); // starší než den pryč
+  } finally { if (ok) lock.releaseLock(); }
 }
+// „běží“ značka v mezipaměti (místo jednoho společného zámku): sběr a zvoneček si už navzájem nepřekáží,
+// jen dva stejné běhy přes sebe nepojedou (5,5 min = nejdelší možný běh)
+function running_(name) { const c = CacheService.getScriptCache(); if (c.get('run_' + name)) return true; c.put('run_' + name, '1', 330); return false; }
+function done_(name) { CacheService.getScriptCache().remove('run_' + name); }
 function saving_() {
   const min = usage_().used / 60e3;
   if (min > BUDGET_MIN - 10) return 2;
@@ -97,11 +113,10 @@ function robotFile_(folder, k) {
 // 🔔 Zvoneček: každých 10 minut RSS ručně přidaných (📌) kanálů – zdarma, nebere kvótu YouTube.
 // Nové video hned zapíše do s_bt_new__github-action.json; stránka si ho doplní do Novinek a sběr grafů mu hned počítá body.
 function zvonecek() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) return; // zrovna běží sběr grafů – zvoneček počká na příště (za 10 min)
+  if (running_('zv')) return; // předchozí zvoneček ještě běží
   const t0 = Date.now();
   try { if (plno_()) { console.log('⏸ limit 24 h skoro vyčerpaný – zvoneček tentokrát vynechán'); return; } zvonecek_(); }
-  finally { addUsage_(Date.now() - t0); lock.releaseLock(); }
+  finally { addUsage_(Date.now() - t0, true); done_('zv'); }
 }
 function zvonecek_() {
   const t0 = Date.now(), folder = folder_(), cache = CacheService.getScriptCache();
@@ -124,9 +139,14 @@ function zvonecek_() {
     lists = {manual, auto};
     cache.put('zv_chans2', JSON.stringify(lists), 3600);
   }
-  const chans = Object.assign({}, lists.manual), lvl = saving_();
-  const allDue = !cache.get('zv_all') && lvl < 2; // ostatní sledované jednou za 2 h (v úspoře za 3 h, v nouzi vůbec)
+  const chans = Object.assign({}, lists.manual), lvl = saving_(), light = usage_().zv / 60e3 > ZV_BUDGET;
+  const allDue = !cache.get('zv_all') && lvl < 2 && !light; // ostatní sledované co 4 h (v úspoře co 6 h, v nouzi / nad stropem zvonečku vůbec)
   if (allDue) Object.assign(chans, lists.auto);
+  // ⏰ (25/11) kanály, které vydávají PRAVIDELNĚ ve stejnou dobu (Štěps 13:00), se kontrolují každých 10 min od 20 min
+  // před do 80 min po jejich obvyklém čase – nové video se tak najde hned (dřív až za 4–7 h → graf bez prvních hodin)
+  const oldSlots = JSON.parse(cache.get('zv_slots') || '{}'), nowMin = Math.floor(Date.now() / 60e3) % 1440;
+  let nSlot = 0;
+  for (const id in oldSlots) { const d = (nowMin - oldSlots[id] + 1440) % 1440; if ((d <= 80 || d >= 1420) && lists.auto[id] && !chans[id]) { chans[id] = lists.auto[id]; nSlot++; } }
   const ids = Object.keys(chans); if (!ids.length) { console.log('🔔 žádné sledované kanály'); return; }
   const f = robotFile_(folder, 'bt_new');
   if (!f) { console.log('🔔 chybí soubor s_bt_new__github-action.json – jednou otevři web s připojeným Diskem (majitelským účtem).'); return; }
@@ -137,25 +157,40 @@ function zvonecek_() {
   for (let i = 0; i < ids.length && Date.now() - t0 < MAX_MS - 60e3; i += 100)
     res.push(...UrlFetchApp.fetchAll(ids.slice(i, i + 100).map(id => ({url: 'https://www.youtube.com/feeds/videos.xml?channel_id=' + id, muteHttpExceptions: true}))));
   const atom = XmlService.getNamespace('http://www.w3.org/2005/Atom'), yt = XmlService.getNamespace('yt', 'http://www.youtube.com/xml/schemas/2015');
+  const slots = Object.assign({}, oldSlots);
   res.forEach((r, i) => {
     if (r.getResponseCode() !== 200) return;
     let entries;
     try { entries = XmlService.parse(r.getContentText()).getRootElement().getChildren('entry', atom); } catch (e) { return; }
+    const mins = [];
     for (const e of entries) {
-      const vid = e.getChildText('videoId', yt), pub = e.getChildText('published', atom);
-      if (!vid || nw[vid] || !(now - Date.parse(pub) < 24 * H)) continue; // jen nová za posledních 24 h
+      const vid = e.getChildText('videoId', yt), pub = e.getChildText('published', atom), tp = Date.parse(pub);
+      if (allDue && now - tp < 14 * 24 * H) mins.push(Math.floor(tp / 60e3) % 1440);
+      if (!vid || nw[vid] || !(now - tp < 24 * H)) continue; // jen nová za posledních 24 h
       nw[vid] = {cid: chans[ids[i]], pub, ch: ids[i], at: now}; added++;
     }
+    if (allDue && lists.auto[ids[i]]) { const s = slot_(mins); if (s == null) delete slots[ids[i]]; else slots[ids[i]] = s; }
   });
+  if (allDue) cache.put('zv_slots', JSON.stringify(slots), 21600);
   // 🕐 + hledání nejnovějších videí (i od youtuberů, které ještě nesledujeme) – dřív jen při otevřené stránce
-  // hledání je rychlé (~2 s) a nejcennější → jede i v nouzi, jen ne úplně na hraně limitu
-  const ns = usage_().used / 60e3 < BUDGET_MIN - 2 ? novinky_(nw, now, t0) : 0; added += ns;
+  // (hledání je nejdražší část zvonečku → nad jeho stropem ZV_BUDGET se vynechá, ať zbude čas na grafy)
+  const ns = !light && usage_().used / 60e3 < BUDGET_MIN - 2 ? novinky_(nw, now, t0) : 0; added += ns;
   // (22/11) jen poslední 4 dny – stránka si nová videa převezme hned; dřív se drželo 30 dní → 33 000 videí, obří soubor
   // čtený a zapisovaný každých 10 min a sběr grafů pak sledoval i tisíce ne-Brawl výsledků hledání → došel denní limit
   for (const vid in nw) if (vid[0] !== '_' && now - Date.parse(nw[vid].pub) > 4 * 24 * H) delete nw[vid];
   if (added || (nw._robot && nw._robot.at === now)) f.setContent(JSON.stringify({k: 'bt_new', v: nw, t: now}));
   if (allDue) cache.put('zv_all', '1', (lvl ? 6 : 4) * 3600); // (6/11: dřív co 2 h – nejdražší část robota, běhy až 4 min)
-  console.log(`🔔 ${Object.keys(lists.manual).length} 📌 kanálů${allDue ? ` + ${Object.keys(lists.auto).length} sledovaných` : ''}, nových videí: ${added} (z hledání ${ns}), hledání dnes ${(nw._robot || {}).s || 0}/${NS_CAP}, trvalo ${Math.round((Date.now() - t0) / 1000)} s · za 24 h ${Math.round(usage_().used / 60e3)}/${BUDGET_MIN} min · ${SAVE_NAME[lvl]}`);
+  const u = usage_();
+  console.log(`🔔 ${Object.keys(lists.manual).length} 📌 kanálů${allDue ? ` + ${Object.keys(lists.auto).length} sledovaných (pravidelných ${Object.keys(slots).length})` : nSlot ? ` + ${nSlot} ⏰ v jejich čase` : ''}, nových videí: ${added} (z hledání ${ns}), hledání dnes ${(nw._robot || {}).s || 0}/${NS_CAP}, trvalo ${Math.round((Date.now() - t0) / 1000)} s · za 24 h ${Math.round(u.used / 60e3)}/${BUDGET_MIN} min (zvoneček ${Math.round(u.zv / 60e3)}/${ZV_BUDGET}${light ? ' – nad stropem, jen 📌' : ''}) · ${SAVE_NAME[lvl]}`);
+}
+// obvyklý čas vydávání kanálu (minuta dne v UTC): aspoň 3 videa za 14 dní vyšla do ±45 min od sebe, jinak null
+function slot_(mins) {
+  let best = null, bestN = 0;
+  for (const m of mins) {
+    const n = mins.filter(x => { const d = Math.abs(x - m); return Math.min(d, 1440 - d) <= 45; }).length;
+    if (n > bestN) { bestN = n; best = m; }
+  }
+  return bestN >= 3 ? best : null;
 }
 
 // 🕐 Nejnovější videa každého státu (hledání order=date) podle místního času – v hlavní čas vydávání častěji, v noci vůbec.
@@ -207,12 +242,14 @@ function vypnout() {
   console.log('⏹ Robot vypnutý.');
 }
 
+// (25/11) DŘÍV: sběr a zvoneček sdílely jeden zámek a spouštěly se ve stejnou minutu (:28/:58) – zvoneček běžel 6–60 s,
+// sběr čekal jen 1 s a VZDAL to („Předchozí běh ještě neskončil“). 25/11 od 10:28 do 16:28 proběhl jen 2× → 6 699 videí
+// čekalo na obnovu a grafy starších videí se obnovily, jen když se na stránce kliklo na Týden. Teď běží nezávisle.
 function sber() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) { console.log('Předchozí běh ještě neskončil – přeskakuji.'); return; }
+  if (running_('sber')) { console.log('Předchozí sběr ještě neskončil – přeskakuji.'); return; }
   const t0 = Date.now();
   try { if (plno_()) { console.log('⏸ limit 24 h skoro vyčerpaný – sběr tentokrát vynechán'); return; } run_(); }
-  finally { addUsage_(Date.now() - t0); lock.releaseLock(); }
+  finally { addUsage_(Date.now() - t0); done_('sber'); }
 }
 
 function thin_(p) {
