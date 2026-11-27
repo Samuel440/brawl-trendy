@@ -890,7 +890,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-27.186';
+const APP_VERSION = '2026-11-27.187';
 // po obnovení stránky NEvracet starou pozici – kalendář sám sjede na dnešek (dřív prohlížeč skočil na starou pozici,
 // stránka pak nahoru a zase dolů na dnešek)
 try { history.scrollRestoration = 'manual'; } catch {} // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
@@ -2083,7 +2083,9 @@ function lsMemo(k, d) {
   let v; try { v = JSON.parse(raw); } catch { return d; }
   MEMO.set(k, {raw, v}); return v;
 }
-const putSet = (cid, p, set) => { ss(ckey(cid, p), set); TERMS = null; };
+// (27/11) slova sezóny se po uložení seznamu NEpřepočítávají hned (~200 ms přes všechny státy, při načítání na pozadí
+// po každém státu) – stačí nejvýš jednou za 10 min (viz brawlTerms)
+const putSet = (cid, p, set) => { ss(ckey(cid, p), set); TERMS_STALE = true; };
 const isFresh = (set, p) => set && (Date.now() - set.ts) < PERIODS[p].ttl * 60e3;
 // Šetření hledání (jen 100 denně): plné hledání nejvýš jednou za S.severy hodin (výchozí 24 h; čas posledního
 // hledání se sdílí přes Disk, takže když hledal někdo jiný, my nehledáme), mezitím jen „lehká“ aktualizace
@@ -2204,14 +2206,15 @@ async function refreshLight(c, p, set, kanaly = true) { // kanaly=false: jen po�
 // ---------- Slova Brawl sezóny ----------
 // Kanály, které točí jen Brawl (3+ Brawl videa), používají u updatů stejné názvy (např. „coffin boxy“).
 // Slovo, které píše víc takových kanálů a nevyskytuje se u videí z jiných her, bereme jako důkaz Brawl Stars.
-let TERMS = null;
+var TERMS = null, TERMS_AT = 0, TERMS_STALE = false;
 const GENERIC = new Set(('new free update season event skin skins box boxes challenge noob best live stream part games mobile epic insane funny rank ranked trophies trophy push legendary mythic rare hack glitch secret tips tricks broken account gems opening shop deal deals offer part1 part2 '+
   'nuovo nuova nuovi gratis aggiornamento stagione evento sfida neue neuer neues kostenlos saison nouveau nouvelle gratuit saison nuevo nueva gratis temporada novo nova grátis temporada nowy nowa darmo sezon новый новая новые бесплатно сезон обновление yeni bedava sezon baru gratis '+
   // obyčejná slova, která píšou i Brawl kanály u jiných her – nesmí se brát jako „slovo sezóny“ (Holdik: „топ 1 мира“ u CS:GO)
   'мира мир мире топ игре игра игры лучший лучшие самый самая день дня часа против всех кто что если когда почему '+
   'світу світі гра грі найкращий mondo mundo welt monde świata dünya world mundial record rekord').split(/\s+/));
 function brawlTerms() {
-  if (TERMS) return TERMS;
+  if (TERMS && !(TERMS_STALE && Date.now() - TERMS_AT > 10 * 60e3)) return TERMS;
+  TERMS_AT = Date.now(); TERMS_STALE = false;
   const brawlCh = new Map(), other = new Map();
   const add = (m, w, ch) => { const s = m.get(w) || new Set(); s.add(ch); m.set(w, s); };
   for (const c of COUNTRIES) {
@@ -6422,6 +6425,8 @@ function calmRerender() {
   if (tok && ls('bt_gdrive', false) && gClientId()) { DRIVE.token = tok.t; DRIVE.exp = tok.exp; }
   readCalLink(); // 🔗 odkaz na video z kalendáře (…/#cal=…)
   show();
+  // 🧠 v klidu po startu předpočítat slova sezóny (první otevření Videí pak nečeká ~0,2 s)
+  setTimeout(() => (window.requestIdleCallback || setTimeout)(() => { try { brawlTerms(); } catch {} }, {timeout:4000}), 2500);
   if (OAUTH_MSG) status(OAUTH_MSG, true);
   if (DRIVE.token) await driveConnect(false); else pullShared();
   renderQuotaBar();
