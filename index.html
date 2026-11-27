@@ -17,7 +17,7 @@ button.costly{background:#fff;color:#111;border-color:#fff}
 button.costly:hover{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
 button:disabled{opacity:.55;cursor:default}
 button.primary{background:var(--accent);color:#111;border-color:var(--accent);font-weight:700}
-header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.96);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 16px}
+header{position:sticky;top:0;z-index:5;background:rgb(15,17,23);border-bottom:1px solid var(--line);padding:10px 16px} /* (27/11) bez backdrop-filter: rozmazání pod lepící lištou se při posouvání přepočítávalo každý snímek */
 .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 /* logo ULTRA SAMI: dvě vrstvy stejného rozměru – nápis a bílé rohové čáry, které se při najetí myší oddálí */
 .logo{position:relative;height:52px;aspect-ratio:434/120;flex:none;cursor:default}
@@ -480,7 +480,7 @@ button.tag{border:0;cursor:pointer;font:inherit;font-size:11px}
 .pickfolds button{border-radius:999px;padding:4px 11px;font-size:12.5px}
 .pickfolds button[style]{border:2px solid var(--fc)}
 .pickfolds button.on{background:var(--fc,var(--accent));color:#111;font-weight:800;border-color:var(--fc,var(--accent))}
-.caltable.calstale{opacity:.38;filter:grayscale(.85);transition:opacity .4s,filter .4s}
+.caltable.calstale{opacity:.4;transition:opacity .4s} /* (bez filter:grayscale – přes celou tabulku drahé při posouvání) */
 .calsync{font-size:12px;color:var(--ok);margin-top:4px;min-height:1.5em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} /* místo i když je prázdný */
 .calsync.busy{color:var(--accent);font-weight:700}
 .calsync.old{color:#f4a261;font-weight:700}
@@ -890,7 +890,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-25.185';
+const APP_VERSION = '2026-11-27.186';
 // po obnovení stránky NEvracet starou pozici – kalendář sám sjede na dnešek (dřív prohlížeč skočil na starou pozici,
 // stránka pak nahoru a zase dolů na dnešek)
 try { history.scrollRestoration = 'manual'; } catch {} // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
@@ -1109,17 +1109,50 @@ function driveRedirect(email, pick) {
   setTimeout(() => { location.href = url; }, 150);
 }
 // návrat z přihlášení: přístup z adresy uložit (jako po přihlášení oknem) a adresu uklidit
+var OAUTH_BACK = false; // stránka se právě vrátila z přihlášení (ať se tiché přihlášení hned neopakuje)
 (() => {
   const h = new URLSearchParams(location.hash.slice(1));
   if (!h.get('access_token') && !h.get('error')) return;
-  let st = null; try { st = localStorage.getItem('bt_oauth_st'); localStorage.removeItem('bt_oauth_st'); } catch {}
+  OAUTH_BACK = true;
+  let st = null, auto = false;
+  try { st = localStorage.getItem('bt_oauth_st'); localStorage.removeItem('bt_oauth_st'); auto = localStorage.getItem('bt_oauth_auto') === '1'; localStorage.removeItem('bt_oauth_auto'); } catch {}
   history.replaceState(null, '', location.pathname + location.search);
+  // ⚡ tiché přihlášení při otevření nevyšlo (Google chce kliknutí / jiný účet) → nic nehlásit, připojí se prvním kliknutím jako dřív
+  if (h.get('error') && auto) return;
   // dřív se chyba potichu zahodila a vypadalo to, že se „nic neděje“ → teď se ukáže
   if (h.get('error')) { OAUTH_MSG = `☁️ Google přihlášení nevyšlo: ${h.get('error_description') || h.get('error')}${h.get('error') === 'access_denied' ? ' (přístup nepovolen – zkus znovu a povol přístup k Disku)' : ''}`; return; }
   if (!st || h.get('state') !== st) { OAUTH_MSG = '☁️ Přihlášení se nepodařilo dokončit (vrátilo se v jiné kartě?) – klikni na Připojit Disk ještě jednou.'; return; }
-  try { sessionStorage.setItem('bt_tok', JSON.stringify({t:h.get('access_token'), exp:Date.now() + (+h.get('expires_in') || 3600) * 1000})); } catch {}
+  saveTok(h.get('access_token'), Date.now() + (+h.get('expires_in') || 3600) * 1000);
   try { localStorage.setItem('bt_gdrive', 'true'); } catch {}
 })();
+// přihlášení platí hodinu: pamatuje si ho tahle karta I ostatní karty / další otevření stránky během té hodiny
+// (dřív jen tahle karta → každé nové otevření stránky znovu přihlašovat)
+function saveTok(t, exp) { const s = JSON.stringify({t, exp}); try { sessionStorage.setItem('bt_tok', s); localStorage.setItem('bt_tok', s); } catch {} }
+function loadTok() {
+  for (const st of [sessionStorage, localStorage]) { try { const x = JSON.parse(st.getItem('bt_tok') || 'null'); if (x?.t && x.exp - 120e3 > Date.now()) return x; } catch {} }
+  return null;
+}
+// (keepAcct: jen vypršelé přihlášení – zapamatované složky platí dál; jinak změna účtu → zapomenout i je)
+function dropTok(keepAcct) { try { sessionStorage.removeItem('bt_tok'); localStorage.removeItem('bt_tok'); if (!keepAcct) localStorage.removeItem('bt_dinit'); } catch {} }
+// ⚡ (27/11) TICHÉ PŘIHLÁŠENÍ hned při otevření stránky (PC): když už Disk používáš a platné přihlášení chybí, stránka
+// na zlomek vteřiny odskočí na Google s prompt=none – ten ji bez okna a bez klikání hned vrátí přihlášenou.
+// Když Google chce něco potvrdit (jiný účet, odhlášený prohlížeč), vrátí chybu → nic se nehlásí a 20 min se to nezkouší.
+// Na mobilu ne (Chrome na POCO přesměrování na Google blokoval) – tam zůstává připojení prvním ťuknutím.
+function driveSilent() {
+  if (isTouch() || OAUTH_BACK || !navigator.onLine || !gClientId() || loadTok()) return false;
+  let on = false, last = 0; try { on = localStorage.getItem('bt_gdrive') === 'true'; last = +localStorage.getItem('bt_autoauth') || 0; } catch {}
+  if (!on || Date.now() - last < 20 * 60e3) return false;
+  const st = Math.random().toString(36).slice(2), email = (() => { try { return JSON.parse(localStorage.getItem('bt_gemail') || '""'); } catch { return ''; } })();
+  try {
+    localStorage.setItem('bt_autoauth', String(Date.now())); localStorage.setItem('bt_oauth_st', st); localStorage.setItem('bt_oauth_auto', '1');
+    sessionStorage.setItem('bt_period_s', S.period);
+    const m = location.hash.match(/^#cal=([^&]+)/); if (m) localStorage.setItem('bt_callink', decodeURIComponent(m[1])); // odkaz na video z kalendáře neztratit
+  } catch { return false; }
+  const p = {client_id:gClientId(), redirect_uri:OAUTH_REDIRECT, response_type:'token', scope:'https://www.googleapis.com/auth/drive', include_granted_scopes:'true', state:st, prompt:'none'};
+  if (email) p.login_hint = email;
+  location.replace('https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams(p));
+  return true;
+}
 async function driveSignIn(pick) {
   if (!gClientId()) throw new Error('Chybí Client ID pro přihlášení Googlem (⚙️ Nastavení).');
   if (useRedirect()) { driveRedirect(pick ? '' : ls('bt_gemail', ''), pick); return new Promise(() => {}); } // stránka odchází
@@ -1132,8 +1165,8 @@ async function driveSignIn(pick) {
       callback:r => {
         if (r.error) return rej(new Error(r.error_description || r.error));
         DRIVE.token = r.access_token; DRIVE.exp = Date.now() + r.expires_in * 1000;
-        // přihlášení si pamatuje jen tahle karta (sessionStorage) – přežije obnovu stránky po aktualizaci
-        try { sessionStorage.setItem('bt_tok', JSON.stringify({t:DRIVE.token, exp:DRIVE.exp})); } catch {}
+        // přihlášení si pamatuje tahle karta i další otevření stránky (platí hodinu)
+        saveTok(DRIVE.token, DRIVE.exp);
         res();
       },
       error_callback:e => rej(new Error(e.type === 'popup_closed' ? 'Přihlášení zavřeno.' : 'Přihlašovací okno se neotevřelo (blokované vyskakovací okno?).')),
@@ -1221,8 +1254,19 @@ async function dUpload(name, parent, blob, fileId) {
 }
 const dGet = id => gfetch(`${DAPI}/files/${id}?alt=media`);
 const dDel = id => gfetch(`${DAPI}/files/${id}`, {method:'DELETE'}).catch(() => {}); // cizí soubor smazat nejde – nevadí
-// najde sdílenou složku (nejstarší, kterou vidím – i nasdílenou od ostatních); create=true ji založí
+// ⚡ (27/11) složky z minulého připojení rovnou (3 dotazy na Disk ušetřené → Výroba a kalendář naběhnou ~o 1 s dřív);
+// opravdové hledání proběhne hned na pozadí a zapamatované údaje případně opraví
 async function driveInit(create) {
+  let c = null; try { c = JSON.parse(localStorage.getItem('bt_dinit') || 'null'); } catch {}
+  if (!create && c?.folder && c.thumbs && c.email && Date.now() - (c.at || 0) < 14 * 864e5) {
+    Object.assign(DRIVE, {email:c.email, owner:c.owner, folder:c.folder, folderOwner:c.folderOwner, thumbs:c.thumbs, state:'on'});
+    driveInitFull(false).catch(e => { if (e.message === 'auth') driveLost(); });
+    return true;
+  }
+  return driveInitFull(create);
+}
+// najde sdílenou složku (nejstarší, kterou vidím – i nasdílenou od ostatních); create=true ji založí
+async function driveInitFull(create) {
   DRIVE.email = (await (await gfetch(`${DAPI}/about?fields=user(emailAddress)`)).json()).user.emailAddress;
   ss('bt_gemail', DRIVE.email);
   const mime = "mimeType='application/vnd.google-apps.folder' and trashed=false";
@@ -1238,6 +1282,7 @@ async function driveInit(create) {
   DRIVE.folderOwner = found[0]?.owners?.[0]?.emailAddress || DRIVE.email;
   DRIVE.thumbs = (await dList(`name='thumbs' and '${DRIVE.folder}' in parents and ${mime}`))[0]?.id || await dFolder('thumbs', DRIVE.folder);
   DRIVE.state = 'on';
+  try { localStorage.setItem('bt_dinit', JSON.stringify({email:DRIVE.email, owner:DRIVE.owner, folder:DRIVE.folder, folderOwner:DRIVE.folderOwner, thumbs:DRIVE.thumbs, at:Date.now()})); } catch {}
   if (DRIVE.owner) prepareRobotFiles().catch(e => console.warn('robot soubory', e));
   return true;
 }
@@ -1368,7 +1413,7 @@ async function driveConnect(create, pick) {
 // 🔄 Změnit účet: odhlásí současný Google účet ze stránky a otevře výběr účtu
 function driveSwitch() {
   if (DRIVE.token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(DRIVE.token, () => {});
-  try { sessionStorage.removeItem('bt_tok'); } catch {}
+  dropTok();
   logEvent(`🔄 odpojil Google účet ${DRIVE.email || ''}`);
   Object.assign(DRIVE, {token:null, exp:0, email:'', folder:null, thumbs:null, cache:{}, mine:{}, owner:undefined, state:'off'});
   REMOTE = null; DRIVE_BACKEND.ready = false; SYNC.ok = false;
@@ -1382,7 +1427,7 @@ function driveHint() {
   const email = ($('#gHint')?.value || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { status('Napiš celou e-mailovou adresu (např. jmeno@gmail.com).', true); $('#gHint')?.focus(); return; }
   if (DRIVE.token && DRIVE.email && DRIVE.email !== email && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(DRIVE.token, () => {});
-  try { sessionStorage.removeItem('bt_tok'); } catch {}
+  dropTok();
   ss('bt_gemail', email); // → login_hint
   // na webu VŽDY rovnou přesměrovat na přihlášení – nezávisle na tom, jestli předchozí pokus (okno, stahování) ještě „visí“;
   // dřív se kliknutí v tu chvíli tiše ignorovalo
@@ -1437,13 +1482,19 @@ async function quickPull() {
 // přihlášení Googlem platí hodinu – pak sdílení počká na nové kliknutí
 function driveLost() {
   if (REMOTE !== DRIVE_BACKEND) return;
-  DRIVE.state = 'expired'; REMOTE = null; SYNC.ok = false;
+  DRIVE.state = 'expired'; REMOTE = null; SYNC.ok = false; dropTok(true); // (neplatné přihlášení už nebrat ani v dalších kartách)
   SYNC.calFresh = false; // 🗓️ bez Disku se kalendář nedá ověřit → zase výrazné „NENÍ aktuální“
   renderHeader(); if (S.period === 'cal' && !S.view) renderMain();
 }
 
 // stáhne, co mezitím načetli ostatní (novější vyhrává), a pošle, co máme novější my
 // jen jedno stahování najednou – dřív se překrývalo (interval + nahrávání + značka „načítám já“) a práce se násobila
+// chvilka pro prohlížeč mezi těžkými kroky: aspoň 1 snímek, a když zrovna posouváš / ťukáš, počkat (max 3 s)
+async function syncBreath() {
+  await new Promise(r => setTimeout(r, 16));
+  const t = Date.now();
+  while (Date.now() - Math.max(LAST_SCROLL, LAST_TAP) < 700 && Date.now() - t < 3000) await new Promise(r => setTimeout(r, 200));
+}
 async function syncPull(noPush) {
   if (SYNC.inPull) return SYNC.inPull;
   SYNC.inPull = syncPullInner(noPush).finally(() => { SYNC.inPull = null; });
@@ -1455,12 +1506,19 @@ async function syncPullInner(noPush) {
   else { try { remote = await REMOTE.getAll(); } catch (e) { SYNC.ok = false; if (e.message === 'auth') driveLost(); return false; } }
   SYNC.ok = true;
   const meta = syncMeta(), seen = syncSeen(); let changed = false;
-  SYNC.pulling = true;
-  // záznamy o smazání nejdřív, ať se podle nich řídí slučování ostatního
-  for (const [k, e] of Object.entries(remote).sort(([a], [b]) => (b === 'bt_tomb') - (a === 'bt_tomb'))) {
+  // ⚡ (27/11) POŘADÍ podle toho, co je vidět: smazané → kalendář → otevřený stát a období → moje uložené / zvoneček →
+  // zbytek otevřeného státu → ostatní státy → body grafů (16 × 3 MB) úplně nakonec. Mezi soubory se stránce nechá
+  // čas na vykreslení a během posouvání se čeká (dřív se všechno sloučilo v jednom kuse = zamrzlá stránka ~2 s).
+  const pri = k => k === 'bt_tomb' ? 0 : /^bt_cal/.test(k) ? 1 : TIME_PERIODS.includes(S.period) && k === ckey(S.country, S.period) ? 2
+    : /^bt_(drop|star|mixsaved|folds|block|new|busy)/.test(k) ? 3 : k.startsWith(`bt_c_${S.country}_`) ? 4 : /^bt_h_/.test(k) ? 9 : /^bt_arch_/.test(k) ? 8 : 5;
+  for (const [k, e] of Object.entries(remote).sort(([a], [b]) => pri(a) - pri(b))) {
     // (nerozbalovat celý klíč jen kvůli kontrole – 115 klíčů / 19 MB při každém stažení)
     if (!SHARED_RX.test(k) || (kvRaw(k) !== null && seen[k] === e.t)) continue;
-    const mine = ls(k, null);
+    SYNC.pulling = false;
+    if (changed) await syncBreath(); // předchozí soubor se zpracoval → chvilka pro prohlížeč (a počkat, když posouváš)
+    SYNC.pulling = true;
+    // body grafů: naše „živá“ verze v paměti (i s ještě neuloženými body), ať se při sloučení neztratí
+    const isH = /^bt_h_/.test(k), mine = isH && HCACHE[k] ? HCACHE[k] : ls(k, null);
     // když u nás data chybí (nové zařízení, smazaný prohlížeč), bereme z Disku vždycky.
     // Jinak slučujeme, kdykoli se soubor na Disku ZMĚNIL od posledně – i když jsme mezitím něco změnili i my
     // (dřív se pak data z druhého zařízení přeskočila a pak přepsala)
@@ -1481,9 +1539,11 @@ async function syncPullInner(noPush) {
       : !!v && typeof v === 'object' && Object.entries(v).some(([id, x]) => !(id in (e.v || {})) || (x && typeof x === 'object' && (x.at || 0) > (e.v[id]?.at || 0))));
     const localNewer = mine != null && ((meta[k] || 0) > e.t || navic);
     kvSetRaw(k, JSON.stringify(v));
+    if (isH) { if (HDIRTY.delete(k)) SYNC.dirty[k] = true; HCACHE[k] = v; } // sloučeno i s neuloženými body → ty jdou dál na Disk
     if (localNewer || SYNC.dirty[k]) { meta[k] = Date.now(); SYNC.dirty[k] = true; } // naše změny → poslat dál
     else meta[k] = e.t;
     changed = true; (SYNC.changedKeys ||= new Set()).add(k); // které klíče se změnily (stránka podle nich pozná, jestli překreslit)
+    SYNC.pulling = false; // (mezi soubory smí stránka normálně ukládat – tvoje změny se označí k odeslání)
   }
   SYNC.pulling = false; saveMeta(); saveSeen();
   for (const k of kvKeys()) if (SHARED_RX.test(k) && (!remote[k] || (meta[k] || 0) > remote[k].t)) { meta[k] ??= Date.now(); SYNC.dirty[k] = true; }
@@ -1692,6 +1752,12 @@ async function newestSearch(c) {
 // Robot na Googlu (Apps Script) každých 10 min kouká na RSS 📌 kanálů (zdarma, bez kvóty) a nová videa zapíše
 // do bt_new = {id: {cid, pub}}. Stránka je doplní do Novinek / Týdne / Měsíce (1 dotaz na 50 videí) a robot jim hned sbírá body grafu.
 const NEWDONE = new Set();
+// 🔔 zvoneček jen za poslední 4 dny (jako robot) – v prohlížeči se dřív sčítal navždy: 38 688 položek / 4 MB
+function pruneNew(nw) {
+  const lim = Date.now() - 4 * 864e5;
+  for (const id of Object.keys(nw)) if (id[0] !== '_' && !(Date.parse(nw[id]?.pub) > lim)) delete nw[id];
+  return nw;
+}
 async function ingestNew() {
   if (!S.key) return 0; // bez klíče detaily videa stáhnout nejde – doplní je majitel
   const by = {}, have = {};
@@ -2000,7 +2066,23 @@ const costAttr = cost => cost ? ` costly" title="⚡ Ještě nenačtené – kli
 const ckey = (cid, p) => `bt_c_${cid}_${p}`;
 // starší uložená data měla u dabovaných videí přeložený název (t) a originál v t0 → vrátíme originál
 const fixItem = it => it.t0 ? {...it, t:it.t0, t0:undefined, loc:undefined} : it;
-const getSet = (cid, p) => { const s = ls(ckey(cid, p), null); return s && {...s, items:s.items.map(fixItem)}; };
+// 🧠 (27/11) rozbalený seznam si pamatujeme, dokud se uložený text nezmění – hlavička dřív při KAŽDÉM vykreslení
+// rozbalila 17 seznamů po až 2 MB (přepnutí státu ~1 s). Ven jde mělká kopie (vlastní pole) – volající si ho smí upravit.
+const SETMEMO = new Map();
+const getSet = (cid, p) => {
+  const k = ckey(cid, p), raw = kvRaw(k); if (raw == null) return null;
+  let m = SETMEMO.get(k);
+  if (!m || m.raw !== raw) { let s = null; try { s = JSON.parse(raw); } catch {} m = {raw, s:s && {...s, items:(s.items || []).map(fixItem)}}; SETMEMO.set(k, m); }
+  return m.s && {...m.s, items:m.s.items.slice()};
+};
+// jen ke čtení (nic neměnit!): rozbalená data podle uloženého textu – pro velké klíče čtené pořád dokola (bt_new, archiv)
+const MEMO = new Map();
+function lsMemo(k, d) {
+  const raw = kvRaw(k); if (raw == null) return d;
+  const m = MEMO.get(k); if (m && m.raw === raw) return m.v;
+  let v; try { v = JSON.parse(raw); } catch { return d; }
+  MEMO.set(k, {raw, v}); return v;
+}
 const putSet = (cid, p, set) => { ss(ckey(cid, p), set); TERMS = null; };
 const isFresh = (set, p) => set && (Date.now() - set.ts) < PERIODS[p].ttl * 60e3;
 // Šetření hledání (jen 100 denně): plné hledání nejvýš jednou za S.severy hodin (výchozí 24 h; čas posledního
@@ -2066,7 +2148,21 @@ function mergeInto(cid, p, items) {
 }
 // ---------- Archiv: všechna kdy nalezená videa daného státu (bez API, jen z uložených dat) ----------
 const akey = cid => `bt_arch_${cid}`;
+// (27/11) do archivu se nezapisuje hned: videa se posbírají a uloží jednou za pár vteřin (po jednom státu) –
+// dřív každé stažení zhlédnutí rozbalilo a znovu uložilo celý archiv (cz 1,8 MB) → zasekávání při načítání na pozadí
+const ARCHQ = new Map(); let ARCHT = 0;
 function archive(cid, items) {
+  const q = ARCHQ.get(cid) || new Map(); for (const i of items) if (i?.id) q.set(i.id, i);
+  ARCHQ.set(cid, q); clearTimeout(ARCHT); ARCHT = setTimeout(archFlush, 4000);
+}
+function archFlush(all) {
+  clearTimeout(ARCHT);
+  for (const [cid, q] of [...ARCHQ]) {
+    ARCHQ.delete(cid); archiveNow(cid, [...q.values()]);
+    if (!all && ARCHQ.size) { ARCHT = setTimeout(archFlush, 80); return; } // po jednom státu, ať to nesekne posouvání
+  }
+}
+function archiveNow(cid, items) {
   const db = ls(akey(cid), {});
   items.forEach(i => { db[i.id] = i; });
   let all = Object.values(db);
@@ -2076,7 +2172,14 @@ function archive(cid, items) {
   }
   ss(akey(cid), Object.fromEntries(all.map(i => [i.id, i])));
 }
-const getArchive = cid => { const items = Object.values(ls(akey(cid), {})).map(fixItem); return items.length ? {ts:Date.now(), items, next:null} : null; };
+const ARCHMEMO = new Map();
+const getArchive = cid => {
+  if (ARCHQ.has(cid)) { const q = ARCHQ.get(cid); ARCHQ.delete(cid); archiveNow(cid, [...q.values()]); } // čeká na uložení → uložit hned
+  const k = akey(cid), raw = kvRaw(k); if (raw == null) return null;
+  let m = ARCHMEMO.get(k);
+  if (!m || m.raw !== raw) { let db = {}; try { db = JSON.parse(raw) || {}; } catch {} m = {raw, items:Object.values(db).map(fixItem)}; ARCHMEMO.set(k, m); }
+  return m.items.length ? {ts:Date.now(), items:m.items.slice(), next:null} : null;
+};
 // Lehká aktualizace: nové počty zhlédnutí u známých videí + nová videa ze sledovaných kanálů
 // Počty zhlédnutí se obnovují odstupňovaně: videa mladší 24 h při každé obnově (S.interval, výchozí 30 min),
 // starší jen jednou za S.oldEvery minut (výchozí 2 h) – mění se pomalu a je jich nejvíc, šetří to dotazy.
@@ -2295,7 +2398,7 @@ function mergeKey0(k, mine, theirs) {
     return out;
   }
   // 🔔 nová videa: sjednotit; info robota (_robot) platí to novější – jinak by ho stará kopie z PC přebila
-  if (k === 'bt_new') { const out = {...theirs, ...mine}; if (theirs._robot && (!mine._robot || (theirs._robot.at || 0) > (mine._robot.at || 0))) out._robot = theirs._robot; return out; }
+  if (k === 'bt_new') { const out = {...theirs, ...mine}; if (theirs._robot && (!mine._robot || (theirs._robot.at || 0) > (mine._robot.at || 0))) out._robot = theirs._robot; return pruneNew(out); }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
   if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
   if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), newTs:Math.max(mine.newTs || 0, theirs.newTs || 0), items:capItems(byId(mine.items, theirs.items))};
@@ -4011,20 +4114,35 @@ function thinPts(p) {
   for (let i = 1; i < HIST_MAX - 1; i++) out.push(p[Math.round(i * step)]);
   out.push(p[p.length - 1]); return out;
 }
+// (27/11) body se zapisují jen do paměti (HCACHE) a do úložiště + na Disk až za pár vteřin, PO JEDNOM koši –
+// dřív každé stažení zhlédnutí hned přepsalo celé 3MB koše (jedno volání až 0,5 s zaseknutá stránka)
+const HDIRTY = new Set(); let HTIMER = 0;
 function recordHistory(items) {
-  const now = Date.now(), byKey = {};
+  const now = Date.now();
   for (const it of items) {
-    if (!it?.id || !(Date.now() - new Date(it.pub) < HIST_DAYS * 864e5)) continue;
-    const k = histKey(it.id), db = byKey[k] ||= {...histDb(k)};
+    if (!it?.id || !(now - new Date(it.pub) < HIST_DAYS * 864e5)) continue;
+    const k = histKey(it.id), db = histDb(k);
     const p = db[it.id] || [], last = p[p.length - 1];
     if (last && (last[1] === it.views || now - last[0] < 10 * 60e3)) continue; // stejné číslo / před chvílí
-    db[it.id] = thinPts([...p, [now, it.views]]);
+    db[it.id] = thinPts([...p, [now, it.views]]); HDIRTY.add(k);
   }
-  for (const [k, db] of Object.entries(byKey)) {
+  if (HDIRTY.size) { PEERIDX = null; clearTimeout(HTIMER); HTIMER = setTimeout(histFlush, 3000); }
+}
+function histFlush(all) {
+  clearTimeout(HTIMER);
+  const now = Date.now();
+  for (const k of [...HDIRTY]) {
+    HDIRTY.delete(k);
+    const db = HCACHE[k]; if (!db) continue;
     for (const [id, p] of Object.entries(db)) if (now - p[p.length - 1][0] > HIST_DAYS * 864e5) delete db[id];
-    ss(k, db);
+    ss(k, db); HCACHE[k] = db; // (ss kešku maže – tady je to náš vlastní aktuální objekt)
+    if (!all && HDIRTY.size) { HTIMER = setTimeout(histFlush, 60); return; } // po jednom koši, ať nesekne posouvání
   }
 }
+// zavření / přepnutí pryč: neuložené body grafů a archiv uložit HNED (a do IndexedDB)
+function flushPending() { histFlush(true); archFlush(true); clearTimeout(kvTimer); kvFlush(); }
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushPending(); });
+addEventListener('pagehide', flushPending);
 // body grafu: zveřejnění (0) + uložená měření. Číslo z karty se přidá jen když je NOVĚJŠÍ než poslední měření
 // (it.st = kdy se stáhlo) – jinak by staré číslo z jiného zařízení vypadalo jako pokles zhlédnutí.
 const histOf = it => { const p = histDb(histKey(it.id))[it.id] || []; const pub = +new Date(it.pub);
@@ -4630,7 +4748,7 @@ function renderHeader() {
     : gClientId() && (ls('bt_gdrive', false) || DRIVE.state === 'expired') ? '<button class="costly" id="btnDrive" title="Připojit Disk – přihlášení Googlem, sdílení dat">☁️<span class="hidem"> Připojit Disk</span></button>' : '';
   // 🤖 robot (Apps Script) přes 70 min nic nezapsal → grafy a nová videa se bez otevřené stránky nesbírají.
   // Google ho při přetažení denního limitu tiše zastaví a sám se neobnoví → hned to ukázat (jen majiteli)
-  const rb = ls('bt_new', {})?._robot?.at;
+  const rb = lsMemo('bt_new', {})?._robot?.at; // (bez znovu-rozbalování 4 MB při každém vykreslení hlavičky)
   if (isOwner() && REMOTE === DRIVE_BACKEND && SYNC.ok && rb && Date.now() - rb > 70 * 60e3)
     $('#driveSlot').innerHTML += `<a class="btnlink robotstoji" href="https://script.google.com/home/projects/1VFUKxlFRUoUftpwL6QMPlD9qVWo7YGK7l3V8TD2Lhiwui2CK6Imiecmq/edit" target="_blank" rel="noopener"
       title="Robot naposledy běžel ${esc(fmtDate(rb))}. Otevři ho, nahoře vyber funkci „nastavit“ a klikni ▶ Spustit.">🤖 Robot stojí od ${hhmm(rb)}</a>`;
@@ -5968,7 +6086,8 @@ async function bgWarm() {
     const fronta = countryOrder().flatMap(c => BG_PERIODS.map(p => [c, p]));
     for (const [c, p] of fronta) {
       // počkat, než doběhne načítání otevřeného státu / tvoje kliknutí, a nic nedělat se skrytou stránkou
-      while ((AUTO_BUSY || loadBusy() || document.hidden) && Date.now() - BG.at < 30 * 60e3) await new Promise(r => setTimeout(r, 1500));
+      // (27/11) + když zrovna posouváš / klikáš, taky počkat – na pozadí se má načítat jen v klidu, ať nic nesekne
+      while ((AUTO_BUSY || loadBusy() || document.hidden || Date.now() - Math.max(LAST_SCROLL, LAST_TAP) < 2000) && Date.now() - BG.at < 30 * 60e3) await new Promise(r => setTimeout(r, 700));
       if (!S.key || REMOTE !== DRIVE_BACKEND) break;
       let set = getSet(c.id, p);
       if (!set || Date.now() - set.ts < S.interval * 60e3 || busyElsewhere(c.id)) continue; // čerstvé / nikdy nenačtené (to stojí hledání) / načítá jiné zařízení
@@ -5977,9 +6096,10 @@ async function bgWarm() {
         if (await diskNewer(ckey(c.id, p), set.ts)) { await pullShared().catch(() => {}); set = getSet(c.id, p); if (Date.now() - set.ts < S.interval * 60e3) continue; }
         if (dotazyDnes() > QUERY_MAX * 0.6) break; // šetřit kvótu na tvoje kliknutí
         const nove = await refreshLight(c, p, set, false);
-        putSet(c.id, p, nove);
-        if (p === 'day') mergeInto(c.id, 'week', nove.items);
-        mergeInto(c.id, 'month', nove.items);
+        // ukládání po krocích s chvilkou pro prohlížeč mezi nimi (každý krok = velký seznam)
+        await syncBreath(); putSet(c.id, p, nove);
+        if (p === 'day') { await syncBreath(); mergeInto(c.id, 'week', nove.items); }
+        await syncBreath(); mergeInto(c.id, 'month', nove.items);
         archive(c.id, nove.items);
         zmeneno = true;
         // ⚡ hned vidět: koukáš na ten stát → překreslit seznam (Týden/Měsíc se doplnily taky); tlačítka států vždy
@@ -6092,7 +6212,7 @@ document.addEventListener('click', e => {
   else if (b.id === 'btnDriveCreate') driveConnect(true);
   else if (b.id === 'btnDriveSwitch') driveSwitch();
   else if (b.id === 'btnDriveHint') driveHint();
-  else if (b.id === 'btnDriveOff') { try { sessionStorage.removeItem('bt_tok'); } catch {} REMOTE = null; DRIVE.token = null; DRIVE.state = 'off'; ss('bt_gdrive', false); SYNC.ok = false; pullShared(); rerender(); }
+  else if (b.id === 'btnDriveOff') { dropTok(); REMOTE = null; DRIVE.token = null; DRIVE.state = 'off'; ss('bt_gdrive', false); SYNC.ok = false; pullShared(); rerender(); }
   else if (b.dataset.country) { S.view = null; S.country = b.dataset.country; ss('bt_country', S.country); show(); }
   else if (b.dataset.loadall) loadAll(b.dataset.loadall);
   else if (b.dataset.type) { S.type = b.dataset.type; ss('bt_type', S.type); rerender(); }
@@ -6233,7 +6353,9 @@ if (!ls('bt_mig_dub', false)) {
 const cleanupRemovedCountries = () => { for (const k of kvKeys()) if (/^bt_(c|ch|arch)_(id|vn|sa)(_|$)/.test(k)) kvDelete(k); };
 // po stažení sdílených dat od ostatních obnovit to, co je načtené v paměti
 function reloadMemory() {
-  HCACHE = {}; CHMED = null; PEERIDX = null; DATAVER++; // historie, mediány a srovnání s kanálem znovu (mohly přijít body z jiných zařízení)
+  // (27/11) HCACHE se už nemaže: stažení z Disku do ní rovnou dá sloučenou verzi koše (dřív se pak všech 16 košů po 3 MB
+  // znovu rozbalovalo – a ztratily by se neuložené body)
+  CHMED = null; PEERIDX = null; DATAVER++; // mediány a srovnání s kanálem znovu (mohly přijít body z jiných zařízení)
   const swap = (obj, val) => { for (const k of Object.keys(obj)) delete obj[k]; Object.assign(obj, val); };
   swap(STARS, ls(starKey(), {})); swap(BLOCK, ls('bt_block', {videos:{}, channels:{}}));
   swap(AI_CACHE, ls('bt_aicache', {})); swap(TR, ls('bt_tr', {})); swap(QTR, ls('bt_qtr', {}));
@@ -6262,9 +6384,12 @@ async function pullShared() {
   // 📱 celé překreslení (120 karet) jen když se změnilo něco vidět – a ne uprostřed scrollování (to dělalo mikrolagy)
   if (added || [...keys].some(k => !QUIET_KEYS.test(k))) calmRerender();
 }
-let LAST_SCROLL = 0, CALM_T = null;
+var LAST_SCROLL = 0, LAST_TAP = 0, CALM_T = null; // (var: syncBreath je volá i dřív, než se sem skript dostane)
 addEventListener('scroll', () => { LAST_SCROLL = Date.now(); }, {passive:true});
 addEventListener('touchmove', () => { LAST_SCROLL = Date.now(); }, {passive:true});
+addEventListener('wheel', () => { LAST_SCROLL = Date.now(); }, {passive:true});
+addEventListener('pointerdown', () => { LAST_TAP = Date.now(); }, {passive:true, capture:true});
+addEventListener('keydown', () => { LAST_TAP = Date.now(); }, {passive:true, capture:true});
 function calmRerender() {
   clearTimeout(CALM_T);
   // počkat, až se 1,5 s nescrolluje (a nikdo nepíše do pole na stránce)
@@ -6275,6 +6400,7 @@ function calmRerender() {
 }
 // start: nejdřív načíst velká data z IndexedDB (a poprvé je tam přestěhovat z localStorage), pak teprve kreslit
 (async () => {
+  if (driveSilent()) return; // ⚡ tiché přihlášení – stránka se za chvilku vrátí už připojená (nic zbytečně nenačítat)
   const load = kvLoad().catch(e => console.warn('IndexedDB nejde, jedu z localStorage', e));
   // když IndexedDB do 2,5 s neodpoví (blokuje ji jiná karta), kreslíme z localStorage a přepneme se, až bude
   // nikdy nekreslit (a hlavně nestahovat z YouTube) s prázdnými daty jen proto, že IndexedDB ještě neodpověděla –
@@ -6284,6 +6410,7 @@ function calmRerender() {
   // požádat prohlížeč, ať data stránky nikdy sám nemaže (při nedostatku místa apod.)
   navigator.storage?.persist?.().catch(() => {});
   cleanupRemovedCountries();
+  { const nw = ls('bt_new', null); if (nw && Object.keys(nw).length > 6000) ss('bt_new', pruneNew(nw)); } // 🔔 jednorázový úklid zvonečku (4 dny)
   // jednorázově: sledované kanály znovu naučit z uložených videí (po smazaném úložišti jich spousta chyběla) – kvótu nestojí
   if (!ls('bt_mig_relearn', false) && KV_OK) {
     for (const c of COUNTRIES) learnChannels(c, [...TIME_PERIODS.flatMap(p => getSet(c.id, p)?.items || []), ...(getArchive(c.id)?.items || [])].filter(it => !it.cand));
@@ -6291,9 +6418,8 @@ function calmRerender() {
   }
   reloadMemory();
   // po obnově stránky (aktualizace) se přihlášení k Disku vezme z téhle karty – nemusíš se znovu připojovat
-  let tok = null;
-  try { tok = JSON.parse(sessionStorage.getItem('bt_tok') || 'null'); } catch {}
-  if (tok && tok.exp - 60e3 > Date.now() && ls('bt_gdrive', false) && gClientId()) { DRIVE.token = tok.t; DRIVE.exp = tok.exp; }
+  const tok = loadTok(); // (i z jiné karty / minulého otevření, když ještě platí)
+  if (tok && ls('bt_gdrive', false) && gClientId()) { DRIVE.token = tok.t; DRIVE.exp = tok.exp; }
   readCalLink(); // 🔗 odkaz na video z kalendáře (…/#cal=…)
   show();
   if (OAUTH_MSG) status(OAUTH_MSG, true);
