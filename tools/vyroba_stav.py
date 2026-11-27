@@ -86,6 +86,56 @@ def upozorni(titulek: str, text: str = "", priorita: int = 4, tagy=None):
 
 JMENA = {"edit": "✂️ AUTO EDIT", "dabing": "🎙️ DABING", "render": "🎬 RENDER"}
 
+# 📊 (27/11) ŽIVÉ oznámení na mobilu: jedno TICHÉ oznámení (ntfy, priorita 2 = bez zvuku a vibrace) s pruhy průběhu,
+# které se průběžně PŘEPISUJE (ntfy „sequence_id“) – dabing má pruh pro každý jazyk, auto edit celkový pruh a krok.
+# Objeví se hned po spuštění, po skončení zmizí a přijde normální upozornění „hotovo / chyba“.
+# ntfy.sh zdarma má denní limit zpráv → přepis nejvýš co 75 s (při velké změně / novém kroku dřív, ale aspoň po 25 s).
+ZIVE = {"dabing", "edit"}
+ZIVE_KAZDYCH_S = 75
+ZIVE_HNED_S = 25
+
+
+def _pruh(p, n=12) -> str:
+    try:
+        p = max(0.0, min(100.0, float(p or 0)))
+    except Exception:  # noqa: BLE001
+        p = 0.0
+    f = int(round(p / 100 * n))
+    return "▓" * f + "░" * (n - f)
+
+
+def _cas(s) -> str:
+    if s is None:
+        return ""
+    s = int(max(0, s))
+    h, m = divmod(s // 60, 60)
+    return f"{h} h {m:02d} min" if h else f"{m}:{s % 60:02d}"
+
+
+def _ntfy(metoda: str, cesta: str, data=None) -> int:
+    """Jeden požadavek na ntfy.sh (zkusí víc sad certifikátů). Vrátí HTTP kód, 0 = nedostupné."""
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request("https://ntfy.sh/" + cesta, method=metoda,
+                                 data=None if data is None else json.dumps(data).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"})
+    for ctx in _ssl_kontexty():
+        try:
+            return urllib.request.urlopen(req, timeout=15, context=ctx).status
+        except urllib.error.HTTPError as e:
+            return e.code
+        except Exception:  # noqa: BLE001
+            continue
+    return 0
+
+
+def smaz_zive(program: str):
+    """📊 Smaže živé oznámení programu z mobilu (i po pádu programu – volá hlídač ve vyroba_sledovani)."""
+    try:
+        _ntfy("DELETE", f"{ntfy_kanal()}/vyroba-{program}")
+    except Exception:  # noqa: BLE001
+        pass
+
 
 def uloz(nazev: str, data) -> bool:
     """Jednorázově uloží libovolná data jako vyroba_<nazev>.json (např. snímky timeliny z Resolve)."""
@@ -114,6 +164,73 @@ class Stav:
         self._vlakno = threading.Thread(target=self._smycka, daemon=True)
         self._vlakno.start()
         self._zapis(True)
+        # 📊 živé tiché oznámení na mobil (dabing, auto edit)
+        self._zive = program in ZIVE
+        self._zive_t = 0.0
+        self._zive_txt = ""
+        self._zive_pct = -100.0
+        self._zive_krok = None
+        if self._zive:
+            threading.Thread(target=self._zive_smycka, daemon=True).start()
+
+    # -- 📊 živé oznámení
+    def _zive_obsah(self):
+        d = self.d
+        pct = d.get("procenta") or 0
+        zb = _cas(d.get("zbyva_s"))
+        jm = JMENA.get(d["program"], d["program"])
+        titulek = f"{jm} {pct:.0f} %" + (f" · zbývá {zb}" if zb else "") + f" – {d.get('nazev', '')}"
+        radky, krok = [], None
+        if d["program"] == "dabing" and d.get("jazyky"):
+            for j in d["jazyky"]:
+                st = j.get("stav") or ""
+                ik = "✔" if st == "hotovo" else "✖" if st == "chyba" else "▶" if (j.get("pct") or 0) > 0 else "⏳"
+                c = _cas(j.get("zbyva_s")) if st not in ("hotovo", "chyba") else ""
+                radky.append(f"{ik} {j.get('nazev') or j.get('k', '')}: {_pruh(j.get('pct'))} {j.get('pct') or 0:.0f} %"
+                             + (f" · {c}" if c else ""))
+            krok = tuple(j.get("stav") for j in d["jazyky"])
+        else:
+            radky.append(f"{_pruh(pct)} {pct:.0f} %")
+            kroky = d.get("kroky") or []
+            if kroky:
+                hot = sum(1 for s in kroky if s.get("stav") in ("hotovo", "preskoceno"))
+                ted = next((s for s in kroky if s.get("stav") == "bezi"), None)
+                radky.append(f"Krok {min(hot + 1, len(kroky))}/{len(kroky)}" + (f": {ted.get('popis', '')}" if ted else ""))
+                krok = (hot, ted.get("popis") if ted else None)
+            elif d.get("faze"):
+                radky.append(str(d["faze"]))
+                krok = d.get("faze")
+        return titulek, "\n".join(radky), pct, krok
+
+    def _zive_posli(self, vynutit=False):
+        try:
+            with self.lock:
+                titulek, text, pct, krok = self._zive_obsah()
+            ted = time.time()
+            uplynulo = ted - self._zive_t
+            velka = abs(pct - self._zive_pct) >= 5 or krok != self._zive_krok
+            if not vynutit and (uplynulo < ZIVE_HNED_S or (uplynulo < ZIVE_KAZDYCH_S and not velka)):
+                return
+            if titulek + text == self._zive_txt or not (self._zive and self.bezi):
+                return
+            self._zive_t, self._zive_txt, self._zive_pct, self._zive_krok = ted, titulek + text, pct, krok
+            kod = _ntfy("POST", "", {"topic": ntfy_kanal(), "title": titulek[:200], "message": text[:1000], "priority": 2,
+                                     "sequence_id": f"vyroba-{self.d['program']}", "click": WEB_URL})
+            if kod == 429:  # denní limit ntfy.sh → pro tenhle běh už živé oznámení nepřepisovat
+                self._zive = False
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _zive_smycka(self):
+        self._zive_posli(True)  # hned po spuštění
+        while self.bezi and self._zive:
+            time.sleep(5)
+            if self.bezi and self._zive:
+                self._zive_posli()
+
+    def _zive_konec(self):
+        """Živé oznámení pryč (místo něj přijde normální „hotovo / chyba“)."""
+        smaz_zive(self.d["program"])
 
     # -- změny
     def nastav(self, **kw):
@@ -158,6 +275,11 @@ class Stav:
                     self.d["historie"].append([int(time.time() * 1000), 100.0])
                 self.bezi = False
             self._zapis(True)
+            if self.d["program"] in ZIVE:  # 📊 živé oznámení s pruhy zmizí (nejvýš 4 s čekání – konec programu nezdrží)
+                self._zive = False
+                t = threading.Thread(target=self._zive_konec, daemon=True)
+                t.start()
+                t.join(4)
             # 📲 konec běhu na mobil: chyba hlasitě, hotovo normálně
             jm = JMENA.get(self.d["program"], self.d["program"])
             if ok:

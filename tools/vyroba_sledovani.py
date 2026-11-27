@@ -388,6 +388,9 @@ def hlidej_pady():
             _SPADLE[prog] = d.get("start")
             vyroba_stav.upozorni(f"⚠ {vyroba_stav.JMENA[prog]} přestal hlásit – {d.get('nazev', '')}",
                                  f"Už {int(ticho // 60)} min žádná zpráva – asi spadl nebo se zavřelo okno. Poslední: {d.get('faze') or ''}", 5, ["warning"])
+            # 📊 živé oznámení s pruhy by jinak na mobilu zůstalo viset se starým stavem
+            if hasattr(vyroba_stav, "smaz_zive"):
+                threading.Thread(target=vyroba_stav.smaz_zive, args=(prog,), daemon=True).start()
 
 
 def _statistiky():
