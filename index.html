@@ -892,7 +892,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-28.189';
+const APP_VERSION = '2026-11-28.190';
 // po obnovení stránky NEvracet starou pozici – kalendář sám sjede na dnešek (dřív prohlížeč skočil na starou pozici,
 // stránka pak nahoru a zase dolů na dnešek)
 try { history.scrollRestoration = 'manual'; } catch {} // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
@@ -1633,7 +1633,7 @@ async function api(endpoint, params) {
 }
 const isoNoMs = d => d.toISOString().replace(/\.\d+Z$/, 'Z');
 function parseDur(s) { const m = /P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(s || '') || []; return (+m[1]||0)*86400 + (+m[2]||0)*3600 + (+m[3]||0)*60 + (+m[4]||0); }
-const BRAWL_RX = /brawl|бравл|ブロスタ|브롤|براول/i;
+const BRAWL_RX = /brawl|бравл|ブロスタ|브롤|براول|בראול/i;
 
 const chunks = (a, size) => Array.from({length:Math.ceil(a.length / size)}, (_, i) => a.slice(i * size, i * size + size));
 
@@ -1746,7 +1746,7 @@ async function newestSearch(c) {
   const ids = s.items.map(i => i.id.videoId).filter(id => id && !have.has(id));
   const items = ids.length ? (await details(ids)).map(it => ({...classify(it), st:now})) : [];
   learnChannels(c, items.filter(it => !it.cand)); // noví youtubeři se začnou sledovat → jejich další videa už přijdou zdarma
-  putSet(c.id, 'day', {...day, ts:day.ts || now, newTs:now, items:capItems([...day.items, ...items])});
+  putSet(c.id, 'day', {...day, ts:day.ts || now, newTs:now, items:capItems([...day.items, ...items], MAX_SET, c.id)});
   if (items.length) { mergeInto(c.id, 'week', items); mergeInto(c.id, 'month', items); archive(c.id, items); logEvent(`🕐 nejnovější videa ${c.name}: +${items.length}`); }
   return items.length;
 }
@@ -2087,7 +2087,18 @@ function lsMemo(k, d) {
 }
 // (27/11) slova sezóny se po uložení seznamu NEpřepočítávají hned (~200 ms přes všechny státy, při načítání na pozadí
 // po každém státu) – stačí nejvýš jednou za 10 min (viz brawlTerms)
-const putSet = (cid, p, set) => { ss(ckey(cid, p), set); TERMS_STALE = true; };
+// (28/11) ZTRÁTA VIDEÍ: plné hledání / obnova si vezme seznam, minutu i víc stahuje a pak ho celý uloží – co mezitím
+// přidal zvoneček nebo Disk (druhé zařízení), se tím přepsalo a odešlo i na Disk. Teď se před uložením doplní všechno,
+// co v seznamu je TEĎ a do období pořád patří (nic se tím nemaže, jen nic neztratí).
+const putSet = (cid, p, set) => {
+  const cur = set?.items && getSet(cid, p);
+  if (cur?.items?.length) {
+    const since = PERIODS[p]?.hours ? Date.now() - PERIODS[p].hours * 3600e3 : 0, have = new Set(set.items.map(i => i.id));
+    const extra = cur.items.filter(i => !have.has(i.id) && (!since || new Date(i.pub) >= since));
+    if (extra.length) set = {...set, items:capItems([...set.items, ...extra], MAX_SET, cid)};
+  }
+  ss(ckey(cid, p), set); TERMS_STALE = true;
+};
 const isFresh = (set, p) => set && (Date.now() - set.ts) < PERIODS[p].ttl * 60e3;
 // Šetření hledání (jen 100 denně): plné hledání nejvýš jednou za S.severy hodin (výchozí 24 h; čas posledního
 // hledání se sdílí přes Disk, takže když hledal někdo jiný, my nehledáme), mezitím jen „lehká“ aktualizace
@@ -2120,7 +2131,7 @@ async function ensureSet(c, p, force, light, extra) {
     const since = PERIODS[p].hours ? Date.now() - PERIODS[p].hours * 3600e3 : 0;
     const found = new Set(r.items.map(i => i.id));
     const kept = (set?.items || []).filter(i => !found.has(i.id) && new Date(i.pub) >= since);
-    set = {ts:Date.now(), searchTs:Date.now(), newTs:r.dated ? Date.now() : set?.newTs, items:capItems([...r.items, ...kept]), next:r.next};
+    set = {ts:Date.now(), searchTs:Date.now(), newTs:r.dated ? Date.now() : set?.newTs, items:capItems([...r.items, ...kept], MAX_SET, c.id), next:r.next};
     logEvent(`🔎 načetl ${c.name} – ${PERIODS[p].label} (${r.items.length} videí z hledání${p === 'all' ? ' a populárních videí kanálů' : ''})`);
   }
   putSet(c.id, p, set);
@@ -2135,11 +2146,13 @@ const MAX_SET = 2000, MAX_ARCH = 12000; // data jsou v IndexedDB, místa je dost
 // s pár tisíci zhlédnutí vůbec nevešlo a hned se zahodilo (ULTRA SAMI a Štěps tak v Česku chyběli). Teď videa
 // z posledních 3 dnů zůstanou VŽDY, o zbytek místa se dělí podle zhlédnutí.
 const FRESH_MS = 3 * 864e5;
-function capItems(items, max = MAX_SET) {
+// (28/11) + DOMÁCÍ videa státu (jazyk/země, jako filtr jazyka) mají přednost před cizími: v Česku hledání vrací
+// tisíce cizích videí (Měsíc ~3 100) a malá česká videa starší 3 dní (ULTRA SAMI ~4 000 zhlédnutí) by jinak vypadla
+function capItems(items, max = MAX_SET, cid) {
   if (items.length <= max) return items;
-  const now = Date.now(), fresh = items.filter(i => now - new Date(i.pub) < FRESH_MS);
-  const rest = items.filter(i => !(now - new Date(i.pub) < FRESH_MS)).sort((a, b) => b.views - a.views);
-  return [...fresh.sort((a, b) => b.views - a.views), ...rest].slice(0, max);
+  const now = Date.now(), c = cid && COUNTRIES.find(x => x.id === cid);
+  const rank = i => now - new Date(i.pub) < FRESH_MS ? 0 : c && langOk(i, c) ? 1 : 2;
+  return items.map(i => [rank(i), i]).sort((a, b) => a[0] - b[0] || (b[1].views || 0) - (a[1].views || 0)).slice(0, max).map(x => x[1]);
 }
 function mergeInto(cid, p, items) {
   const set = getSet(cid, p);
@@ -2148,7 +2161,20 @@ function mergeInto(cid, p, items) {
   const since = PERIODS[p]?.hours ? Date.now() - PERIODS[p].hours * 3600e3 : 0;
   const byId = new Map(set.items.filter(i => !since || new Date(i.pub) >= since).map(i => [i.id, i]));
   items.forEach(i => { if (!since || new Date(i.pub) >= since) byId.set(i.id, i); }); // novější data (počty zhlédnutí) vyhrávají
-  putSet(cid, p, {...set, items:capItems([...byId.values()])});
+  putSet(cid, p, {...set, items:capItems([...byId.values()], MAX_SET, cid)});
+}
+// (28/11) 🩹 videa, která z Týdne/Měsíce dřív vypadla (viz putSet a slučování v mergeKey), jsou pořád v Archivu státu →
+// jednou za návštěvu je vrátit (jen ta, co do období patří). Počty zhlédnutí se jim pak obnoví samy (refreshLight).
+const HEALED = new Set();
+function healFromArchive(cid, p) {
+  if ((p !== 'week' && p !== 'month') || HEALED.has(cid + p)) return 0;
+  const set = getSet(cid, p); if (!set) return 0;
+  HEALED.add(cid + p);
+  const arch = getArchive(cid); if (!arch) return 0;
+  const since = Date.now() - PERIODS[p].hours * 3600e3, have = new Set(set.items.map(i => i.id));
+  const back = arch.items.filter(i => !have.has(i.id) && new Date(i.pub) >= since);
+  if (back.length) { mergeInto(cid, p, back); logEvent(`🩹 ${C(cid).name} – ${PERIODS[p].label}: vráceno ${back.length} videí z archivu`); }
+  return back.length;
 }
 // ---------- Archiv: všechna kdy nalezená videa daného státu (bez API, jen z uložených dat) ----------
 const akey = cid => `bt_arch_${cid}`;
@@ -2202,7 +2228,7 @@ async function refreshLight(c, p, set, kanaly = true) { // kanaly=false: jen po�
     .filter(it => new Date(it.pub) >= since);
   const have = new Set(items.map(i => i.id));
   if (kanaly) items.push(...await fetchChannelVideos(c, p, have));
-  return {...set, ts:Date.now(), items:capItems(items)};
+  return {...set, ts:Date.now(), items:capItems(items, MAX_SET, c.id)};
 }
 
 // ---------- Slova Brawl sezóny ----------
@@ -2254,6 +2280,10 @@ function dedicatedCh(chId) {
   return DED.has(chId);
 }
 function candOk(it) {
+  // (28/11) Brawl kanál + „Brawl“ KDEKOLI v textu (název, tagy, popis, jméno kanálu) → pustit. AI z miniatury Brawl
+  // video často nepozná: ze 30 skrytých videí takových kanálů bylo 20 Brawl s AI 0,01–0,34 – schovávala se tak i
+  // videa ULTRA SAMI („POZOR!! Nikdy si NEPŘIDÁVEJ HACKERY…“ 0,33). Smíšený kanál (vlogy) → 🚫 „Jen ověřená Brawl videa“.
+  if (it.bs && dedicatedCh(it.chId)) return true;
   const a = S.ai ? aiOf(it) : null;
   // Brawl kanál + Brawl v tazích → pustit, ledaže AI jasně řekla, že to Brawl není (pod 0,2)
   if ((it.bsTag ?? it.bsT) && dedicatedCh(it.chId) && !(a && a.s < 0.2)) return true;
@@ -2406,7 +2436,13 @@ function mergeKey0(k, mine, theirs) {
   if (k === 'bt_new') { const out = {...theirs, ...mine}; if (theirs._robot && (!mine._robot || (theirs._robot.at || 0) > (mine._robot.at || 0))) out._robot = theirs._robot; return pruneNew(out); }
   if (k === 'bt_tomb') { const out = {...theirs}; for (const [x, t] of Object.entries(mine)) out[x] = Math.max(out[x] || 0, t); return out; }
   if (/^bt_log/.test(k)) { const seen = new Set(mine.map(e => e.t + e.x)); return [...mine, ...theirs.filter(e => !seen.has(e.t + e.x))].sort((a, b) => b.t - a.t).slice(0, 5000); }
-  if (/^bt_c_/.test(k)) return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), newTs:Math.max(mine.newTs || 0, theirs.newTs || 0), items:capItems(byId(mine.items, theirs.items))};
+  if (/^bt_c_/.test(k)) {
+    // (28/11) jen videa z OBDOBÍ seznamu: starý soubor grafika (Měsíc z 26. 10., 2000 videí ze září/října) se dřív
+    // přimíchal celý → seznam přetekl limit 2000 a vyhodila se malá videa starší 3 dní (ULTRA SAMI; v Česku 1 321 videí)
+    const [, cid, p] = k.match(/^bt_c_([a-z]+)_([a-z]+)$/) || [], h = PERIODS[p]?.hours, since = h ? Date.now() - h * 3600e3 : 0;
+    const inWin = l => since ? (l || []).filter(i => new Date(i.pub) >= since) : (l || []);
+    return {...mine, ts:Math.max(mine.ts || 0, theirs.ts || 0), searchTs:Math.max(mine.searchTs || 0, theirs.searchTs || 0), newTs:Math.max(mine.newTs || 0, theirs.newTs || 0), items:capItems(byId(inWin(mine.items), inWin(theirs.items)), MAX_SET, cid)};
+  }
   if (/^bt_(mixsaved|drop)/.test(k)) { const seen = new Set(mine.map(s => s.at)); return [...mine, ...theirs.filter(s => !seen.has(s.at))].sort(byOrd); }
   if (k === 'bt_my') return (theirs.videos?.length || 0) > (mine.videos?.length || 0) ? theirs : mine;
   if (k === 'bt_block') return {videos:{...theirs.videos, ...mine.videos}, channels:{...theirs.channels, ...mine.channels}}; // tomb řeší vrácení
@@ -4895,6 +4931,7 @@ async function showCountry(force) {
 async function showCountryInner(force) {
   const token = ++S.loadToken, c = C(S.country), p = S.period;
   if (p === 'arch' || p === 'star' || p === 'cal' || p === 'vyr') { renderMain(); return; }
+  if (healFromArchive(c.id, p) && REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); SYNC.timer = setTimeout(() => syncPush(), 4000); } // 🩹 vypadlá videa zpět
   let set = getSet(c.id, p);
   // Při zapnuté auto-aktualizaci jsou novinky/týden zastaralé po uplynutí intervalu (i když stránka byla mezitím zavřená)
   const maxAge = (S.auto && p !== 'all' ? S.interval : PERIODS[p].ttl) * 60e3;
@@ -6112,6 +6149,8 @@ async function bgWarm() {
       // (27/11) + když zrovna posouváš / klikáš, taky počkat – na pozadí se má načítat jen v klidu, ať nic nesekne
       while ((AUTO_BUSY || loadBusy() || document.hidden || Date.now() - Math.max(LAST_SCROLL, LAST_TAP) < 2000) && Date.now() - BG.at < 30 * 60e3) await new Promise(r => setTimeout(r, 700));
       if (!S.key || REMOTE !== DRIVE_BACKEND) break;
+      // 🩹 (28/11) Týden/Měsíc každého státu jednou za návštěvu doplnit o videa, která z nich dřív vypadla (jsou v Archivu)
+      for (const hp of ['week', 'month']) if (!HEALED.has(c.id + hp)) { await syncBreath(); if (healFromArchive(c.id, hp)) zmeneno = true; }
       let set = getSet(c.id, p);
       if (!set || Date.now() - set.ts < S.interval * 60e3 || busyElsewhere(c.id)) continue; // čerstvé / nikdy nenačtené (to stojí hledání) / načítá jiné zařízení
       bgNote(`🔄 na pozadí: ${c.name} – ${PERIODS[p].label} (${++hotovo})`);
