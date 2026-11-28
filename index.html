@@ -590,6 +590,11 @@ svg.hist.bandin polygon,svg.hist.bandin polyline[stroke-dasharray]{animation:ban
 @media (pointer:coarse){[data-drag]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}}
 .dragging{opacity:.4;transform:scale(.96);transition:transform .15s}
 .dragover{outline:3px dashed var(--accent);outline-offset:3px}
+/* 👻 mobil: štítek s názvem taženého videa nad prstem (+ kam půjde) */
+.dragghost{position:fixed;left:0;top:0;z-index:9999;pointer-events:none;max-width:72vw;padding:6px 10px;border-radius:10px;background:var(--panel);border:2px solid var(--accent);box-shadow:0 6px 18px rgba(0,0,0,.45);font-weight:800;font-size:14px;line-height:1.25;color:var(--text);will-change:transform}
+.dragghost span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dragghost i{display:block;font-style:normal;font-size:12px;color:var(--accent)}
+.dragghost i:empty{display:none}
 /* 📅 kalendář */
 /* 🗓️ kalendář jako tabulka: DEN | NÁZEV | INSPIRACE | POPIS K MINIATUŘE */
 .caltable{display:grid;grid-template-columns:96px minmax(220px,1.3fr) minmax(200px,1.1fr) minmax(200px,1.2fr);border:1px solid var(--line);border-radius:10px;background:var(--line);gap:1px}
@@ -626,14 +631,21 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 .cinspo img{width:96px;aspect-ratio:16/9;object-fit:cover;border-radius:5px} /* místo pro náhled předem – řádek po načtení obrázku nenaroste */
 .cthumb{font-size:12.5px}
 @media (max-width:760px){
-  .caltable{grid-template-columns:1fr;background:transparent;border:0;gap:6px}
+  /* (28/11) 📱 video VEDLE data v obdélníčku (dřív pod datem = zmatené): vlevo den, vpravo název + značky 📝🖼️📷💡;
+     inspirace a popis k miniatuře jen po rozkliknutí videa (stejné okno jako vždy) */
+  .caltable{grid-template-columns:76px minmax(0,1fr);background:transparent;border:0;gap:5px 6px}
   .ch1{display:none}
-  .ct.cday{grid-row:auto !important;flex-direction:row;background:var(--bg);font-size:14px}
-  .ct.cadd{grid-column:auto}
   .ct{border-radius:8px}
-  /* 📱 prázdná inspirace / miniatura / prázdný den = žádné mini obdélníčky */
-  .ct.cinspo:empty,.ct.cthumb:empty,.ct.cadd:empty{display:none}
-  .cday .caladd{margin:0 0 0 auto}
+  .ct.dfirst{border-top:0;margin-top:4px}
+  .ct.dfirst.weekstart{border-top:0;margin-top:16px}
+  .ct.cday{grid-column:1;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:2px;padding:6px 4px;font-size:13px;background:var(--panel)}
+  .ct.cday.today{background:color-mix(in srgb,var(--panel) 78%,var(--accent) 22%)}
+  .ct.cname,.ct.cadd{grid-column:2}
+  .ct.cadd{min-height:46px;background:color-mix(in srgb,var(--panel) 55%,transparent)}
+  .ct.cinspo,.ct.cthumb{display:none}
+  .cnamebtn{padding:8px 10px}
+  .ctitle{font-size:16px}
+  .cday .caladd{margin:3px 0 0;padding:2px 7px;font-size:11px}
 }
 /* dny pod sebou: vlevo datum, vpravo videa toho dne vedle sebe */
 .calgrid{display:flex;flex-direction:column;gap:6px}
@@ -767,18 +779,6 @@ button.danger{background:var(--hot);border-color:var(--hot);color:#fff;font-weig
 @media (max-width:600px){.fgrid{grid-template-columns:1fr 1fr;gap:8px}.fcard{padding:7px}.fnew{min-height:110px}}
 .ideaicon{font-size:30px;width:64px;text-align:center}
 textarea.mixnote{resize:vertical;font:inherit}
-/* 📈 Google Trends pod kalendářem */
-#trendsSec{padding:0 16px 24px;max-width:1500px;margin:0 auto}
-/* Google graf je jen světlý → obarvíme ho do tmava (invert + otočení barev, ať modrá čára zůstane modrá);
-   dokud se nenačte, je schovaný a místo bílé plochy svítí tmavé „Načítám…“ */
-.gtbox{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:8px 0;min-height:120px}
-.gtbox iframe{width:100% !important;display:block;filter:invert(.92) hue-rotate(180deg);opacity:0;transition:opacity .4s}
-.gtbox.ready iframe{opacity:1}
-.gtbox .gtwait{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;color:var(--muted);font-size:13px}
-.gtbox:not(.ready) > div:not(.gtwait){height:120px;overflow:hidden} /* skryté okno Googlu nezabírá místo */
-.gtbox.ready .gtwait{display:none}
-#gtLink{color:var(--accent)}
-@media (max-width:600px){#trendsSec{padding:0 12px 20px}}
 .blockmenu{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;background:rgba(255,79,109,.08);border:1px solid rgba(255,79,109,.35);border-radius:8px;padding:8px}
 .blockmenu[hidden]{display:none}
 .blockmenu button{font-size:12px;padding:4px 8px}
@@ -812,16 +812,6 @@ textarea.mixnote{resize:vertical;font:inherit}
   </div>
 </header>
 <main id="main"></main>
-<!-- 📈 Google Trends pod kalendářem – mimo #main, ať se graf nenačítá znovu při každém překreslení kalendáře -->
-<section id="trendsSec" hidden><div class="summary">
-  <h3>📈 Brawl Stars ve světě – Google Trends</h3>
-  <div class="row">
-    <span class="seg"><button data-gtper="now 7-d">7 dní</button><button data-gtper="today 1-m">30 dní</button><button data-gtper="today 12-m">12 měsíců</button><button data-gtper="today 5-y">5 let</button></span>
-    <span class="seg"><button data-gtprop="youtube">▶ Hledání na YouTube</button><button data-gtprop="">🔎 Hledání na Googlu</button></span>
-  </div>
-  <div id="gtrends" class="gtbox"></div>
-  <div class="row ch">100 = největší zájem v daném období. Když graf zůstane prázdný, Google zrovna omezuje počet načtení – <a id="gtLink" target="_blank" rel="noopener">otevři ho na Google Trends ↗</a></div>
-</div></section>
 
 <script>
 // ---------- Konfigurace ----------
@@ -890,7 +880,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-27.187';
+const APP_VERSION = '2026-11-28.188';
 // po obnovení stránky NEvracet starou pozici – kalendář sám sjede na dnešek (dřív prohlížeč skočil na starou pozici,
 // stránka pak nahoru a zase dolů na dnešek)
 try { history.scrollRestoration = 'manual'; } catch {} // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
@@ -3046,6 +3036,14 @@ function calDelete(id, trash) {
   if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
 }
 function calNotes(id) { return collections('bt_calg').flatMap(w => (ls(calgKey(w), {})[id] || []).map(n => ({...n, w}))).sort((a, b) => a.at - b.at); }
+// 🗓️ první den kalendáře: den, od kterého je vidět nejvýš 2 už vydaných videí (dny před dneškem), nejdál 7 dní zpět
+function calFirstDay(all, t) {
+  const today = isoDay(t), wk = new Date(t); wk.setDate(t.getDate() - 7);
+  const past = all.filter(e => e.date && e.date < today && e.date >= isoDay(wk)).map(e => e.date).sort().reverse(); // nejnovější první
+  let first = today, n = 0;
+  for (const d of new Set(past)) { n += past.filter(x => x === d).length; if (n > 2) break; first = d; }
+  return new Date(first + 'T00:00');
+}
 function renderCal() {
   const own = isOwner();
   setTimeout(calSyncNote, 0); // ☁️ stav synchronizace hned po vykreslení
@@ -3053,9 +3051,13 @@ function renderCal() {
   if (own) Object.values(ls(calKey(), {})).filter(e => !e.title && !e.script && !e.thumb && !e.inspo && !e.alt && !e.photos?.length).forEach(e => calDelete(e.id));
   const all = Object.values(ls(calKey(), {}));
   const t = new Date(); t.setHours(0, 0, 0, 0);
-  const start = new Date(t); start.setDate(t.getDate() - ((t.getDay() + 6) % 7) + (S.calOff || 0) * 7);
-  const days = Array.from({length:14}, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
   const today = isoDay(t);
+  // (28/11) KLOUZAVÉ okno po dnech (dřív 2 týdny od pondělí = staré dny navíc a plán se nevešel):
+  // začíná u nejvýš 2 posledních vydaných videí (nejdál 7 dní zpět) a končí 3 týdny od dneška
+  const first = calFirstDay(all, t), lead = Math.round((t - first) / 864e5);
+  const start = new Date(first); start.setDate(first.getDate() + (S.calOff || 0) * 7);
+  const days = Array.from({length:lead + 21}, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  const last = days[days.length - 1];
   const badge = e => [e.script ? '📝' : '', e.thumb ? '🖼️' : '', e.photos?.length ? `📷${e.photos.length}` : '', ytIds(e.inspo).length ? `💡${ytIds(e.inspo).length}` : '', calNotes(e.id).length ? `🎨${calNotes(e.id).length}` : ''].filter(Boolean).join(' ');
   // tabulka jako v Google Tabulkách: DEN | NÁZEV (největší) | INSPIRACE | POPIS K MINIATUŘE – každé video jeden řádek; scénář až po rozkliknutí
   const day = d => { const iso = isoDay(d), list = all.filter(e => e.date === iso).sort((a, b) => calCreated(a) - calCreated(b));
@@ -3070,7 +3072,7 @@ function renderCal() {
         <button class="ct cthumb${f} ${cls}" data-calopen="${esc(e.id)}"${own ? ` data-drag="cal" data-id="${esc(e.id)}"` : ''}>${esc(e.thumb || '')}</button>`; }).join('');
     // prázdný den: i celý prázdný řádek vedle data je místo, kam jde video pustit
     return list.length ? rows : dayCell(1) + `<div class="ct cadd dfirst ${cls}"${own ? ` data-drag="cal" data-id="day:${iso}"` : ''}></div>`; };
-  const later = all.filter(e => e.date > isoDay(days[13])).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
+  const later = all.filter(e => e.date > isoDay(last)).length, before = all.filter(e => e.date < isoDay(days[0]) && e.date >= today).length;
   // upozornění: dokud nepřišla data z Disku, je tu verze z minulé návštěvy (grafik i já bychom koukali na starý plán)
   const inApp = /Instagram|FBAN|FBAV|TikTok|Messenger|Discord|Snapchat|Line\//i.test(navigator.userAgent);
   const calWarn = CAL_LINK && REMOTE !== DRIVE_BACKEND
@@ -3085,7 +3087,7 @@ function renderCal() {
     : '⚠️ <b>Kalendář NENÍ aktuální</b> – Disk není připojený (klikni na ☁️ Připojit Disk)';
   cs.title = !calStale ? '' : loadingCal ? 'Tohle ještě NENÍ aktuální plán – je to verze z tvé minulé návštěvy. Za pár vteřin se sám ukáže ten správný.'
     : 'Vidíš verzi z tvé minulé návštěvy, videa můžou být jinde. Připoj Disk tlačítkem ☁️ vpravo nahoře.';
-  const html = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${days[13].getDate()}. ${days[13].getMonth() + 1}.</h3>${calWarn}<div id="calSync" class="calsync"></div>
+  const html = `<div class="summary"><h3>📅 Kalendář videí – ${days[0].getDate()}. ${days[0].getMonth() + 1}. až ${last.getDate()}. ${last.getMonth() + 1}.</h3>${calWarn}<div id="calSync" class="calsync"></div>
       <div class="row"><button data-calshift="-1">◀ Týden zpět</button><button data-calshift="0">Dnes</button><button data-calshift="1">Týden dál ▶</button>
         ${later ? `<span class="ch">· později ještě ${later} videí</span>` : ''}${before ? `<span class="ch">· dřív ${before}</span>` : ''}</div>
       <div class="row ch">${own ? 'Klikni na den „＋ video“ a napiš název, scénář, inspiraci a co chceš na miniatuře. Scénář jde pustit na celou obrazovku při natáčení.' : 'Kalendář plní Samko. Ty si u každého videa můžeš přidat poznámku – třeba z jakých miniatur si půjčíš.'}</div>
@@ -3110,11 +3112,11 @@ function renderCal() {
     if (el) { const d = el.getBoundingClientRect().top - anchor.y; if (Math.abs(d) >= 1) scrollTo(0, scrollY + d); }
   }
   if (CAL_LINK) setTimeout(openCalLink); // 🔗 přišel odkaz na video z kalendáře
-  // sjet na dnešní den – HNED (dřív nejdřív úplně nahoru a za chvíli dolů = stránka skákala nahoru a dolů)
+  // sjet na začátek okna (nejvýš 2 vydaná videa nad dneškem) – HNED (dřív nejdřív úplně nahoru a za chvíli dolů = skákalo)
   if (S.calJump) {
     S.calJump = false;
     applyStick();
-    const el = main.querySelector('.cday.today');
+    const el = main.querySelector('.cday[data-day]');
     if (el) scrollTo(0, Math.max(0, el.getBoundingClientRect().top + scrollY - stuck() - 8));
   }
 }
@@ -3705,31 +3707,61 @@ const byOrd = (a, b) => (b.ord ?? b.at) - (a.ord ?? a.at);
 const ordBtns = () => '';
 // 🖱️ přetažení myší: chycené video se vloží na místo videa, na které ho pustíš (ostatní se posunou)
 let DRAG = null;
+// (28/11) ↕️ při tažení u horního / dolního okraje se stránka PLYNULE posouvá (čím blíž k okraji, tím rychleji) –
+// i když myš / prst stojí. Horní okraj = spodek přilepené lišty (a řádku DEN | NÁZEV), ne vršek okna.
+const AS = {x:0, y:null, raf:0};
+const dragTopEdge = () => { const h = $('header').getBoundingClientRect().bottom, c = S.period === 'cal' && !S.view && document.querySelector('#main .ch1');
+  return Math.max(0, h, c && c.offsetParent ? c.getBoundingClientRect().bottom : 0); };
+function asTick() {
+  AS.raf = 0;
+  if (AS.y == null || !(DRAG || TD.on)) return;
+  const top = dragTopEdge(), Z = Math.min(110, innerHeight / 5);
+  const v = AS.y < top + Z ? -(top + Z - AS.y) / Z : AS.y > innerHeight - Z ? (AS.y - innerHeight + Z) / Z : 0;
+  if (v) { scrollBy(0, Math.round(Math.max(-1, Math.min(1, v)) * 26)); if (TD.on) tdOver(AS.x, AS.y); }
+  AS.raf = requestAnimationFrame(asTick);
+}
+const asMove = (x, y) => { AS.x = x; AS.y = y; if (!AS.raf) AS.raf = requestAnimationFrame(asTick); };
+const asStop = () => { AS.y = null; cancelAnimationFrame(AS.raf); AS.raf = 0; };
 document.addEventListener('dragstart', e => { const c = e.target.closest?.('[data-drag]'); if (!c) return; DRAG = {kind:c.dataset.drag, key:c.dataset.id}; c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', c.dataset.id); });
-document.addEventListener('dragend', e => { e.target.closest?.('[data-drag]')?.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x => x.classList.remove('dragover')); DRAG = null; });
-document.addEventListener('dragover', e => { if (!DRAG) return; const c = e.target.closest('[data-drag]'); if (!c || c.dataset.drag !== DRAG.kind) return; e.preventDefault(); document.querySelectorAll('.dragover').forEach(x => x !== c && x.classList.remove('dragover')); if (c.dataset.id !== DRAG.key) c.classList.add('dragover'); });
-document.addEventListener('drop', e => { if (!DRAG) return; const c = e.target.closest('[data-drag]'); if (!c || c.dataset.drag !== DRAG.kind) return; e.preventDefault(); e.stopPropagation(); if (c.dataset.id !== DRAG.key) moveSaved(DRAG.kind, DRAG.key, 'to:' + c.dataset.id); DRAG = null; }, true);
+document.addEventListener('dragend', e => { asStop(); e.target.closest?.('[data-drag]')?.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x => x.classList.remove('dragover')); DRAG = null; });
+document.addEventListener('dragover', e => { if (!DRAG) return; asMove(e.clientX, e.clientY); const c = e.target.closest('[data-drag]'); if (!c || c.dataset.drag !== DRAG.kind) return; e.preventDefault(); document.querySelectorAll('.dragover').forEach(x => x !== c && x.classList.remove('dragover')); if (c.dataset.id !== DRAG.key) c.classList.add('dragover'); });
+document.addEventListener('drop', e => { if (!DRAG) return; const c = e.target.closest('[data-drag]'); if (!c || c.dataset.drag !== DRAG.kind) return; e.preventDefault(); e.stopPropagation(); asStop(); if (c.dataset.id !== DRAG.key) moveSaved(DRAG.kind, DRAG.key, 'to:' + c.dataset.id); DRAG = null; }, true);
 // 👆 mobil: podrž prst na položce (~0,4 s, krátce zavibruje), pak ji táhni na místo jiné a pusť.
 // Když prstem hned pohneš, je to normální posouvání stránky.
-const TD = {timer:null, el:null, on:false, x:0, y:0, over:null, noClick:0};
-const tdClear = () => { clearTimeout(TD.timer); TD.el?.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x => x.classList.remove('dragover')); TD.el = TD.over = null; TD.on = false; };
+const TD = {timer:null, el:null, on:false, x:0, y:0, over:null, noClick:0, ghost:null};
+const tdClear = () => { clearTimeout(TD.timer); asStop(); TD.ghost?.remove(); TD.ghost = null; TD.el?.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x => x.classList.remove('dragover')); TD.el = TD.over = null; TD.on = false; };
+// cíl pod prstem (i když se stránka sama posouvá a prst stojí)
+function tdOver(x, y) {
+  if (TD.ghost) TD.ghost.style.transform = `translate(${Math.round(x - 20)}px,${Math.round(y - 56)}px)`;
+  const c = document.elementFromPoint(x, y)?.closest('[data-drag]');
+  const ok = c && c !== TD.el && c.dataset.drag === TD.el.dataset.drag && c.dataset.id !== TD.el.dataset.id;
+  if (TD.over && TD.over !== c) TD.over.classList.remove('dragover');
+  TD.over = ok ? c : null; if (ok) c.classList.add('dragover');
+  // 🗓️ duch ukazuje, KAM video půjde (den, nebo prohození s jiným videem)
+  if (TD.ghost && TD.el.dataset.drag === 'cal') {
+    const id = TD.over?.dataset.id || '', e = id && !id.startsWith('day:') && ls(calKey(), {})[id];
+    const dd = id.startsWith('day:') ? id.slice(4) : e?.date;
+    TD.ghost.querySelector('i').textContent = !dd ? '' : (e ? '⇄ ' : '→ ') + (([y4, m, d]) => `${DOW[new Date(dd + 'T00:00').getDay()]} ${+d}. ${+m}.`)(dd.split('-'));
+  }
+}
 document.addEventListener('touchstart', e => {
   // táhnout jde jen to, co je přetažitelné (dny v kalendáři jsou jen cíl, kam se pouští)
   const c = e.target.closest?.('[data-drag]'); if (!c || c.getAttribute('draggable') !== 'true' || e.touches.length > 1) return;
   if (e.target.closest('input, textarea, select')) return;
   TD.el = c; TD.x = e.touches[0].clientX; TD.y = e.touches[0].clientY;
-  TD.timer = setTimeout(() => { TD.on = true; c.classList.add('dragging'); navigator.vibrate?.(25); }, 400);
+  TD.timer = setTimeout(() => {
+    TD.on = true; c.classList.add('dragging'); navigator.vibrate?.(25);
+    // 👻 pod prstem jede štítek s názvem (prst ho jinak zakrývá a nevíš, co táhneš)
+    const name = (c.querySelector('.ctitle, b, .ftitle')?.textContent || c.textContent || '').trim().slice(0, 60);
+    if (name) { const g = document.createElement('div'); g.className = 'dragghost'; g.innerHTML = `<span></span><i></i>`; g.firstChild.textContent = name; document.body.append(g); TD.ghost = g; tdOver(TD.x, TD.y); }
+  }, 400);
 }, {passive:true});
 document.addEventListener('touchmove', e => {
   if (!TD.el) return;
   const t = e.touches[0];
   if (!TD.on) { if (Math.hypot(t.clientX - TD.x, t.clientY - TD.y) > 10) tdClear(); return; }
-  e.preventDefault(); // při tažení se stránka nesmí posouvat
-  if (t.clientY < 70) scrollBy(0, -12); else if (t.clientY > innerHeight - 70) scrollBy(0, 12);
-  const c = document.elementFromPoint(t.clientX, t.clientY)?.closest('[data-drag]');
-  const ok = c && c !== TD.el && c.dataset.drag === TD.el.dataset.drag;
-  if (TD.over && TD.over !== c) TD.over.classList.remove('dragover');
-  TD.over = ok ? c : null; if (ok) c.classList.add('dragover');
+  e.preventDefault(); // při tažení se stránka nesmí posouvat (posouvá ji asTick u okraje)
+  asMove(t.clientX, t.clientY); tdOver(t.clientX, t.clientY);
 }, {passive:false});
 document.addEventListener('touchend', () => {
   if (!TD.el) return;
@@ -5497,51 +5529,7 @@ function rerender() {
   renderMain();
 }
 // jen obsah stránky (hlavičku s polem hledání nepřekreslujeme, ať se nepřeruší psaní)
-// ---------- 📈 Google Trends pod kalendářem ----------
-// Oficiální vložený graf Googlu (zájem o „brawl stars“ ve světě). Google omezuje počet načtení (chyba 429),
-// proto se graf načte jen při otevření kalendáře nebo změně výběru – ne při každém překreslení.
-const GT = {per:ls('bt_gtper', 'today 12-m'), prop:ls('bt_gtprop', 'youtube'), shown:''};
-const gtQuery = () => `q=brawl%20stars&date=${encodeURIComponent(GT.per)}${GT.prop ? '&gprop=' + GT.prop : ''}`;
-function gtLoader() {
-  return window.trends ? Promise.resolve() : new Promise((res, rej) => {
-    const s = document.createElement('script'); s.src = 'https://ssl.gstatic.com/trends_nrtr/4031_RC01/embed_loader.js';
-    s.onload = res; s.onerror = rej; document.head.append(s);
-  });
-}
-async function renderTrends() {
-  const sec = $('#trendsSec'), on = S.period === 'cal' && !S.view && hasAccess();
-  sec.hidden = !on;
-  // vložený graf Googlu běží jako samostatná stránka a v Edgi dokázal sníst i 20 GB paměti → načte se až po kliknutí
-  // a při odchodu z kalendáře se úplně zavře (iframe pryč = paměť se uvolní)
-  if (!on) { GT.shown = ''; GT.on = false; $('#gtrends').innerHTML = ''; return; }
-  if (!GT.on) { GT.shown = ''; $('#gtrends').classList.add('ready'); $('#gtrends').innerHTML = '<div class="gtwait"><button class="primary" data-gton>📈 Zobrazit graf Google Trends</button></div>'; }
-  sec.querySelectorAll('[data-gtper]').forEach(b => b.classList.toggle('on', b.dataset.gtper === GT.per));
-  sec.querySelectorAll('[data-gtprop]').forEach(b => b.classList.toggle('on', b.dataset.gtprop === GT.prop));
-  $('#gtLink').href = 'https://trends.google.com/trends/explore?' + gtQuery();
-  if (!GT.on) return;
-  const key = GT.per + '|' + GT.prop; if (GT.shown === key) return; GT.shown = key;
-  const box = $('#gtrends'), wait = '<div class="gtwait">📈 Načítám graf z Google Trends…</div>';
-  box.classList.remove('ready'); box.innerHTML = wait;
-  try { await gtLoader(); } catch { box.innerHTML = '<div class="gtwait">Google Trends se nepodařilo načíst – otevři odkaz níž.</div>'; return; }
-  if (GT.shown !== key) return; // mezitím přepnuto
-  box.innerHTML = wait;
-  const holder = document.createElement('div'); box.append(holder);
-  trends.embed.renderExploreWidgetTo(holder, 'TIMESERIES', {comparisonItem:[{keyword:'brawl stars', geo:'', time:GT.per}], category:0, property:GT.prop},
-    {exploreQuery:gtQuery(), guestPath:'https://trends.google.com:443/trends/embed/'});
-  // graf ukázat, až přijdou data – Google pak okno zvětší z prázdných 150 px na celý graf; do té doby tmavé „Načítám…“
-  let ro = null;
-  const hook = () => {
-    const f = holder.querySelector('iframe'); if (!f) return false;
-    ro = new ResizeObserver(() => { if (f.offsetHeight > 200 && GT.shown === key) { setTimeout(() => box.classList.add('ready'), 300); ro.disconnect(); } });
-    ro.observe(f); return true;
-  };
-  if (!hook()) { const watch = new MutationObserver(() => { if (hook()) watch.disconnect(); }); watch.observe(holder, {childList:true, subtree:true}); }
-  // data do 10 s nepřišla (Google omezuje počet načtení) → místo prázdné plochy vysvětlení
-  setTimeout(() => {
-    if (GT.shown !== key || box.classList.contains('ready')) return;
-    box.querySelector('.gtwait').innerHTML = 'Google Trends teď graf neposlal (omezuje počet načtení).<br>Zkus to za chvíli znovu, nebo ho otevři odkazem níž.';
-  }, 10000);
-}
+// (28/11) 📈 graf Google Trends pod kalendářem odstraněn – Google ho skoro nikdy neposlal (limit) nebo se načítal minuty
 // 📱 mobil: hlavička se posune nahoru tak, aby přilepená zůstala jen část od prvku STICK dolů
 // (u videí záložky + období + státy, v Nastavení řádek jeho záložek). Přepočítá se při každé změně výšky hlavičky.
 var STICK = null; // var: hlavička se může kreslit dřív, než sem skript dojde
@@ -5559,7 +5547,6 @@ addEventListener('scroll', applyStick, {passive:true}); // pojistka: přepočet 
 addEventListener('resize', applyStick);
 function renderMain() {
   STICK = S.view ? null : stickFor(); // Nastavení si nastaví '.setnav' samo
-  renderTrends();
   // v kalendáři vyhledávání nic nedělá → schovat
   $('header .search').style.display = (S.period === 'cal' || S.period === 'vyr') && !S.view ? 'none' : '';
   if (S.period !== 'cal' || S.view) $('#calState').innerHTML = ''; // „kalendář NENÍ aktuální“ jen u kalendáře
@@ -6158,11 +6145,6 @@ document.addEventListener('click', e => {
     if (REMOTE === DRIVE_BACKEND) { clearTimeout(SYNC.timer); syncPush(); }
     logEvent(`💡 nový nápad: ${shortT(t)}`); renderMain(); return;
   }
-  if (b.dataset.gtper !== undefined || b.dataset.gtprop !== undefined) { // 📈 Google Trends: období / zdroj
-    if (b.dataset.gtper !== undefined) ss('bt_gtper', GT.per = b.dataset.gtper); else ss('bt_gtprop', GT.prop = b.dataset.gtprop);
-    GT.on = true; renderTrends(); return;
-  }
-  if (b.hasAttribute('data-gton')) { GT.on = true; renderTrends(); return; }
   if (b.dataset.starwho !== undefined) { S.starWho = b.dataset.starwho; renderMain(); return; }
   if (b.dataset.startab) { S.starTab = b.dataset.startab; S.starWho = null; } // ⭐ Uložené: Videa / Nápady (i z odkazu v míchači)
   if (b.dataset.showmore !== undefined) { const y = scrollY; S.showN += SHOW_STEP; renderMain(); scrollTo(0, y); return; }
@@ -6397,7 +6379,8 @@ function calmRerender() {
   clearTimeout(CALM_T);
   // počkat, až se 1,5 s nescrolluje (a nikdo nepíše do pole na stránce)
   const typing = document.activeElement?.closest?.('#main') && document.activeElement.matches('input, textarea');
-  if (Date.now() - LAST_SCROLL < 1500 || typing) { CALM_T = setTimeout(calmRerender, 800); return; }
+  // ↕️ ani během přetahování (překreslení by táhnutý řádek vyměnilo a puštění by nic neudělalo)
+  if (Date.now() - LAST_SCROLL < 1500 || typing || DRAG || TD.on) { CALM_T = setTimeout(calmRerender, 800); return; }
   if (!hasAccess()) return;
   const y = scrollY; rerender(); if (Math.abs(scrollY - y) > 2) scrollTo(0, y);
 }
