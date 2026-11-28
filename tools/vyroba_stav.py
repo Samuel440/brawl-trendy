@@ -219,13 +219,14 @@ class Stav:
                       "sequence_id": f"vyroba-{self.d['program']}", "click": WEB_URL}
             if prvni:
                 # (28/11) Priorita 2 se na mobilu (HyperOS) schová mezi „tiché“ – v appce je, NAHOŘE v oznámeních ne.
-                # Proto: staré pryč → 1. zpráva TICHÁ (P2, oznámení vznikne bez zvuku) → za 4 s ta samá s P3.
-                # Appka ntfy ji bere jako PŘEPIS (setOnlyAlertOnce) → nepípne, ale přesune se nahoru mezi normální
-                # oznámení s ikonkou v liště. Další přepisy (P3) jsou taky tiché.
-                smaz_zive(self.d["program"])
+                # Proto: 1. zpráva TICHÁ (P2, oznámení vznikne bez zvuku) → za 8 s ta samá s P3 se stejným číslem
+                # oznámení (ntfy: hash kanál+sequence_id) → Android ji bere jako PŘEPIS (setOnlyAlertOnce) → nepípne,
+                # ale přesune se nahoru mezi normální oznámení s ikonkou v liště. Další přepisy (P3) jsou taky tiché.
+                # Žádné „smazat staré“ předem: přes Google (FCM) nemusí dojít ve stejném pořadí – smazání dorazilo
+                # až po tiché zprávě, smazalo ji a P3 pak byla nová = pípla. Staré oznámení se stejně jen přepíše.
                 kod = _ntfy("POST", "", {**zprava, "priority": 2})
                 if kod == 200:
-                    time.sleep(4)
+                    time.sleep(8)
                     if not (self._zive and self.bezi):
                         return
                     kod = _ntfy("POST", "", zprava)
