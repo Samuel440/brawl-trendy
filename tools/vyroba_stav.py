@@ -213,9 +213,24 @@ class Stav:
                 return
             if titulek + text == self._zive_txt or not (self._zive and self.bezi):
                 return
+            prvni = not self._zive_txt
             self._zive_t, self._zive_txt, self._zive_pct, self._zive_krok = ted, titulek + text, pct, krok
-            kod = _ntfy("POST", "", {"topic": ntfy_kanal(), "title": titulek[:200], "message": text[:1000], "priority": 2,
-                                     "sequence_id": f"vyroba-{self.d['program']}", "click": WEB_URL})
+            zprava = {"topic": ntfy_kanal(), "title": titulek[:200], "message": text[:1000], "priority": 3,
+                      "sequence_id": f"vyroba-{self.d['program']}", "click": WEB_URL}
+            if prvni:
+                # (28/11) Priorita 2 se na mobilu (HyperOS) schová mezi „tiché“ – v appce je, NAHOŘE v oznámeních ne.
+                # Proto: staré pryč → 1. zpráva TICHÁ (P2, oznámení vznikne bez zvuku) → za 4 s ta samá s P3.
+                # Appka ntfy ji bere jako PŘEPIS (setOnlyAlertOnce) → nepípne, ale přesune se nahoru mezi normální
+                # oznámení s ikonkou v liště. Další přepisy (P3) jsou taky tiché.
+                smaz_zive(self.d["program"])
+                kod = _ntfy("POST", "", {**zprava, "priority": 2})
+                if kod == 200:
+                    time.sleep(4)
+                    if not (self._zive and self.bezi):
+                        return
+                    kod = _ntfy("POST", "", zprava)
+            else:
+                kod = _ntfy("POST", "", zprava)
             if kod == 429:  # denní limit ntfy.sh → pro tenhle běh už živé oznámení nepřepisovat
                 self._zive = False
         except Exception:  # noqa: BLE001
