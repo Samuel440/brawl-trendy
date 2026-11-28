@@ -629,6 +629,12 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
 .calview .caltxt.script{font-size:15px;line-height:1.55;max-height:55vh;overflow:auto}
 .ctitle{font-size:clamp(17px,1.7vw,22px);font-weight:800;line-height:1.25;text-align:left}
 .cinspo img{width:96px;aspect-ratio:16/9;object-fit:cover;border-radius:5px} /* místo pro náhled předem – řádek po načtení obrázku nenaroste */
+/* 📷 tvoje fotky (náhled z Disku) – šedý rámeček s 📷, dokud se nenačte */
+.cph{position:relative;display:inline-flex;align-items:center;justify-content:center;width:72px;aspect-ratio:4/3;border-radius:5px;overflow:hidden;background:var(--panel2);flex:none}
+.cph::before{content:'📷';font-size:16px;opacity:.45}
+.cph img,.cinspo .cph img{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;object-fit:cover;border-radius:0}
+.cph img:not([src]){display:none}
+.cmedia{display:none} /* proužek miniatur jen na mobilu (na PC je sloupec INSPIRACE · FOTKY) */
 .cthumb{font-size:12.5px}
 @media (max-width:760px){
   /* (28/11) 📱 video VEDLE data v obdélníčku (dřív pod datem = zmatené): vlevo den, vpravo název + značky 📝🖼️📷💡;
@@ -645,6 +651,12 @@ button.ct:hover{background:color-mix(in srgb,var(--panel) 85%,var(--accent) 15%)
   .ct.cinspo,.ct.cthumb{display:none}
   .cnamebtn{padding:8px 10px}
   .ctitle{font-size:16px}
+  /* 🖼️ pod názvem proužek miniatur: inspirace (16:9) + tvoje fotky – co se nevejde, schová se (vše po rozkliknutí) */
+  .cmedia{display:flex;gap:4px;align-items:center;max-width:100%;overflow:hidden;margin-top:2px}
+  .cmedia img,.cmedia .cph{flex:none;height:34px;width:auto;border-radius:5px;pointer-events:none}
+  .cmedia > img{aspect-ratio:16/9;object-fit:cover}
+  .cmedia .cph{width:46px}
+  .cmedia .cmore{flex:none;font-size:11.5px}
   .cday .caladd{margin:3px 0 0;padding:2px 7px;font-size:11px}
 }
 /* dny pod sebou: vlevo datum, vpravo videa toho dne vedle sebe */
@@ -880,7 +892,7 @@ const STOP = new Set(('brawl stars brawlstars бравл старс бравлс
 // Při startu se načtou do paměti (KV) a čtou se odtud stejně rychle; zápis jde hned do paměti a do IndexedDB na pozadí.
 // Drobná nastavení zůstávají v localStorage. Dokud se IndexedDB nenačte (nebo když nejde), čte se localStorage.
 const KV_RX = /^bt_(c_|ch_|arch_|block$|star(_g_[a-z0-9_]+)?$|mixsaved(_g_[a-z0-9_]+)?$|log(_g_[a-z0-9_]+)?$|my$|aicache$|tr$|qtr$|tomb$|qs$|disc$|h_[0-9a-f]$|autoAt$|drop(_g_[a-z0-9_]+)?$|cal$|calg(_g_[a-z0-9_]+)?$|trash$|new$|folds(_g_[a-z0-9_]+)?$|busy$)/;
-const APP_VERSION = '2026-11-28.188';
+const APP_VERSION = '2026-11-28.189';
 // po obnovení stránky NEvracet starou pozici – kalendář sám sjede na dnešek (dřív prohlížeč skočil na starou pozici,
 // stránka pak nahoru a zase dolů na dnešek)
 try { history.scrollRestoration = 'manual'; } catch {} // při každé úpravě stránky zvýšit – otevřené stránky se podle toho samy obnoví
@@ -3065,10 +3077,17 @@ function renderCal() {
     // „＋ video“ je u každého dne na konci buňky s datem; řádky vedle zůstávají čisté (prázdný den = prázdný řádek)
     // ↕️ přetažení: video (název) se pustí na den = přesun na ten den, na jiné video = prohození dnů
     const dayCell = (n) => `<div class="ct cday dfirst ${cls}" data-day="${iso}"${own ? ` data-drag="cal" data-id="day:${iso}"` : ''}${n > 1 ? ` style="grid-row:span ${n}"` : ''}><b>${DOW[d.getDay()]}</b> ${d.getDate()}. ${d.getMonth() + 1}.${iso === today ? '<span class="tag hot">dnes</span>' : ''}${own ? `<button class="caladd" data-caladd="${iso}" title="Přidat video na tento den">＋ video</button>` : ''}</div>`;
-    const rows = list.map((e, i) => { const ids = ytIds(e.inspo), f = i === 0 ? ' dfirst' : '';
+    const rows = list.map((e, i) => { const ids = ytIds(e.inspo), f = i === 0 ? ' dfirst' : '', ph = e.photos || [];
+      // (28/11) 🖼️ miniatury inspirací + 📷 tvoje fotky (náhled z Disku doplní calFillPhotos po vykreslení)
+      const yt = v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="" loading="lazy" draggable="false">`;
+      const pic = p => `<span class="cph"><img data-photo="${esc(p.t || p.f)}" alt="" loading="lazy" draggable="false"></span>`;
+      const more = (n, max) => n > max ? `<span class="ch cmore">+${n - max}</span>` : '';
+      // 📱 proužek pod názvem: nejdřív TVOJE fotky, pak inspirace – 4 místa (2 + 2, když jsou obojí), zbytek „+N“
+      const nP = Math.min(ph.length, ids.length ? 2 : 4), nI = Math.min(ids.length, 4 - nP);
+      const media = ph.slice(0, nP).map(pic).join('') + ids.slice(0, nI).map(yt).join('') + more(ph.length + ids.length, nP + nI);
       return `${i === 0 ? dayCell(list.length) : ''}
-        <div class="ct cname${f} ${cls}"${own ? ` draggable="true" data-drag="cal" data-id="${esc(e.id)}" title="Přetáhni na jiný den (nebo na jiné video = prohodit)"` : ''}><button class="cnamebtn" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '')}</span><span class="ch">${badge(e)}</span></button></div>
-        <button class="ct cinspo${f} ${cls}" data-calopen="${esc(e.id)}"${own ? ` data-drag="cal" data-id="${esc(e.id)}"` : ''}>${ids.slice(0, 4).map(v => `<img src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`).join('') + (ids.length > 4 ? `<span class="ch">+${ids.length - 4}</span>` : '')}</button>
+        <div class="ct cname${f} ${cls}"${own ? ` draggable="true" data-drag="cal" data-id="${esc(e.id)}" title="Přetáhni na jiný den (nebo na jiné video = prohodit)"` : ''}><button class="cnamebtn" data-calopen="${esc(e.id)}"><span class="ctitle">${esc(e.title || '')}</span><span class="ch">${badge(e)}</span>${media ? `<span class="cmedia">${media}</span>` : ''}</button></div>
+        <button class="ct cinspo${f} ${cls}" data-calopen="${esc(e.id)}"${own ? ` data-drag="cal" data-id="${esc(e.id)}"` : ''}>${ids.slice(0, 4).map(yt).join('') + more(ids.length, 4) + ph.slice(0, 4).map(pic).join('') + more(ph.length, 4)}</button>
         <button class="ct cthumb${f} ${cls}" data-calopen="${esc(e.id)}"${own ? ` data-drag="cal" data-id="${esc(e.id)}"` : ''}>${esc(e.thumb || '')}</button>`; }).join('');
     // prázdný den: i celý prázdný řádek vedle data je místo, kam jde video pustit
     return list.length ? rows : dayCell(1) + `<div class="ct cadd dfirst ${cls}"${own ? ` data-drag="cal" data-id="day:${iso}"` : ''}></div>`; };
@@ -3094,7 +3113,7 @@ function renderCal() {
       ${own ? '' : PING.on() ? '<div class="row ch">🔔 Oznámení zapnutá – když ti Samko pošle zadání miniatury, vyskočí okno se zvukem (stačí mít stránku otevřenou, klidně na pozadí).</div>'
         : '<div class="row"><button class="primary" data-pingon>🔔 Zapnout oznámení od Samka</button><span class="ch">Okno se zvukem na Windows i mobilu, když ti pošle zadání miniatury.</span></div>'}
       ${own || !ntfyTopic() ? '' : `<details class="ntfyd"${ls('bt_ntfyok', false) ? '' : ' open'}><summary class="ch">📲 Upozornění i se zavřenou stránkou (appka ntfy)</summary>${ntfyHelp()}</details>`}</div>
-    <div class="caltable${calStale ? ' calstale' : ''}" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
+    <div class="caltable${calStale ? ' calstale' : ''}" style="--hdrh:${getComputedStyle($('header')).position === 'sticky' ? $('header').offsetHeight : 0}px"><div class="ch1 h0">DEN</div><div class="ch1 h1">NÁZEV</div><div class="ch1 h2">INSPIRACE · FOTKY</div><div class="ch1 h3">POPIS K MINIATUŘE</div>${days.map(day).join('')}</div>`;
   const main = $('#main'), hd = $('header');
   // výška toho, co nahoře zůstává přilepené (lišta + řádek DEN | NÁZEV …)
   const stuck = () => (getComputedStyle(hd).position === 'sticky' ? hd.offsetHeight + (parseFloat(hd.style.top) || 0) : 0) + (main.querySelector('.ch1')?.offsetHeight || 0);
@@ -3111,6 +3130,7 @@ function renderCal() {
     const el = anchor && main.querySelector(`.cday[data-day="${anchor.day}"]`);
     if (el) { const d = el.getBoundingClientRect().top - anchor.y; if (Math.abs(d) >= 1) scrollTo(0, scrollY + d); }
   }
+  calFillPhotos(main); // 📷 i po připojení Disku (kalendář se nepřekreslí, když je stejný)
   if (CAL_LINK) setTimeout(openCalLink); // 🔗 přišel odkaz na video z kalendáře
   // sjet na začátek okna (nejvýš 2 vydaná videa nad dneškem) – HNED (dřív nejdřív úplně nahoru a za chvíli dolů = skákalo)
   if (S.calJump) {
@@ -3121,6 +3141,19 @@ function renderCal() {
   }
 }
 var CAL_HTML = ''; // naposledy vykreslený kalendář (stejný = nepřekreslovat)
+// 📷 náhledy tvých fotek v kalendáři: z paměti hned, jinak z mezipaměti / Disku (stejná fotka se stahuje jen jednou;
+// nepovedená se zkusí znovu nejdřív za minutu – kalendář se překresluje často)
+const CALPH = {pend:new Map(), fail:new Map()};
+function calFillPhotos(root) {
+  root.querySelectorAll('img[data-photo]:not([src])').forEach(img => {
+    const id = img.dataset.photo, u = PHOTO_URL.get(id);
+    if (u) { img.src = u; return; }
+    if (Date.now() - (CALPH.fail.get(id) || 0) < 60e3) return;
+    let p = CALPH.pend.get(id);
+    if (!p) { p = photoSrc(id).finally(() => CALPH.pend.delete(id)); CALPH.pend.set(id, p); }
+    p.then(u => { img.src = u; }, () => CALPH.fail.set(id, Date.now()));
+  });
+}
 // Zavřít okno kliknutím vedle – jen když i STISK myši začal vedle. Když označuješ text v okně a pustíš myš venku,
 // prohlížeč to bere jako klik na pozadí a okno by se zavřelo uprostřed psaní.
 let MDOWN = null;
